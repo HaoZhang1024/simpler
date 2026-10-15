@@ -3788,6 +3788,8 @@ def _run_chip_main_loop(  # noqa: PLR0913, PLR0915 -- fork-child entry: every de
             published_disposition: int = _DISPOSITION_NONE
 
         staged_runs: dict[int, _StagedRun] = {}
+        # Failed device admission does not retire the domain control service.
+        run_failure: str | None = None
 
         def task_frame_references_digest(digest: bytes) -> bool:
             # A live run's digest, from this side's own record of it: the frame
@@ -3834,6 +3836,8 @@ def _run_chip_main_loop(  # noqa: PLR0913, PLR0915 -- fork-child entry: every de
             entry_buf = entry_bufs[entry_index]
             entry_addr = entry_addrs[entry_index]
             try:
+                if run_failure is not None:
+                    raise RuntimeError(f"new chip run refused after lane failure: {run_failure}")
                 identity = _read_run_entry_identity(entry_buf)
                 protocol, run_id, slot_id, generation, dispatch_id, _task_slot, _group_index, _group_size = identity
                 pipeline_slot, pipeline_reserved, pipeline_generation = _PIPELINE_LEASE_FMT.unpack_from(
@@ -4033,6 +4037,8 @@ def _run_chip_main_loop(  # noqa: PLR0913, PLR0915 -- fork-child entry: every de
                     entry_state = _mailbox_load_i32(staged.entry_addr + _OFF_ENTRY_STATE)
                     if entry_state != _ACTIVATE or staged.activated:
                         continue
+                    if run_failure is not None:
+                        continue
                     if _read_run_entry_identity(staged.entry_buf) != staged.identity:
                         stale_message = f"chip_process dev={device_id}: stale activation identity"
                         try:
@@ -4079,10 +4085,10 @@ def _run_chip_main_loop(  # noqa: PLR0913, PLR0915 -- fork-child entry: every de
                             continue
 
                         code, msg = publish_completed_run(staged)
-                        if code != 0 and staged.chip_run.lane_poisoned:
-                            shutdown_message = msg
-                            stop_progress = True
-                            break
+                        if code != 0 and staged.chip_run.lane_poisoned and run_failure is None:
+                            run_failure = msg
+                            # Abandon unlaunched runs; launched runs retain their own drains.
+                            cw._impl._stop_chip_run_lane_admission()
                     except Exception as e:  # noqa: BLE001
                         shutdown_message = _format_exc(f"chip_process dev={device_id}: chip run progress", e)
                         stop_progress = True

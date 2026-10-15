@@ -1573,8 +1573,9 @@ def test_two_frame_success_survives_successor_poison_during_recursive_progress(m
         harness.publish(0, 1)
         harness.publish(1, 2)
         harness.start()
-        harness.thread.join(5.0)
-        assert not harness.thread.is_alive()
+        harness.wait_state(0, worker_mod._TASK_DONE)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        assert harness.thread.is_alive()
         assert _mailbox_load_i32(harness.state_addr(0)) == worker_mod._TASK_DONE
         assert _mailbox_load_i32(harness.state_addr(1)) == worker_mod._TASK_FAILED
         # The terminal report lives on the run-state entry, not the frame: the frame carried only
@@ -1582,6 +1583,8 @@ def test_two_frame_success_survives_successor_poison_during_recursive_progress(m
         offset = harness._entry_offset(1) + worker_mod._OFF_ENTRY_ERROR_TEXT
         message = bytes(harness.buf[offset : offset + worker_mod.MAILBOX_ERROR_MSG_SIZE])
         assert b"successor finalize failed" in message
+        harness.stop()
+        assert not harness.thread.is_alive()
     finally:
         harness.close()
 
@@ -2183,11 +2186,14 @@ def test_two_frame_launch_cleanup_failure_terminalizes_staged_successor():
 
         harness.wait_state(0, worker_mod._TASK_FAILED)
         harness.wait_state(1, worker_mod._TASK_FAILED)
-        harness.thread.join(5.0)
-        assert not harness.thread.is_alive()
+        harness.wait_state(0, worker_mod._TASK_FAILED)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        assert harness.thread.is_alive()
         assert not harness.cw._impl.prepared[1].is_set()
         assert not harness.cw._impl.launched[1].is_set()
         assert _mailbox_load_i32(harness.accepted_addr(1)) == 0
+        harness.stop()
+        assert not harness.thread.is_alive()
     finally:
         harness.close()
 
@@ -2210,11 +2216,14 @@ def test_two_frame_native_progress_failure_terminalizes_staged_successor(failure
 
         harness.wait_state(0, worker_mod._TASK_FAILED)
         harness.wait_state(1, worker_mod._TASK_FAILED)
-        harness.thread.join(5.0)
-        assert not harness.thread.is_alive()
+        harness.wait_state(0, worker_mod._TASK_FAILED)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        assert harness.thread.is_alive()
         assert not harness.cw._impl.prepared[1].is_set()
         assert not harness.cw._impl.launched[1].is_set()
         assert _mailbox_load_i32(harness.accepted_addr(1)) == 0
+        harness.stop()
+        assert not harness.thread.is_alive()
     finally:
         harness.close()
 
@@ -8695,3 +8704,209 @@ def test_the_cpp_pre_bind_level_word_is_the_ladder_word_for_l3():
     assert completed.stdout == WorkerLevel.node.name, (
         f"C++ pre-bind level word is {completed.stdout!r}, ladder says {WorkerLevel.node.name!r}"
     )
+
+
+def _wait_failed_lane_condition(predicate, harness, budget=5.0):
+    deadline = time.monotonic() + budget
+    while not predicate():
+        assert harness.thread.is_alive(), "chip control service exited before parent shutdown"
+        assert time.monotonic() < deadline, "condition did not become true within CPU test budget"
+        time.sleep(0.001)
+
+
+def _failed_lane_message(harness, frame):
+    offset = harness._entry_offset(frame) + worker_mod._OFF_ENTRY_ERROR_TEXT
+    return bytes(harness.buf[offset : offset + worker_mod.MAILBOX_ERROR_MSG_SIZE]).split(b"\x00", 1)[0]
+
+
+def _poison_fake_lane(harness, point="finalize"):
+    if point == "launch_cleanup":
+        harness.cw._impl.launch_errors[0, 11] = RuntimeError("original launch failure")
+        harness.cw._impl.finalize_errors[0, 11] = RuntimeError("cleanup poisoned lane")
+    harness.publish(0, 1)
+    harness.start()
+    if point != "launch_cleanup":
+        assert harness.cw._impl.launched[0].wait(5.0)
+        if point == "poll":
+            harness.cw._impl.poll_errors[0, 11] = RuntimeError("original poll failure")
+        else:
+            harness.cw._impl.finalize_errors[0, 11] = RuntimeError("original finalize failure")
+            harness.cw._impl.completed[0].set()
+    harness.wait_state(0, worker_mod._TASK_FAILED)
+    _wait_failed_lane_condition(lambda: harness.cw._impl.admission_stopped, harness)
+    return _failed_lane_message(harness, 0)
+
+
+def _release_failed_lane_domain(harness):
+    struct.pack_into("Q", harness.buf, worker_mod._OFF_CALLABLE, worker_mod._CTRL_RELEASE_DOMAIN)
+    worker_mod._mailbox_store_i32(harness.mailbox_addr + worker_mod._OFF_STATE, worker_mod._CONTROL_REQUEST)
+    harness.wait_control_state(worker_mod._CONTROL_DONE)
+
+
+@pytest.mark.parametrize("point", ["poll", "finalize", "launch_cleanup"])
+def test_failed_lane_keeps_domain_release_control(point):
+    releases = []
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    try:
+        original_error = _poison_fake_lane(harness, point)
+        with patch.object(worker_mod, "_handle_ctrl_release_domain", lambda cw, buf: releases.append(cw)):
+            _release_failed_lane_domain(harness)
+        assert releases == [harness.cw]
+        assert _failed_lane_message(harness, 0) == original_error, "control completion overwrote the primary run error"
+        assert harness.thread.is_alive(), "child finalized before coordinated shutdown"
+        harness.stop()
+    finally:
+        harness.close()
+
+
+@pytest.mark.parametrize("state", [worker_mod._TASK_READY, worker_mod._PREPARE_READY, worker_mod._ACTIVATE])
+def test_failed_lane_rejects_new_frames(state):
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    try:
+        original_error = _poison_fake_lane(harness)
+        before_prepares = list(harness.cw._impl.prepare_identities)
+        harness.publish(1, 2, state=state, generation=42)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        assert harness.cw._impl.prepare_identities == before_prepares
+        assert not harness.cw._impl.launched[1].is_set()
+        assert worker_mod._mailbox_load_i32(harness.accepted_addr(1)) == 0
+        assert b"new chip run refused after lane failure" in _failed_lane_message(harness, 1)
+        assert original_error in _failed_lane_message(harness, 1)
+        assert _failed_lane_message(harness, 0) == original_error
+        assert harness.thread.is_alive()
+    finally:
+        harness.close()
+
+
+def test_failed_lane_cancels_unactivated_successor():
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    try:
+        harness.publish(0, 1)
+        harness.start()
+        assert harness.cw._impl.launched[0].wait(5.0)
+        harness.publish(1, 2, state=worker_mod._PREPARE_READY)
+        harness.wait_state(1, worker_mod._FRAME_STAGED)
+        assert not harness.cw._impl.launched[1].is_set()
+        harness.cw._impl.finalize_errors[0, 11] = RuntimeError("original finalize failure")
+        harness.cw._impl.completed[0].set()
+        harness.wait_state(0, worker_mod._TASK_FAILED)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        _wait_failed_lane_condition(lambda: harness.cw._impl.admission_stopped, harness)
+        assert not harness.cw._impl.launched[1].is_set()
+        assert not harness.cw._impl.prepared[1].is_set()
+        assert worker_mod._mailbox_load_i32(harness.accepted_addr(1)) == 0
+        assert harness.thread.is_alive()
+    finally:
+        harness.close()
+
+
+def test_failed_lane_unknown_ownership_still_stops():
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    try:
+        original_error = _poison_fake_lane(harness)
+        with (
+            patch.object(worker_mod, "_handle_ctrl_release_domain", lambda cw, buf: None),
+            patch.object(harness.cw, "set_exported_device_regions_live", side_effect=RuntimeError("ownership unknown")),
+        ):
+            _release_failed_lane_domain(harness)
+            harness.thread.join(5.0)
+        assert not harness.thread.is_alive()
+        assert harness.cw._impl.admission_stopped
+        assert _failed_lane_message(harness, 0) == original_error
+    finally:
+        harness.close()
+
+
+def test_failed_lane_preserves_successful_predecessor():
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    lane = harness.cw._impl
+    progress = lane._progress
+
+    def recursive_progress(target):
+        if not target.terminal and target.submission.slot_id == 1 and (len(lane._runs) == 2):
+            lane.completed[0].set()
+            assert progress(lane._runs[0])
+            lane.completed[1].set()
+        return progress(target)
+
+    lane._progress = recursive_progress
+    lane.finalize_errors[1, 11] = RuntimeError("successor finalize failed")
+    try:
+        harness.publish(0, 1)
+        harness.publish(1, 2)
+        harness.start()
+        harness.wait_state(0, worker_mod._TASK_DONE)
+        harness.wait_state(1, worker_mod._TASK_FAILED)
+        _wait_failed_lane_condition(lambda: lane.admission_stopped, harness)
+        assert b"successor finalize failed" in _failed_lane_message(harness, 1)
+        assert not _failed_lane_message(harness, 0)
+        assert harness.thread.is_alive()
+    finally:
+        harness.close()
+
+
+def test_failed_lane_drains_launched_successor_on_shutdown():
+    harness = _TwoFrameLoopHarness(supports_concurrent_native_prepare=True, chip_runtime="host_build_graph")
+    lane = harness.cw._impl
+    launch_front = lane._launch_front
+    close_lane = lane._close_chip_run_lane
+    close_calls = []
+
+    def preserve_launched_front():
+        if lane._runs and lane._runs[0]._launched:
+            return
+        launch_front()
+
+    def observed_close():
+        close_calls.append(True)
+        close_lane()
+
+    lane._launch_front = preserve_launched_front
+    lane._close_chip_run_lane = observed_close
+    try:
+        harness.publish(0, 1)
+        harness.start()
+        assert lane.launched[0].wait(5.0)
+        harness.publish(1, 2)
+        harness.wait_state(1, worker_mod._FRAME_STAGED)
+        assert lane.prepared[1].wait(5.0)
+        successor = next(run for run in lane._runs if run.submission.slot_id == 1)
+        successor._launched = True
+        harness.wait_state(1, worker_mod._TASK_LAUNCHED)
+        lane.finalize_errors[0, 11] = RuntimeError("predecessor finalize failed")
+        lane.completed[0].set()
+        harness.wait_state(0, worker_mod._TASK_FAILED)
+        _wait_failed_lane_condition(lambda: lane.admission_stopped, harness)
+        assert not lane.finalized[1].is_set(), "poison prematurely retired an already-launched run"
+        assert not close_calls, "lane drain ran before coordinated parent shutdown"
+        assert harness.thread.is_alive()
+        lane.completed[1].set()
+        harness.wait_state(1, worker_mod._TASK_DONE)
+        assert lane.finalized[1].is_set()
+        assert not _failed_lane_message(harness, 1)
+        harness.stop()
+        assert close_calls == [True]
+    finally:
+        harness.close()
+
+
+def test_failed_lane_parent_death_reaches_cleanup():
+    harness = _TwoFrameLoopHarness(chip_runtime="tensormap_and_ringbuffer")
+    close_lane = harness.cw._impl._close_chip_run_lane
+    close_calls = []
+
+    def observed_close():
+        close_calls.append(True)
+        close_lane()
+
+    harness.cw._impl._close_chip_run_lane = observed_close
+    try:
+        original_error = _poison_fake_lane(harness)
+        old_parent = worker_mod.os.getppid()
+        with patch.object(worker_mod.os, "getppid", return_value=old_parent + 1):
+            harness.thread.join(5.0)
+        assert not harness.thread.is_alive()
+        assert close_calls == [True]
+        assert _failed_lane_message(harness, 0) == original_error
+    finally:
+        harness.close()
