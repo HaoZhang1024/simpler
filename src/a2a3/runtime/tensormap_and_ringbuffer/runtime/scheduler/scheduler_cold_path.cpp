@@ -738,7 +738,10 @@ int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *
     // platform_retire_aicore_group fills every entry on every path it returns
     // from, so this needs no initializer.
     bool released[PLATFORM_MAX_CORES];
-    const int32_t rc = platform_retire_aicore_group(targets, count, platform_aicore_exit_deadline(), released);
+    // READY commits the current report, reset gate/request, and register
+    // metadata before a unique retirement claimant can enter this helper.
+    const uint64_t deadline = platform_aicore_exit_deadline();
+    const int32_t rc = platform_retire_aicore_group(targets, count, deadline, released);
     if (rc != 0) {
         // Naming the cores is the only signal an unreleased worker leaves: it
         // spins on a gate it cannot log about, and the host sees just a stream

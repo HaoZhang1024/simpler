@@ -118,13 +118,17 @@ TEST_F(HbgRetirementWiring, SchedulerNormalShutdownClaimsEachCoreBeforeEmergency
 TEST_F(HbgRetirementWiring, SchedulerClearsStaleGatesBeforeHandshake) {
     auto runtime = std::make_unique<Runtime>();
     runtime->set_worker_count(3);
-    for (auto &gate : runtime->dev.teardown_gates)
+    for (auto &gate : runtime->dev.teardown_gates) {
         gate.post_close_release = AICORE_POST_CLOSE_RELEASE;
+        gate.exit_request = AICORE_EXIT_NONCE_1;
+    }
     auto scheduler = std::make_unique<SchedulerContext>();
 
     ASSERT_EQ(scheduler->pre_handshake_init(runtime.get(), 1, 0), 0);
-    for (size_t i = 0; i < kAddrs.size(); ++i)
+    for (size_t i = 0; i < kAddrs.size(); ++i) {
         EXPECT_EQ(runtime->dev.teardown_gates[i].post_close_release, 0u);
+        EXPECT_EQ(runtime->dev.teardown_gates[i].exit_request, 0u);
+    }
 }
 
 TEST_F(HbgRetirementWiring, SchedulerEmergencyClaimsEachCoreBeforeNormalShutdown) {
@@ -173,7 +177,7 @@ TEST_F(HbgRetirementWiring, ConcurrentNormalAndEmergencyShutdownRetireEachCoreOn
     EXPECT_EQ(claims, (std::array<int, 3>{1, 1, 1}));
 }
 
-TEST_F(HbgRetirementWiring, LegacyShutdownSignalsAndRetiresTheSameGatedPartition) {
+TEST_F(HbgRetirementWiring, ResidentShutdownSignalsAndRetiresTheSameGatedPartition) {
     auto runtime = std::make_unique<Runtime>();
     AicoreLifecycle lifecycle;
     AicoreLifecycleTestPeer::seed(lifecycle, kAddrs);
@@ -184,19 +188,23 @@ TEST_F(HbgRetirementWiring, LegacyShutdownSignalsAndRetiresTheSameGatedPartition
     expect_group(*runtime);
 }
 
-TEST_F(HbgRetirementWiring, LegacyClearsStaleGatesBeforeHandshake) {
+TEST_F(HbgRetirementWiring, ResidentClearsStaleRequestAndReleaseBeforeHandshake) {
     auto runtime = std::make_unique<Runtime>();
     runtime->set_worker_count(3);
-    for (auto &gate : runtime->dev.teardown_gates)
+    for (auto &gate : runtime->dev.teardown_gates) {
         gate.post_close_release = AICORE_POST_CLOSE_RELEASE;
+        gate.exit_request = AICORE_EXIT_NONCE_1;
+    }
     AicoreLifecycle lifecycle;
 
     ASSERT_EQ(lifecycle.pre_handshake_init(runtime.get(), 1, 0), 0);
-    for (size_t i = 0; i < kAddrs.size(); ++i)
+    for (size_t i = 0; i < kAddrs.size(); ++i) {
         EXPECT_EQ(runtime->dev.teardown_gates[i].post_close_release, 0u);
+        EXPECT_EQ(runtime->dev.teardown_gates[i].exit_request, 0u);
+    }
 }
 
-TEST_F(HbgRetirementWiring, FailedLegacyStartupStillRetiresThroughPerCoreGates) {
+TEST_F(HbgRetirementWiring, FailedResidentStartupStillRetiresThroughPerCoreGates) {
     auto runtime = std::make_unique<Runtime>();
     AicoreLifecycle lifecycle;
     AicoreLifecycleTestPeer::seed(lifecycle, kAddrs);

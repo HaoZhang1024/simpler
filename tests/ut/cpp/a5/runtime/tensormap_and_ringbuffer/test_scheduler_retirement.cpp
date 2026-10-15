@@ -16,6 +16,7 @@
 #include <memory>
 #include <thread>
 
+#include "aicpu/device_run_result_base_aicpu.h"
 #include "runtime.h"
 #include "scheduler/scheduler_context.h"
 
@@ -25,11 +26,13 @@ std::array<std::atomic<int>, kCores> retirements{};
 std::atomic<int> retirement_batches{0};
 std::atomic<int> deadlines{0};
 bool silent_core = false;
+std::atomic<int> nonce_batches{0};
 }  // namespace
 
 uint64_t platform_aicore_exit_deadline() { return ++deadlines; }
 uint64_t read_reg(uint64_t, RegId) { return AICORE_EXITED_VALUE; }
 int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t count, uint64_t, bool *released) {
+    ++nonce_batches;
     ++retirement_batches;
     for (size_t i = 0; i < count; ++i) {
         EXPECT_GE(targets[i].reg_addr, 1U);
@@ -75,6 +78,8 @@ protected:
     std::unique_ptr<Runtime> runtime = std::make_unique<Runtime>();
 
     void SetUp() override {
+        set_platform_run_result(0, 0);
+        nonce_batches = 0;
         retirement_batches = 0;
         deadlines = 0;
         silent_core = false;
@@ -278,4 +283,37 @@ TEST_F(SchedulerRetirement, NonemptyGraphStillWaitsForItsLastTask) {
     EXPECT_EQ(SchedulerRetirementTestPeer::check_exit(*context, *header, runtime.get()), LoopAction::NONE);
     SchedulerRetirementTestPeer::publish_orchestration(*context, 1, 1, true);
     EXPECT_EQ(SchedulerRetirementTestPeer::check_exit(*context, *header, runtime.get()), LoopAction::BREAK_LOOP);
+}
+
+TEST_F(SchedulerRetirement, InitializationClearsRequestAndReleaseForEveryCore) {
+    for (int i = 0; i < kCores; ++i) {
+        auto &control = runtime->dev.teardown_gates[i];
+        control.post_close_release = AICORE_POST_CLOSE_RELEASE;
+        control.exit_request = 9;
+    }
+    ASSERT_EQ(context->pre_handshake_init(runtime.get(), 3, 2, 0), 0);
+    for (int i = 0; i < kCores; ++i) {
+        const auto &control = runtime->dev.teardown_gates[i];
+        EXPECT_EQ(control.post_close_release, 0u);
+        EXPECT_EQ(control.exit_request, 0u);
+    }
+}
+
+TEST_F(SchedulerRetirement, NativeRetirementUsesNonceAfterAssignment) {
+    set_platform_run_result(0, 42);
+    SchedulerRetirementTestPeer::open_cores(*context);
+    context->assign_own_clusters(0);
+    context->assign_own_clusters(1);
+    EXPECT_EQ(context->retire_all_cores(), 0);
+    expect_once();
+    EXPECT_EQ(nonce_batches.load(), 1);
+}
+
+TEST_F(SchedulerRetirement, UnstampedRetirementUsesNonce) {
+    SchedulerRetirementTestPeer::open_cores(*context);
+    context->assign_own_clusters(0);
+    context->assign_own_clusters(1);
+    EXPECT_EQ(context->retire_all_cores(), 0);
+    expect_once();
+    EXPECT_EQ(nonce_batches.load(), 1);
 }

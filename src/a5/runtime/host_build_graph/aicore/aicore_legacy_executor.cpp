@@ -142,8 +142,6 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
     while (true) {
         reg_val = static_cast<uint32_t>(read_reg(RegId::DATA_MAIN_BASE));
         if (reg_val == AICORE_EXIT_SIGNAL) {
-            // Signal exit acknowledgment to AICPU
-            write_reg(RegId::COND, AICORE_EXITED_VALUE);
             break;
         }
 
@@ -242,7 +240,6 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
                     SPIN_WAIT_HINT();
                 }
                 if (exiting) {
-                    write_reg(RegId::COND, AICORE_EXITED_VALUE);
                     break;
                 }
                 // Re-stamp receive_time at the moment the doorbell landed: the

@@ -108,7 +108,7 @@ struct Handshake {
 // dcci(..., CACHELINE_OUT) on its report and again on exit. A word the AICPU
 // must publish independently cannot live here — a stale line writeback would
 // overwrite it. The post-close return gates live in
-// DeviceRuntimeLaunchDesc::teardown_gates, one isolated line each.
+// DeviceRuntimeLaunchDesc::teardown_gates, one AICPU-owned request/release line per worker.
 static_assert(sizeof(Handshake) == 64);
 static_assert(std::is_standard_layout_v<Handshake> && std::is_trivially_copyable_v<Handshake>);
 // The payload offsets are the device-side wire contract: AICore writes them and
@@ -257,12 +257,14 @@ struct alignas(64) DeviceRuntimeLaunchDesc {
     // Separate from workers[] because the AICore flushes its whole Handshake
     // line, which would overwrite a gate sharing it.
     //
-    // Last, and outside the uploaded prefix: the AICPU zeroes every active entry
+    // Last, and outside the uploaded prefix: the AICPU resets each active request/release line
     // in `pre_handshake_init` and executes `wmb()` before it publishes
     // `hs_setup_done_`, and no register window opens before that publication. So
     // the meaningful initial value is produced on the device ahead of every read
     // of it, and no host-supplied gate value is consumed. The allocation still
     // covers this array.
+    // Each 64-byte control is written only by AICPU and cleared before READY
+    // or EXIT. AICore bypass-loads the request and returns its nonce in COND.
     AicoreTeardownControl teardown_gates[RUNTIME_MAX_WORKER];
 };
 

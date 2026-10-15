@@ -661,7 +661,6 @@ __aicore__ __attribute__((noinline)) void run_resident_scheduler(
     // Complete preceding GM writes before ACK. Stays outside profiling: the
     // tail is optional, this ordering is not.
     OUT_OF_ORDER_STORE_BARRIER();
-    write_reg(RegId::COND, AICORE_EXITED_VALUE);
 }
 
 }  // namespace
@@ -679,7 +678,7 @@ __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, in
     if (runtime_mode != SCHEDULER_RUNTIME_MODE_RESIDENT_PENDING &&
         runtime_mode != SCHEDULER_RUNTIME_MODE_RESIDENT_READY) {
         legacy_aicore_execute(runtime, block_idx, core_type);
-        wait_for_post_close_release(&runtime->dev.teardown_gates[block_idx].post_close_release);
+        acknowledge_aicore_cond_nonce_and_wait(&runtime->dev.teardown_gates[block_idx]);
         return;
     }
     const bool chip_swimlane_enabled = SIMPLER_GET_DFX_FLAG(profiling_flag, SIMPLER_DFX_FLAG_CHIP_SWIMLANE);
@@ -763,8 +762,7 @@ __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, in
         // have landed, and the timeout above publishes its error through
         // `pending_run_control`. Complete the preceding GM writes first.
         OUT_OF_ORDER_STORE_BARRIER();
-        write_reg(RegId::COND, AICORE_EXITED_VALUE);
-        wait_for_post_close_release(&runtime->dev.teardown_gates[block_idx].post_close_release);
+        acknowledge_aicore_cond_nonce_and_wait(&runtime->dev.teardown_gates[block_idx]);
         return;
     }
 
@@ -790,5 +788,5 @@ __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, in
             context, run_control, scheduler_state_base, profiling_level, aicore_entry_cycles, handshake_publish_cycles
         );
     }
-    wait_for_post_close_release(&runtime->dev.teardown_gates[block_idx].post_close_release);
+    acknowledge_aicore_cond_nonce_and_wait(&runtime->dev.teardown_gates[block_idx]);
 }
