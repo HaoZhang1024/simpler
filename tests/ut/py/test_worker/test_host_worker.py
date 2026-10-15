@@ -1001,6 +1001,9 @@ class _FakeNativeRunImpl:
         `close` that follows still reports it.
         """
         self.admission_stopped = True
+        for run in list(self._runs):
+            if not run.launched:
+                self._finish(run)
 
     def register_callable_from_blob(self, cid: int, blob_addr: int) -> None:
         self.register_calls.append((int(cid), int(blob_addr)))
@@ -1121,12 +1124,13 @@ class _FakeNativeRunImpl:
             self._runs.remove(run)
 
     def _launch_front(self) -> None:
-        if not self._runs:
+        if self.admission_stopped or not self._runs:
             return
         run = self._runs[0]
         if self._lane_poisoned:
-            run.error = run.error or RuntimeError("fake chip run lane is poisoned")
-            self._finish(run)
+            if not run.launched:
+                run.error = run.error or RuntimeError("fake chip run lane is poisoned")
+                self._finish(run)
             return
         if not run.activated or run._launched or run.terminal:
             return
@@ -1291,8 +1295,9 @@ class _TwoFrameLoopHarness:
         *,
         supports_concurrent_native_prepare: bool = False,
         chip_runtime: str = "",
+        resource_sets: int = 2,
     ) -> None:
-        self.shm = SharedMemory(create=True, size=worker_mod.mailbox_size(2))
+        self.shm = SharedMemory(create=True, size=worker_mod.mailbox_size(resource_sets))
         self.buf = cast(memoryview, self.shm.buf)
         assert self.buf is not None
         self.mailbox_addr = _mailbox_addr(self.shm)
@@ -1312,6 +1317,11 @@ class _TwoFrameLoopHarness:
         self._frame_generation = 0
         self._entry_generations: dict[int, int] = {}
         self.cw = _FakeTwoFrameChipWorker(supports_concurrent_native_prepare=supports_concurrent_native_prepare)
+        assert resource_sets >= 2
+        self.cw.pipeline_depth = resource_sets
+        for name in ("completed", "prepared", "launched", "finalized"):
+            getattr(self.cw._impl, name).extend(threading.Event() for _ in range(resource_sets - 2))
+        self.cw._impl._non_head_progress_counts.extend([0] * (resource_sets - 2))
         self.registry = {7: object()}
         self.identity_table = {self.digest: 7}
         self.identity_refs = {self.digest: 1}
@@ -1333,7 +1343,7 @@ class _TwoFrameLoopHarness:
                 "chip_platform": "a2a3",
                 "chip_runtime": chip_runtime,
                 "prepared": self.prepared,
-                "granted_sets": 2,
+                "granted_sets": resource_sets,
                 "provider_region_store": _chip_loop_provider_region_store(chip_platform="a2a3"),
             },
         )
@@ -8908,5 +8918,62 @@ def test_failed_lane_parent_death_reaches_cleanup():
         assert not harness.thread.is_alive()
         assert close_calls == [True]
         assert _failed_lane_message(harness, 0) == original_error
+    finally:
+        harness.close()
+
+
+@pytest.mark.parametrize("prepared_successor", [False, True])
+def test_failed_lane_abandoned_native_run_is_not_success(prepared_successor):
+    harness = _TwoFrameLoopHarness(
+        supports_concurrent_native_prepare=prepared_successor,
+        chip_runtime="host_build_graph" if prepared_successor else "tensormap_and_ringbuffer",
+        resource_sets=3,
+    )
+    lane = harness.cw._impl
+    try:
+        harness.publish(0, 1)
+        harness.start()
+        assert lane.launched[0].wait(5.0)
+        harness.publish(1, 2)
+        harness.wait_state(1, worker_mod._FRAME_STAGED)
+        if prepared_successor:
+            assert lane.prepared[1].wait(5.0)
+            joined = next(run for run in lane._runs if run.submission.slot_id == 1)
+            lane._launch_native_run(joined.token)
+            joined._launched = True
+            harness.wait_state(1, worker_mod._TASK_LAUNCHED)
+        harness.publish(2, 3, state=worker_mod._PREPARE_READY)
+        harness.wait_state(2, worker_mod._FRAME_STAGED)
+        successor = next(run for run in lane._runs if run.submission.slot_id == 2)
+        if prepared_successor:
+            lane._prepare(successor)
+            assert lane.prepared[2].is_set()
+        else:
+            assert not lane.prepared[2].is_set()
+        lane.finalize_errors[0, 11] = RuntimeError("original predecessor finalize failure")
+        lane.completed[0].set()
+        harness.wait_state(0, worker_mod._TASK_FAILED)
+        _wait_failed_lane_condition(
+            lambda: worker_mod._mailbox_load_i32(harness.state_addr(2))
+            in (worker_mod._TASK_DONE, worker_mod._TASK_FAILED),
+            harness,
+        )
+        assert worker_mod._mailbox_load_i32(harness.state_addr(2)) == worker_mod._TASK_FAILED
+        assert successor.terminal and successor.error is None
+        assert not successor.launched
+        assert not lane.launched[2].is_set()
+        first_error = _failed_lane_message(harness, 0)
+        cancelled_error = _failed_lane_message(harness, 2)
+        assert b"abandoned before launch after lane failure" in cancelled_error
+        assert first_error in cancelled_error
+        if prepared_successor:
+            lane.completed[1].set()
+            harness.wait_state(1, worker_mod._TASK_DONE)
+        with patch.object(worker_mod, "_handle_ctrl_release_domain", lambda cw, buf: None):
+            _release_failed_lane_domain(harness)
+        assert _failed_lane_message(harness, 0) == first_error
+        assert _failed_lane_message(harness, 2) == cancelled_error
+        assert worker_mod._mailbox_load_i32(harness.state_addr(2)) == worker_mod._TASK_FAILED
+        harness.stop()
     finally:
         harness.close()

@@ -3961,6 +3961,9 @@ def _run_chip_main_loop(  # noqa: PLR0913, PLR0915 -- fork-child entry: every de
             except Exception as e:  # noqa: BLE001
                 code = 1
                 msg = _format_exc(f"chip_process dev={device_id}: chip run", e)
+            if code == 0 and run_failure is not None and not staged.chip_run.launched:
+                code = 1
+                msg = f"chip_process dev={device_id}: run abandoned before launch after lane failure: {run_failure}"
             if code == 0 and on_task_done_success is not None:
                 try:
                     code, msg = on_task_done_success()
