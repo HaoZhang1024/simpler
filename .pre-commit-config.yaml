@@ -85,6 +85,7 @@ repos:
           name: clang-tidy
           entry: python tests/lint/clang_tidy.py
           language: system
+          require_serial: true
           # clang_tidy_paths.py filters this hook before it imports the project;
           # the pre-commit workflow uses the same policy to select its build.
 

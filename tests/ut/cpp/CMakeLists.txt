@@ -416,6 +416,7 @@ foreach(runtime tensormap_and_ringbuffer host_build_graph)
         ${CMAKE_SOURCE_DIR}/../../../src/a2a3/platform/shared/aicpu/platform_regs.cpp
         ${CMAKE_SOURCE_DIR}/../../../src/a2a3/platform/sim/aicpu/inner_platform_regs.cpp
         ${CMAKE_SOURCE_DIR}/../../../src/common/platform/sim/aicpu/device_time.cpp
+        ${CMAKE_SOURCE_DIR}/../../../src/common/platform/sim/aicpu/cache_ops.cpp
     )
     target_include_directories(${retirement_test} PRIVATE
         ${GTEST_INCLUDE_DIRS}
@@ -1012,6 +1013,7 @@ target_include_directories(test_chip_swimlane_aicore PRIVATE
     ${CMAKE_SOURCE_DIR}/../../../src/a5/platform/sim/aicore
     ${CMAKE_SOURCE_DIR}/../../../src/a5/platform/include
     ${CMAKE_SOURCE_DIR}/../../../src/common/platform/include
+    ${CMAKE_SOURCE_DIR}/../../../src/common/task_interface
 )
 target_link_libraries(test_chip_swimlane_aicore PRIVATE
     ${GTEST_MAIN_LIB}
@@ -1229,6 +1231,50 @@ target_sources(test_hbg_submit_poison PRIVATE
     ${CMAKE_SOURCE_DIR}/../../../src/common/platform/shared/aicpu/args_dump_aicpu.cpp
 )
 add_a5_hbg_runtime_test(test_a5_hbg_scheduler_contracts a5/test_hbg_scheduler_contracts.cpp)
+add_executable(test_a5_hbg_scheduler_retirement
+    a5/test_hbg_scheduler_retirement.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/runtime/host_build_graph/runtime/scheduler/scheduler_cold_path.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/platform/shared/aicpu/platform_regs.cpp)
+get_target_property(A5_HBG_RETIREMENT_INCLUDE_DIRS test_a5_hbg_scheduler_contracts INCLUDE_DIRECTORIES)
+target_include_directories(test_a5_hbg_scheduler_retirement PRIVATE ${A5_HBG_RETIREMENT_INCLUDE_DIRS})
+target_compile_options(test_a5_hbg_scheduler_retirement PRIVATE -fno-access-control -ffunction-sections -fdata-sections)
+target_compile_definitions(test_a5_hbg_scheduler_retirement PRIVATE SIMPLER_DFX=0)
+if(APPLE)
+    target_link_options(test_a5_hbg_scheduler_retirement PRIVATE -Wl,-dead_strip)
+else()
+    target_link_options(test_a5_hbg_scheduler_retirement PRIVATE -Wl,--gc-sections)
+endif()
+target_link_libraries(test_a5_hbg_scheduler_retirement PRIVATE ${GTEST_MAIN_LIB} ${GTEST_LIB} pthread)
+add_test(NAME test_a5_hbg_scheduler_retirement COMMAND test_a5_hbg_scheduler_retirement)
+set_tests_properties(test_a5_hbg_scheduler_retirement PROPERTIES LABELS "no_hardware" TIMEOUT 45)
+add_executable(test_a5_hbg_resident_retirement
+    a5/test_hbg_resident_retirement.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/common/host_build_graph/shared/runtime.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/runtime/host_build_graph/aicpu/aicore_lifecycle.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/platform/shared/aicpu/platform_regs.cpp)
+target_include_directories(test_a5_hbg_resident_retirement PRIVATE ${A5_HBG_RETIREMENT_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/runtime/host_build_graph/aicpu)
+target_compile_options(test_a5_hbg_resident_retirement PRIVATE -fno-access-control -ffunction-sections -fdata-sections)
+target_compile_definitions(test_a5_hbg_resident_retirement PRIVATE SIMPLER_DFX=0)
+if(APPLE)
+    target_link_options(test_a5_hbg_resident_retirement PRIVATE -Wl,-dead_strip)
+else()
+    target_link_options(test_a5_hbg_resident_retirement PRIVATE -Wl,--gc-sections)
+endif()
+target_link_libraries(test_a5_hbg_resident_retirement PRIVATE ${GTEST_MAIN_LIB} ${GTEST_LIB} pthread)
+add_test(NAME test_a5_hbg_resident_retirement COMMAND test_a5_hbg_resident_retirement)
+set_tests_properties(test_a5_hbg_resident_retirement PROPERTIES LABELS "no_hardware" TIMEOUT 45)
+add_executable(test_a5_hbg_resident_startup
+    a5/test_hbg_resident_startup.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/runtime/host_build_graph/aicore/aicore_executor.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/common/host_build_graph/shared/runtime.cpp
+    ${CMAKE_SOURCE_DIR}/../../../src/common/platform/sim/aicpu/device_time.cpp)
+target_include_directories(test_a5_hbg_resident_startup PRIVATE
+    ${A5_HBG_RETIREMENT_INCLUDE_DIRS}
+    ${CMAKE_SOURCE_DIR}/../../../src/a5/platform/sim/aicore)
+target_link_libraries(test_a5_hbg_resident_startup PRIVATE ${GTEST_MAIN_LIB} ${GTEST_LIB} pthread)
+add_test(NAME test_a5_hbg_resident_startup COMMAND test_a5_hbg_resident_startup)
+set_tests_properties(test_a5_hbg_resident_startup PROPERTIES LABELS "no_hardware" TIMEOUT 15)
 target_include_directories(test_a5_hbg_scheduler_contracts PRIVATE
     ${CMAKE_SOURCE_DIR}/../../../src/a5/runtime/host_build_graph/aicpu
 )
@@ -1372,6 +1418,7 @@ add_a2a3_runtime_test(test_dep_gen_replay common/test_dep_gen_replay.cpp ${TMR_S
 target_include_directories(test_dep_gen_replay PRIVATE ${TMR_SHARED_HOST_DIR})
 add_a2a3_runtime_test(test_fanin_pool       a2a3/test_fanin_pool.cpp)
 add_a2a3_orchestrator_runtime_test(test_a2a3_orchestrator_fanin a2a3/test_orchestrator_fanin.cpp)
+target_sources(test_a2a3_orchestrator_fanin PRIVATE ${A2A3_RUNTIME_DIR}/runtime_core.cpp)
 add_a2a3_orchestrator_runtime_test(test_wiring a2a3/test_wiring.cpp)
 add_a2a3_orchestrator_runtime_test(test_a2a3_args_dump a2a3/test_args_dump.cpp)
 add_a2a3_runtime_test(test_aicore_completion_mailbox a2a3/test_aicore_completion_mailbox.cpp)
@@ -1413,6 +1460,7 @@ add_a5_runtime_test(test_a5_shared_memory    a5/test_shared_memory.cpp)
 add_a5_runtime_test(test_a5_tensormap        a5/test_tensormap.cpp)
 add_a5_runtime_test(test_a5_fanin_pool       a5/test_fanin_pool.cpp)
 add_a5_orchestrator_runtime_test(test_a5_orchestrator_fanin a5/test_orchestrator_fanin.cpp)
+target_sources(test_a5_orchestrator_fanin PRIVATE ${A5_RUNTIME_DIR}/runtime_core.cpp)
 add_a5_orchestrator_runtime_test(test_a5_wiring a5/test_wiring.cpp)
 add_a5_orchestrator_runtime_test(test_a5_args_dump a5/test_args_dump.cpp)
 add_a5_runtime_test(test_a5_aicore_completion_mailbox a5/test_aicore_completion_mailbox.cpp)
@@ -1767,6 +1815,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_include_directories(test_a2a3_thread_scheduling PRIVATE
         ${GTEST_INCLUDE_DIRS}
         ${CMAKE_SOURCE_DIR}/../../../src/a2a3/platform/include
+        ${CMAKE_SOURCE_DIR}/../../../src/common/platform/include
     )
     target_link_libraries(test_a2a3_thread_scheduling PRIVATE ${GTEST_MAIN_LIB} ${GTEST_LIB} pthread)
     target_link_options(test_a2a3_thread_scheduling PRIVATE
@@ -1995,3 +2044,7 @@ foreach(arch IN ITEMS a2a3 a5)
     add_test(NAME ${cancel_test} COMMAND ${cancel_test})
     set_tests_properties(${cancel_test} PROPERTIES LABELS "no_hardware" TIMEOUT 30)
 endforeach()
+
+include(${CMAKE_CURRENT_LIST_DIR}/kernel_retirement_tests.cmake)
+
+add_common_utils_test(test_tmr_kernel_replay_admission common/test_tmr_kernel_replay_admission.cpp)

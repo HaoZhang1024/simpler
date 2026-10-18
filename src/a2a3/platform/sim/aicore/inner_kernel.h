@@ -113,6 +113,24 @@ typedef int mem_dsb_t;
 // Equivalent to dmb ish (aarch64) / mfence (x86).
 #define OUT_OF_ORDER_FULL_BARRIER() __sync_synchronize()
 
+inline void initialize_aicore_exit_ack(AicoreTeardownControl *control) {
+    __atomic_store_n(&control->exit_ack, 0U, __ATOMIC_RELEASE);
+}
+
+inline void acknowledge_aicore_exit_and_wait(AicoreTeardownControl *control) {
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    uint32_t published_request = 0;
+    while (true) {
+        const uint32_t request = __atomic_load_n(&control->exit_request, __ATOMIC_ACQUIRE);
+        if (request != 0 && request != published_request) {
+            __atomic_store_n(&control->exit_ack, request, __ATOMIC_RELEASE);
+            published_request = request;
+        }
+        if (__atomic_load_n(&control->post_close_release, __ATOMIC_ACQUIRE) == AICORE_POST_CLOSE_RELEASE) break;
+        SPIN_WAIT_HINT();
+    }
+}
+
 inline void wait_for_post_close_release(uint32_t *release) {
     while (__atomic_load_n(release, __ATOMIC_ACQUIRE) != AICORE_POST_CLOSE_RELEASE) {
         SPIN_WAIT_HINT();

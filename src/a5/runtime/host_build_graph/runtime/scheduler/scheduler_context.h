@@ -195,6 +195,8 @@ private:
 
     // Per-core execution state, indexed by core_id (= worker_id)
     CoreExecState core_exec_states_[RUNTIME_MAX_WORKER];
+    std::atomic<bool> core_retired_[RUNTIME_MAX_WORKER]{};
+    int32_t retire_cores(const int32_t *core_ids, int32_t core_num);
 
     // Cluster-ordered core trackers, one per scheduler thread
     CoreTracker core_trackers_[MAX_AICPU_THREADS];

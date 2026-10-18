@@ -24,6 +24,7 @@
 #include <unistd.h>
 
 #include "aicpu/device_log.h"
+#include "aicpu/aicpu_device_config.h"
 #include "aicpu/device_time.h"
 #include "aicpu/platform_aicpu_affinity.h"
 #include "aicpu/platform_regs.h"
@@ -49,12 +50,15 @@ std::atomic<uint64_t> closed_mask{0};
 std::atomic<int> register_publications{0};
 std::atomic<const void *> watched_image{nullptr};
 std::atomic<int> image_invalidations{0};
+std::atomic<const void *> watched_round_reports{nullptr};
+std::atomic<int> round_report_attachments{0};
 }  // namespace
 
 namespace aicpu_cache_maintenance {
 // Preserve simulation's no-op cache behavior while observing image access.
 void invalidate_range_impl(const void *address, size_t) {
     if (address == watched_image.load(std::memory_order_relaxed)) ++image_invalidations;
+    if (address == watched_round_reports.load(std::memory_order_acquire)) ++round_report_attachments;
 }
 void flush_range_impl(const void *, size_t) {}
 }  // namespace aicpu_cache_maintenance
@@ -89,6 +93,8 @@ void platform_close_aicore_window(uint64_t base) {
 extern "C" int32_t aicpu_execute(Runtime *);
 extern "C" int32_t simpler_aicpu_register_callable(void *);
 extern "C" int simpler_aicpu_prepare_tmr_context(void *);
+extern "C" int simpler_aicpu_begin_tmr_replay(void *);
+extern "C" int simpler_aicpu_end_tmr_replay(void *);
 extern "C" int simpler_aicpu_register_tmr_kernel_callable(void *);
 extern "C" int simpler_aicpu_revoke_tmr_context(void *);
 void corrupt_kernel_arch_argument(KernelArgs &args, int fault);
@@ -122,6 +128,8 @@ protected:
         register_publications = 0;
         watched_image = nullptr;
         image_invalidations = 0;
+        watched_round_reports = nullptr;
+        round_report_attachments = 0;
         ASSERT_EQ(set_host_log_state(HostLogger::get_instance().state()), 0);
         uint64_t windows[CHIP_MAX_RING_DEPTH] = {16, 16, 16, 16};
         uint64_t heaps[CHIP_MAX_RING_DEPTH] = {1024, 1024, 1024, 1024};
@@ -218,6 +226,7 @@ protected:
         descriptor.control_bytes = sizeof(control);
         descriptor.reports_address = reinterpret_cast<uint64_t>(reports.data());
         descriptor.reports_bytes = sizeof(reports);
+        descriptor.admission_address = reinterpret_cast<uint64_t>(&replay);
         descriptor.launch_threads = execution_threads + 1;
         descriptor.execution_threads = execution_threads;
         descriptor.worker_count = 3;
@@ -265,8 +274,6 @@ protected:
         opened_windows = 0;
         closed_windows = 0;
         closed_mask = 0;
-        control = {};
-        reports = {};
         for (auto &cell : register_cells)
             cell = 0;
         std::vector<int32_t> allowed(execution_threads);
@@ -287,11 +294,18 @@ protected:
             EXPECT_EQ(simpler_aicpu_register_tmr_kernel_callable(&registration), 0);
         }
         request.binding = binding;
-        request.handshake = {&control, reports.data(), 3, 0};
         request.allowed_cpus = allowed.data();
         request.execution_threads = execution_threads;
         request.launched_threads = execution_threads + 1;
         request.admission_status = admission;
+        // Registration happens while quiescent, before the real device
+        // prelude exclusively clears and publishes this replay's identity.
+        const int begin = simpler_aicpu_begin_tmr_replay(&registration);
+        EXPECT_EQ(begin, kAicpuKernelSuccess);
+        if (begin != kAicpuKernelSuccess) return std::vector<int32_t>(execution_threads + 1, begin);
+        const uint64_t epoch = __atomic_load_n(&replay.ready_epoch, __ATOMIC_ACQUIRE);
+        request.handshake = {&control, reports.data(), 3, epoch};
+        request.replay_admission = &replay;
         std::vector<std::thread> cores;
         for (size_t i = 0; i < reports.size(); ++i) {
             cores.emplace_back([&, i] {
@@ -299,6 +313,7 @@ protected:
                 auto &report = reports[i];
                 report.physical_core_id = invalid_reports && i == 2 ? PLATFORM_MAX_CORES : i;
                 report.core_type = i == 0 ? CoreType::AIC : CoreType::AIV;
+                report.report_epoch = epoch;
                 __atomic_store_n(&report.aicore_done, static_cast<uint32_t>(i + 1), __ATOMIC_RELEASE);
             });
         }
@@ -314,6 +329,14 @@ protected:
             thread.join();
         for (auto &thread : cores)
             thread.join();
+        bool success = true;
+        for (const auto status : result)
+            success = success && status == 0;
+        if (success) {
+            EXPECT_EQ(simpler_aicpu_end_tmr_replay(&registration), kAicpuKernelSuccess);
+            EXPECT_EQ(__atomic_load_n(&replay.fault, __ATOMIC_ACQUIRE), 0u);
+            EXPECT_EQ(__atomic_load_n(&replay.sequence, __ATOMIC_ACQUIRE), epoch + 1);
+        }
         EXPECT_EQ(control.completion, static_cast<uint32_t>(TmrCompletion::Complete));
         EXPECT_EQ(control.cleanup_status, 0);
         for (size_t i = 0; i < reports.size(); ++i)
@@ -374,6 +397,7 @@ protected:
     TmrLaunchControl control{};
     std::array<TmrCoreReport, 3> reports{};
     TmrKernelContextDescriptor descriptor{};
+    TmrReplayAdmission replay{};
     KernelArgs resident_args{};
     TmrContextRegistrationArgs registration{};
     std::vector<uint8_t> kernel_image;
@@ -955,6 +979,239 @@ TEST_F(TmrExecutorExecutionInputsTest, RejectedAdmissionReportsOriginalError) {
             EXPECT_EQ(output[3], 0u);
         });
     }
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, ProductionMembershipWaitUsesConfiguredBudgetAndRetainsGate) {
+    isolated_round([&] {
+        opened_windows = 0;
+        set_scheduler_timeout_ms(5);
+        const int32_t allowed[]{10, 11};
+        KernelExecutionRequest request;
+        request.binding = binding;
+        request.handshake = {&control, reports.data(), 3, 1};
+        request.allowed_cpus = allowed;
+        request.execution_threads = request.launched_threads = 2;
+        request.admission_status = -333;
+        const auto start = std::chrono::steady_clock::now();
+        EXPECT_NE(execute_kernel_round(request, 10), 0);
+        EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+        auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+        EXPECT_EQ(header->sched_error_code.load(), SIMPLER_ERROR_SCHEDULER_TIMEOUT);
+        EXPECT_EQ(control.completion, 0u);
+        EXPECT_EQ(opened_windows.load(), 0);
+        EXPECT_NE(execute_kernel_round(request, 11), 0);
+        EXPECT_EQ(control.completion, 0u);
+    });
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, InitializationWaitForMissingLeaderUsesConfiguredBudget) {
+    isolated_round([&] {
+        opened_windows = 0;
+        set_scheduler_timeout_ms(5);
+        affinity_index = 1;
+        const auto start = std::chrono::steady_clock::now();
+        EXPECT_NE(aicpu_execute(resident.get()), 0);
+        EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::seconds(1));
+        auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+        EXPECT_EQ(header->sched_error_code.load(), SIMPLER_ERROR_SCHEDULER_TIMEOUT);
+        EXPECT_EQ(opened_windows.load(), 0);
+    });
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, NativeDispatchMissingPeerUsesConfiguredBudget) {
+    for (const int32_t prior_error : {int32_t{SIMPLER_ERROR_NONE}, int32_t{SIMPLER_ERROR_INVALID_ARGS}}) {
+        SCOPED_TRACE(prior_error);
+        isolated_round([&] {
+            opened_windows = 0;
+            prepare_native_context();
+            ASSERT_TRUE(registered_context);
+            set_scheduler_timeout_ms(5);
+            auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+            if (prior_error != SIMPLER_ERROR_NONE) header->sched_error_code.store(prior_error);
+            const int32_t expected_error =
+                prior_error != SIMPLER_ERROR_NONE ? prior_error : SIMPLER_ERROR_SCHEDULER_TIMEOUT;
+            ASSERT_EQ(simpler_aicpu_begin_tmr_replay(&registration), kAicpuKernelSuccess);
+            std::atomic<bool> returned{false};
+            int status = 0;
+            std::thread native([&] {
+                affinity_index = 0;
+                // The real packet/native adapter must bound a missing peer even
+                // when malformed framing prevents the executor from starting.
+                status = simpler_aicpu_kernel_exec(nullptr);
+                returned.store(true, std::memory_order_release);
+            });
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+            while (!returned.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
+            EXPECT_TRUE(returned.load(std::memory_order_acquire));
+            // Old dispatch bypasses production WaitControl. Rescue it using the
+            // independently supported replay fault so the RED test cannot hang.
+            __atomic_store_n(&replay.fault, uint32_t{1}, __ATOMIC_RELEASE);
+            native.join();
+            EXPECT_EQ(status, kAicpuKernelInnerError);
+            EXPECT_EQ(header->sched_error_code.load(), expected_error);
+            EXPECT_EQ(header->orch_error_code.load(), expected_error);
+            EXPECT_EQ(control.completion, 0u);
+            EXPECT_EQ(opened_windows.load(), 0);
+            EXPECT_EQ(simpler_aicpu_kernel_exec(nullptr), kAicpuKernelInnerError);
+            EXPECT_EQ(revoke_context(registration.context_generation), kAicpuKernelInnerError);
+            EXPECT_EQ(__atomic_load_n(&replay.sequence, __ATOMIC_ACQUIRE), 1u);
+        });
+    }
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, NativeAllCoreReportsMissingTimesOutAfterFiniteProducerReturns) {
+    isolated_round([&] {
+        opened_windows = 0;
+        closed_windows = 0;
+        resident->dev.serial_orch_sched = false;
+        prepare_native_context("orchestration_finite");
+        ASSERT_TRUE(registered_context);
+        // Long enough for ordinary dlopen/setup; still below the red rescue.
+        set_scheduler_timeout_ms(50);
+        const PreparedInvocationView callable{7, 1, 1};
+        auto args = arguments(57);
+        const auto packet = native_packet(args, callable);
+        ASSERT_EQ(simpler_aicpu_begin_tmr_replay(&registration), kAicpuKernelSuccess);
+        std::array<int, 3> results{};
+        std::atomic<int> entered{0}, returned{0};
+        std::vector<std::thread> threads;
+        for (int i = 0; i < 3; ++i) {
+            threads.emplace_back([&, i] {
+                affinity_index = i;
+                entered.fetch_add(1, std::memory_order_acq_rel);
+                while (entered.load(std::memory_order_acquire) != 3)
+                    std::this_thread::yield();
+                results[i] = simpler_aicpu_kernel_exec(const_cast<uint8_t *>(packet.data()));
+                returned.fetch_add(1, std::memory_order_acq_rel);
+            });
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+        while (returned.load(std::memory_order_acquire) != 3 && std::chrono::steady_clock::now() < deadline)
+            std::this_thread::yield();
+        EXPECT_EQ(__atomic_load_n(&output[3], __ATOMIC_ACQUIRE), 99u);
+        EXPECT_EQ(returned.load(std::memory_order_acquire), 3);
+        // Old report loops lack a deadline despite every native having Joined.
+        // Rescue only after recording the failure; never count rescue as bound.
+        if (returned.load(std::memory_order_acquire) != 3)
+            __atomic_store_n(&replay.fault, uint32_t{1}, __ATOMIC_RELEASE);
+        for (auto &thread : threads)
+            thread.join();
+        for (const auto status : results)
+            EXPECT_EQ(status, kAicpuKernelInnerError);
+        auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+        EXPECT_EQ(header->sched_error_code.load(), SIMPLER_ERROR_SCHEDULER_TIMEOUT);
+        EXPECT_EQ(opened_windows.load(), 0);
+        EXPECT_EQ(closed_windows.load(), 0);
+        for (int i = 0; i < 3; ++i) {
+            EXPECT_EQ(reports[i].aicore_done, 0u);
+            EXPECT_EQ(resident->get_teardown_gates()[i].post_close_release, AICORE_PRE_WINDOW_HOST_CANCEL);
+        }
+        EXPECT_NE(__atomic_load_n(&replay.fault, __ATOMIC_ACQUIRE), 0u);
+        EXPECT_EQ(revoke_context(registration.context_generation), kAicpuKernelInnerError);
+    });
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, StartupTimeoutStopsCooperativeProducerApisAndBlockedAllocator) {
+    for (const int32_t prior_error : {int32_t{SIMPLER_ERROR_NONE}, int32_t{SIMPLER_ERROR_INVALID_ARGS}}) {
+        SCOPED_TRACE(prior_error);
+        isolated_round([&] {
+            opened_windows = closed_windows = 0;
+            resident->dev.serial_orch_sched = false;
+            prepare_native_context("orchestration_cooperative");
+            ASSERT_TRUE(registered_context);
+            set_scheduler_timeout_ms(50);
+            const PreparedInvocationView callable{7, 1, 1};
+            auto args = arguments(57);
+            const auto packet = native_packet(args, callable);
+            ASSERT_EQ(simpler_aicpu_begin_tmr_replay(&registration), kAicpuKernelSuccess);
+            std::array<int, 3> results{};
+            std::atomic<int> entered{0}, returned{0};
+            std::vector<std::thread> threads;
+            for (int i = 0; i < 3; ++i) {
+                threads.emplace_back([&, i] {
+                    affinity_index = i;
+                    entered.fetch_add(1, std::memory_order_acq_rel);
+                    while (entered.load(std::memory_order_acquire) != 3)
+                        std::this_thread::yield();
+                    results[i] = simpler_aicpu_kernel_exec(const_cast<uint8_t *>(packet.data()));
+                    returned.fetch_add(1, std::memory_order_acq_rel);
+                });
+            }
+            auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+            const int32_t expected_error =
+                prior_error != SIMPLER_ERROR_NONE ? prior_error : SIMPLER_ERROR_SCHEDULER_TIMEOUT;
+            if (prior_error != SIMPLER_ERROR_NONE) {
+                const auto producer_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(40);
+                while (__atomic_load_n(&output[3], __ATOMIC_ACQUIRE) == 0 &&
+                       std::chrono::steady_clock::now() < producer_deadline)
+                    std::this_thread::yield();
+                EXPECT_EQ(__atomic_load_n(&output[3], __ATOMIC_ACQUIRE), 1u);
+                int32_t expected = SIMPLER_ERROR_NONE;
+                EXPECT_TRUE(header->sched_error_code.compare_exchange_strong(expected, prior_error));
+            }
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(200);
+            while (returned.load(std::memory_order_acquire) != 3 && std::chrono::steady_clock::now() < deadline)
+                std::this_thread::yield();
+            EXPECT_EQ(header->sched_error_code.load(), expected_error);
+            EXPECT_EQ(header->orch_error_code.load(), expected_error);
+            EXPECT_EQ(__atomic_load_n(&output[3], __ATOMIC_ACQUIRE), 99u);
+            EXPECT_EQ(returned.load(std::memory_order_acquire), 3);
+            // Old startup only wrote sched_error: cooperative APIs/allocator wait
+            // still read orch_error. Publish it solely to rescue the recorded RED.
+            if (returned.load(std::memory_order_acquire) != 3)
+                header->orch_error_code.store(expected_error, std::memory_order_release);
+            for (auto &thread : threads)
+                thread.join();
+            for (const auto status : results)
+                EXPECT_EQ(status, kAicpuKernelInnerError);
+            EXPECT_EQ(output[4], 1u);
+            EXPECT_EQ(output[5], 1u);
+            EXPECT_EQ(opened_windows.load(), 0);
+            EXPECT_EQ(closed_windows.load(), 0);
+            EXPECT_NE(__atomic_load_n(&replay.fault, __ATOMIC_ACQUIRE), 0u);
+            EXPECT_EQ(revoke_context(registration.context_generation), kAicpuKernelInnerError);
+        });
+    }
+}
+
+TEST_F(TmrExecutorExecutionInputsTest, NativeWaitingPeerReplayFaultIsNotReportedAsTimeout) {
+    isolated_round([&] {
+        opened_windows = 0;
+        prepare_native_context();
+        ASSERT_TRUE(registered_context);
+        set_scheduler_timeout_ms(1000);
+        ASSERT_EQ(simpler_aicpu_begin_tmr_replay(&registration), kAicpuKernelSuccess);
+        watched_round_reports.store(reports.data(), std::memory_order_release);
+        round_report_attachments = 0;
+        std::atomic<bool> returned{false};
+        int status = 0;
+        std::thread native([&] {
+            affinity_index = 0;
+            status = simpler_aicpu_kernel_exec(nullptr);
+            returned.store(true, std::memory_order_release);
+        });
+        const auto attached_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        while (round_report_attachments.load(std::memory_order_acquire) == 0 &&
+               std::chrono::steady_clock::now() < attached_until)
+            std::this_thread::yield();
+        EXPECT_EQ(round_report_attachments.load(std::memory_order_acquire), 1);
+        // The real adapter already validated the replay and joined this gate.
+        // An overlapping replay can now poison admission before any deadline.
+        __atomic_store_n(&replay.fault, uint32_t{1}, __ATOMIC_RELEASE);
+        const auto aborted_until = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+        while (!returned.load(std::memory_order_acquire) && std::chrono::steady_clock::now() < aborted_until)
+            std::this_thread::yield();
+        EXPECT_TRUE(returned.load(std::memory_order_acquire));
+        native.join();
+        EXPECT_EQ(status, kAicpuKernelInnerError);
+        auto *header = static_cast<SharedMemoryHeader *>(binding.sm.base);
+        EXPECT_EQ(header->sched_error_code.load(), SIMPLER_ERROR_INVALID_ARGS);
+        EXPECT_EQ(header->orch_error_code.load(), SIMPLER_ERROR_INVALID_ARGS);
+        EXPECT_EQ(opened_windows.load(), 0);
+        EXPECT_EQ(control.completion, 0u);
+        EXPECT_EQ(revoke_context(registration.context_generation), kAicpuKernelInnerError);
+    });
 }
 
 }  // namespace

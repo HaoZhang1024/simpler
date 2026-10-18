@@ -16,7 +16,7 @@
 
 namespace simpler::tmr {
 
-inline constexpr uint32_t kTmrKernelContextVersion = 2;
+inline constexpr uint32_t kTmrKernelContextVersion = 3;
 
 // Published once by prepare. The owner retains every referenced allocation
 // until all executions complete and all referring graphs are destroyed.
@@ -45,7 +45,8 @@ struct alignas(64) TmrKernelContextDescriptor {
     int32_t execution_threads;
     int32_t worker_count;
     uint32_t flags;
-    uint64_t reserved[3];
+    uint64_t admission_address;
+    uint64_t reserved[2];
 };
 
 struct TmrContextRegistrationArgs {
@@ -89,7 +90,8 @@ static_assert(offsetof(TmrKernelContextDescriptor, launch_threads) == 152);
 static_assert(offsetof(TmrKernelContextDescriptor, execution_threads) == 156);
 static_assert(offsetof(TmrKernelContextDescriptor, worker_count) == 160);
 static_assert(offsetof(TmrKernelContextDescriptor, flags) == 164);
-static_assert(offsetof(TmrKernelContextDescriptor, reserved) == 168);
+static_assert(offsetof(TmrKernelContextDescriptor, admission_address) == 168);
+static_assert(offsetof(TmrKernelContextDescriptor, reserved) == 176);
 static_assert(
     std::is_trivially_copyable_v<TmrContextRegistrationArgs> && std::is_standard_layout_v<TmrContextRegistrationArgs>
 );

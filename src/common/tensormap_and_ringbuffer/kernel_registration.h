@@ -21,6 +21,7 @@
 #include "aicpu/scope_stats_collector_aicpu.h"
 #include "common/kernel_args.h"
 #include "kernel_execution_round.h"
+#include "kernel_replay_admission.h"
 #include "kernel_native_status.h"
 #include "kernel_prepared_callable.h"
 #include "kernel_prepared_context.h"
@@ -28,6 +29,16 @@
 #include "task_interface/tmr_kernel_revoke.h"
 
 namespace simpler::tmr {
+
+inline TmrReplayAdmission &replay_state(const PreparedKernelContext &context) noexcept {
+    return *reinterpret_cast<TmrReplayAdmission *>(context.descriptor.admission_address);
+}
+
+inline bool replay_quiescent(const PreparedKernelContext &context) noexcept {
+    const auto &state = replay_state(context);
+    return __atomic_load_n(&state.fault, __ATOMIC_ACQUIRE) == 0 &&
+           (__atomic_load_n(&state.sequence, __ATOMIC_ACQUIRE) & 1) == 0;
+}
 
 // The round leader refreshes the window bits before publishing initialization
 // to the other AICPU threads. Host updates occur only between completed rounds.
@@ -122,6 +133,7 @@ int register_kernel_callable(Executor &executor, const void *arg) noexcept {
     TmrCallableRegistrationArgs registration{};
     std::memcpy(&registration, arg, sizeof(registration));
     const auto &context = executor.kernel_context_;
+    if (!replay_quiescent(context)) return -1;
     if (registration.context_generation != context.descriptor.context_generation || registration.reserved != 0 ||
         registration.callable_id < 0 || registration.callable_id >= MAX_REGISTERED_CALLABLE_IDS ||
         registration.bytes > SIZE_MAX ||
@@ -160,6 +172,7 @@ int release_kernel_context(Executor &executor, const void *arg) noexcept {
     TmrContextRegistrationArgs registration{};
     std::memcpy(&registration, arg, sizeof(registration));
     const auto &context = executor.kernel_context_;
+    if (!replay_quiescent(context)) return -1;
     if (registration.descriptor_address != context.descriptor.self_address ||
         registration.context_generation != context.descriptor.context_generation)
         return -1;
@@ -218,9 +231,10 @@ int revoke_kernel_context(Executor &executor, const void *arg) noexcept {
         if (descriptor.self_address != args.descriptor_address ||
             descriptor.context_generation != args.context_generation)
             return -1;
+        if (!replay_quiescent(context)) return -1;
         using namespace prepared_context_detail;
         const Region receipt{args.receipt_address, args.receipt_bytes};
-        const std::array<Region, 9> protected_regions{{
+        const std::array<Region, 10> protected_regions{{
             {descriptor.self_address, sizeof(descriptor)},
             {descriptor.resident_runtime, sizeof(DeviceRuntimeLaunchDesc)},
             {descriptor.resident_kernel_args, sizeof(KernelArgs)},
@@ -229,6 +243,7 @@ int revoke_kernel_context(Executor &executor, const void *arg) noexcept {
             {descriptor.arena_base, descriptor.arena_capacity},
             {descriptor.control_address, descriptor.control_bytes},
             {descriptor.reports_address, descriptor.reports_bytes},
+            {descriptor.admission_address, sizeof(TmrReplayAdmission)},
             {context.register_table, static_cast<uint64_t>(platform_get_physical_cores_count()) * sizeof(uint64_t)},
         }};
         for (const auto &region : protected_regions)
@@ -238,10 +253,10 @@ int revoke_kernel_context(Executor &executor, const void *arg) noexcept {
                 return -1;
         }
     } else {
-        if (descriptor.self_address != 0 || descriptor.context_generation != 0 || context.binding.resident != nullptr ||
-            context.binding.identity.device_binding_addr != 0 || context.binding.sm.base != nullptr ||
-            context.binding.arena.base != nullptr || context.handshake.control != nullptr ||
-            context.handshake.reports != nullptr || context.register_table != 0)
+        if (descriptor.self_address != 0 || descriptor.context_generation != 0 || descriptor.admission_address != 0 ||
+            context.binding.resident != nullptr || context.binding.identity.device_binding_addr != 0 ||
+            context.binding.sm.base != nullptr || context.binding.arena.base != nullptr ||
+            context.handshake.control != nullptr || context.handshake.reports != nullptr || context.register_table != 0)
             return -1;
         for (const auto &slot : executor.orch_so_table_)
             if (slot.kernel.device_address != 0 || slot.kernel.bytes != 0 || !slot.kernel.functions.empty()) return -1;
@@ -263,6 +278,52 @@ int revoke_kernel_context(Executor &executor, const void *arg) noexcept {
     return 0;
 }
 
+template <typename Executor>
+bool replay_context_matches(Executor &executor, const void *arg) noexcept {
+    if (!executor.kernel_context_ready_ || arg == nullptr) return false;
+    TmrContextRegistrationArgs request{};
+    std::memcpy(&request, arg, sizeof(request));
+    const auto &d = executor.kernel_context_.descriptor;
+    return request.descriptor_address == d.self_address && request.context_generation == d.context_generation;
+}
+
+template <typename Executor>
+int begin_prepared_replay(Executor &executor, const void *arg) noexcept {
+    if (!replay_context_matches(executor, arg)) return -1;
+    const auto &d = executor.kernel_context_.descriptor;
+    auto &state = replay_state(executor.kernel_context_);
+    const uint64_t epoch = begin_replay(state, [&]() noexcept {
+        if (!executor.kernel_gate_.idle() || executor.kernel_invocation_.active()) return false;
+        std::memset(reinterpret_cast<void *>(d.control_address), 0, d.control_bytes);
+        std::memset(reinterpret_cast<void *>(d.reports_address), 0, d.reports_bytes);
+        cache_flush_range(reinterpret_cast<void *>(d.control_address), d.control_bytes);
+        cache_flush_range(reinterpret_cast<void *>(d.reports_address), d.reports_bytes);
+        return true;
+    });
+    cache_flush_range(&state, sizeof(state));
+    if (epoch == 0) executor.kernel_gate_.poison();
+    return epoch == 0 ? -1 : 0;
+}
+
+template <typename Executor>
+int end_prepared_replay(Executor &executor, const void *arg) noexcept {
+    if (!replay_context_matches(executor, arg)) return -1;
+    auto &state = replay_state(executor.kernel_context_);
+    const auto &d = executor.kernel_context_.descriptor;
+    const auto *control = reinterpret_cast<const TmrLaunchControl *>(d.control_address);
+    const uint64_t epoch = current_replay(state);
+    const bool complete = executor.kernel_gate_.idle() && !executor.kernel_invocation_.active() &&
+                          __atomic_load_n(&control->completion, __ATOMIC_ACQUIRE) == 1 &&
+                          control->runtime_status == 0 && control->cleanup_status == 0 && control->round_epoch == epoch;
+    const bool ok = complete && end_replay(state, epoch);
+    if (!ok) {
+        poison_replay(state);
+        executor.kernel_gate_.poison();
+    }
+    cache_flush_range(&state, sizeof(state));
+    return ok ? 0 : -1;
+}
+
 // All native workers reach the same round, even on null or invalid framing.
 // CANN transports the full Host-adapter packet; no API exposes the physical
 // readable byte count here. The embedded packet_bytes is NOT such an API.
@@ -271,8 +332,18 @@ int dispatch_prepared_kernel_task(Executor &executor, void *arg, int32_t cpu) no
     if (!executor.kernel_context_ready_) return static_cast<int>(KernelDispatchStatus::UnsupportedPayload);
     const auto &context = executor.kernel_context_;
     KernelExecutionRequest request;
+    auto &replay = replay_state(context);
+    const uint64_t replay_epoch = current_replay(replay);
+    if (replay_epoch == 0) {
+        poison_replay(replay);
+        cache_flush_range(&replay, sizeof(replay));
+        executor.kernel_gate_.poison();
+        return static_cast<int>(KernelDispatchStatus::InvalidBinding);
+    }
     request.binding = context.binding;
     request.handshake = context.handshake;
+    request.handshake.epoch = replay_epoch;
+    request.replay_admission = &replay;
     request.allowed_cpus = context.allowed_cpus.data();
     request.execution_threads = context.descriptor.execution_threads;
     request.launched_threads = context.descriptor.launch_threads;
@@ -317,8 +388,10 @@ int dispatch_prepared_kernel_task(Executor &executor, void *arg, int32_t cpu) no
         }
     }
     KernelFinalStatus result;
-    const int status = execute_kernel_round_impl(executor, request, cpu, &result);
-    return classify_kernel_dispatch_status(status, result.cleanup_status);
+    const int status = executor.execute_prepared_kernel_round(request, cpu, &result);
+    if (status != 0 || result.cleanup_status != 0) poison_replay(replay);
+    cache_flush_range(&replay, sizeof(replay));
+    return classify_kernel_dispatch_status(current_replay(replay) == replay_epoch ? status : -1, result.cleanup_status);
 }
 
 }  // namespace simpler::tmr

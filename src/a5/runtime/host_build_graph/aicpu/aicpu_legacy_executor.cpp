@@ -377,7 +377,7 @@ int32_t LegacyAicpuExecutor::run(Runtime *runtime) {
     }
 
     // Always shutdown AICore — even if sched_ctx_.completed_ was already true.
-    // platform_deinit_aicore_regs is idempotent.
+    // Scheduler retirement claims prevent repeated EXIT/close after an emergency.
     int32_t shutdown_rc = sched_ctx_.shutdown(thread_idx);
     if (shutdown_rc != 0 && run_rc == 0) {
         run_rc = shutdown_rc;

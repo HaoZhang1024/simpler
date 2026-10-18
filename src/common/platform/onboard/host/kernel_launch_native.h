@@ -38,6 +38,11 @@ struct KernelNativeInvocation {
     aclrtLaunchKernelCfg *aicpu_config{nullptr};
     const KernelClearRegion *clear_regions{nullptr};
     size_t clear_region_count{0};
+    // Required device-executed admission/epilogue nodes. Host checks do not run
+    // on replay; this adapter must never issue an unconditional clear DMA.
+    void *replay_context{nullptr};
+    int (*begin_replay)(void *, void *stream) noexcept {nullptr};
+    int (*end_replay)(void *, void *stream) noexcept {nullptr};
 };
 
 KernelLaunchResult launch_bound_kernel_native(

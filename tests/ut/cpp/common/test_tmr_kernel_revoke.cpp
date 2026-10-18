@@ -90,6 +90,8 @@ protected:
         executor.orch_so_table_[2].handle = 47;
     }
 
+    TmrReplayAdmission admission{};
+
     void register_context() {
         executor.kernel_context_ready_ = true;
         auto &context = executor.kernel_context_;
@@ -107,6 +109,7 @@ protected:
         d.arena_capacity = 2048;
         d.arena_required = 1024;
         d.control_address = 0x700000;
+        d.admission_address = reinterpret_cast<uint64_t>(&admission);
         d.control_bytes = sizeof(TmrLaunchControl);
         d.reports_address = 0x800000;
         d.reports_bytes = 3 * sizeof(TmrCoreReport);
@@ -330,3 +333,15 @@ TEST_F(TmrKernelRevokeTest, HostReceiptValidationRequiresExactIdentityStatusAndC
     }
 }
 }  // namespace
+
+TEST_F(TmrKernelRevokeTest, ActiveReplayLeaseRejectsRevokeEvenWithIdleNativeGate) {
+    register_context();
+    admission.sequence = admission.ready_epoch = 1;
+    expect_rejected(args);
+}
+
+TEST_F(TmrKernelRevokeTest, StickyReplayFaultRejectsRevokeAndRetainsMetadata) {
+    register_context();
+    admission.fault = 1;
+    expect_rejected(args);
+}

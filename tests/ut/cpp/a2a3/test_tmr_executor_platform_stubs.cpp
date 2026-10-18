@@ -26,3 +26,9 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
     }
     return 0;
 }
+
+int32_t platform_retire_aicore_current_ack_group(
+    const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released
+) {
+    return platform_retire_aicore_group(targets, count, deadline, released);
+}

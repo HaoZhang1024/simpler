@@ -10,6 +10,7 @@
  */
 
 #include "orchestration_api.h"
+#include <chrono>
 
 namespace {
 OrchestrationConfig configure(const ChipTaskArgs &args, uint64_t id) {
@@ -42,4 +43,31 @@ extern "C" void orchestration_error(const ChipTaskArgs &args) {
     execute(args, 3);
     RuntimeContext *rt = current_runtime();
     rt->ops->report_fatal(rt, SIMPLER_ERROR_INVALID_ARGS, __FUNCTION__, "intentional executor failure");
+}
+
+extern "C" void orchestration_finite(const ChipTaskArgs &args) {
+    execute(args, 3);
+    auto *output = reinterpret_cast<uint64_t *>(args.tensor(0).ref().buffer.addr);
+    // Prove that the finite producer passed its only submission and returned;
+    // no core report or long-running orchestration keeps this round alive.
+    __atomic_store_n(&output[3], uint64_t{99}, __ATOMIC_RELEASE);
+}
+
+extern "C" void orchestration_cooperative(const ChipTaskArgs &args) {
+    auto *output = reinterpret_cast<uint64_t *>(args.tensor(0).ref().buffer.addr);
+    __atomic_store_n(&output[3], uint64_t{1}, __ATOMIC_RELEASE);
+    const auto until = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+    CoreTaskArgs empty;
+    while (!rt_is_fatal() && std::chrono::steady_clock::now() < until) {
+        // Legal bounded scopes avoid scope-capacity failure before startup
+        // expires; eventually the absent scheduler blocks slot allocation.
+        rt_scope_begin();
+        rt_submit_dummy_task(empty);
+        rt_scope_end();
+    }
+    output[4] = rt_is_fatal() ? 1 : 0;
+    // A further public API call must promptly retain the observed failure.
+    rt_submit_dummy_task(empty);
+    output[5] = rt_is_fatal() ? 1 : 0;
+    __atomic_store_n(&output[3], uint64_t{99}, __ATOMIC_RELEASE);
 }

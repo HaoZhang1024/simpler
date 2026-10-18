@@ -22,6 +22,7 @@
 #include <cstdint>
 
 #include "common/platform_config.h"
+#include "aicore_teardown.h"
 
 // AICore function attribute for CANN compiler
 #ifndef __aicore__
@@ -138,3 +139,26 @@ __aicore__ inline uint32_t get_physical_core_id() { return static_cast<uint32_t>
  * @return Hardware counter value (ticks)
  */
 __aicore__ __attribute__((always_inline)) inline uint64_t get_sys_cnt_aicore() { return get_sys_cnt(); }
+
+__aicore__ inline void initialize_aicore_exit_ack(__gm__ AicoreTeardownControl *control) {
+    control->exit_ack = 0;
+    dcci(&control->exit_ack, SINGLE_CACHE_LINE, CACHELINE_OUT);
+    dsb(DSB_DDR);
+}
+
+__aicore__ inline void acknowledge_aicore_exit_and_wait(__gm__ AicoreTeardownControl *control) {
+    dsb(DSB_DDR);
+    uint32_t published_request = 0;
+    while (true) {
+        const uint32_t request = static_cast<uint32_t>(ld_dev(&control->exit_request, 0));
+        if (request != 0 && request != published_request) {
+            control->exit_ack = request;
+            dcci(&control->exit_ack, SINGLE_CACHE_LINE, CACHELINE_OUT);
+            dsb(DSB_DDR);
+            published_request = request;
+        }
+        if (static_cast<uint32_t>(ld_dev(&control->post_close_release, 0)) == AICORE_POST_CLOSE_RELEASE) break;
+        SPIN_WAIT_HINT();
+    }
+    dsb(DSB_DDR);
+}

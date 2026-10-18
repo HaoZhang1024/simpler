@@ -980,6 +980,12 @@ int32_t SchedulerContext::resolve_and_dispatch(Runtime *runtime, int32_t thread_
     }
 
     while (true) {
+        // This fault is independent of the scheduler's normal completion flag.
+        // Check even while workers make progress, before another dispatch pass.
+        if (replay_admission_ != nullptr && __atomic_load_n(&replay_admission_->fault, __ATOMIC_ACQUIRE) != 0) {
+            (void)check_idle_fatal_error(thread_idx, header, runtime);
+            break;
+        }
         if (completed_.load(std::memory_order_acquire)) {
             break;
         }

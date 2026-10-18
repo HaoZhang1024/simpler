@@ -63,6 +63,7 @@ static TaskOutputTensors submit_dummy_task_impl(RuntimeContext *rt, const CoreTa
 }
 
 void rt_scope_begin(RuntimeContext *rt) {
+    if (rt->orchestrator.observe_fatal()) return;
     ScopeMode mode = rt->pending_scope_mode;
     rt->pending_scope_mode = ScopeMode::AUTO;
     rt->orchestrator.begin_scope(mode);
@@ -72,7 +73,7 @@ void rt_scope_end(RuntimeContext *rt) { rt->orchestrator.end_scope(); }
 
 void rt_orchestration_done(RuntimeContext *rt) { rt->orchestrator.mark_done(); }
 
-static bool is_fatal_impl(RuntimeContext *rt) { return rt->orchestrator.fatal; }
+static bool is_fatal_impl(RuntimeContext *rt) { return rt->orchestrator.observe_fatal(); }
 
 void rt_report_fatal(RuntimeContext *rt, int32_t error_code, const char *func, const char *fmt, ...) {
     va_list args;

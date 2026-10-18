@@ -10,6 +10,7 @@
  */
 
 #include "aicore/aicore.h"
+#include "aicore/kernel_replay_admission.h"
 #include "aicore/aicore_profiling_state.h"
 #include "aicore/chip_swimlane_collector_aicore.h"
 #include "aicore/pmu_collector_aicore.h"
@@ -49,6 +50,7 @@ __aicore__ __attribute__((always_inline)) static void execute_task(__gm__ Dispat
 using simpler::tmr::TmrCoreReport;
 using simpler::tmr::TmrKernelContextDescriptor;
 using simpler::tmr::TmrLaunchControl;
+using simpler::tmr::TmrReplayAdmission;
 
 __aicore__ static void execute_dispatch_loop(__gm__ Handshake *my_hank) {
     dcci(my_hank, SINGLE_CACHE_LINE);
@@ -205,8 +207,11 @@ __aicore__ static void execute_dispatch_loop(__gm__ Handshake *my_hank) {
     }
 }
 
-__aicore__ static void
-execute_worker(__gm__ Runtime *runtime, __gm__ Handshake *my_hank, int block_idx, CoreType core_type) {
+__aicore__ static void execute_worker(
+    __gm__ Runtime *runtime, __gm__ Handshake *my_hank, int block_idx, CoreType core_type, uint64_t epoch = 0
+) {
+    initialize_aicore_exit_ack(&runtime->dev.teardown_gates[block_idx]);
+    my_hank->report_epoch = epoch;
     my_hank->physical_core_id = get_physical_core_id();
     my_hank->core_type = core_type;
     OUT_OF_ORDER_STORE_BARRIER();
@@ -214,13 +219,20 @@ execute_worker(__gm__ Runtime *runtime, __gm__ Handshake *my_hank, int block_idx
     dcci(my_hank, SINGLE_CACHE_LINE, CACHELINE_OUT);
 
     // Each launch resets this SPR; the AICPU publishes task before opening it.
+    uint32_t cancel_polls = 0;
     while (read_reg(RegId::DATA_MAIN_BASE) == 0) {
+        // AICore can already be running when Host fails to enqueue AICPU.
+        // Cancellation is valid only before a register window has opened.
+        if ((cancel_polls++ & (AICORE_PRE_WINDOW_CANCEL_POLL_INTERVAL - 1)) == 0 &&
+            read_aicore_teardown_control(&runtime->dev.teardown_gates[block_idx].post_close_release) ==
+                AICORE_PRE_WINDOW_HOST_CANCEL)
+            return;
         SPIN_WAIT_HINT();
     }
     write_reg(RegId::COND, AICORE_IDLE_VALUE);
     execute_dispatch_loop(my_hank);
     dcci(my_hank, SINGLE_CACHE_LINE, CACHELINE_OUT);
-    (void)runtime;
+    acknowledge_aicore_exit_and_wait(&runtime->dev.teardown_gates[block_idx]);
 }
 
 __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type) {
@@ -236,5 +248,10 @@ __aicore__ __attribute__((weak)) void aicore_execute_kernel(
         context->reports_address % alignof(TmrCoreReport) != 0)
         return;
     auto *reports = reinterpret_cast<__gm__ Handshake *>(context->reports_address);
-    execute_worker(runtime, &reports[block_idx], block_idx, core_type);
+    // The persistent fault line is separate from all per-round clear regions.
+    if (context->admission_address == 0 || context->admission_address % alignof(TmrReplayAdmission) != 0) return;
+    auto *admission = reinterpret_cast<__gm__ TmrReplayAdmission *>(context->admission_address);
+    const uint64_t epoch = read_kernel_replay_epoch(admission);
+    if (epoch == 0) return;
+    execute_worker(runtime, &reports[block_idx], block_idx, core_type, epoch);
 }

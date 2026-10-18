@@ -10,8 +10,65 @@
  */
 
 #include "kernel_binder_test_support.h"
+#include <algorithm>
 
 namespace kernel_binder_test {
+namespace {
+int cancel_unpaired(void *context, void *) noexcept {
+    auto &fake = *static_cast<Fake *>(context);
+    ++fake.cancellations;
+    // Cancellation is queued while the owner still holds submission admission.
+    EXPECT_FALSE(fake.poisoned);
+    return fake.cancellation_error;
+}
+
+template <typename Ops>
+auto install_cancellation(Ops &ops, int) -> decltype(ops.cancel_unpaired_aicore = cancel_unpaired, void()) {
+    ops.cancel_unpaired_aicore = cancel_unpaired;
+}
+template <typename Ops>
+void install_cancellation(Ops &, long) {}
+}  // namespace
+
+TEST(KernelBinder, DefiniteUnpairedCoreReceivesCancellationWithoutClaimingCompletion) {
+    Fixture f;
+    f.initialize();
+    f.fake.fail_at = 7;  // AICore submitted; AICPU launch has not been called.
+    auto ops = f.fake.ops();
+    install_cancellation(ops, 0);
+    const auto result = launch_bound_kernel(f.binding, ptr(100), f.fake.gate(), ops);
+    EXPECT_EQ(result.status, -1707);
+    EXPECT_EQ(f.fake.cancellations, 1);
+    EXPECT_TRUE(f.fake.poisoned);
+    EXPECT_FALSE(result.tail_recorded);
+}
+
+TEST(KernelBinder, CancellationErrorPreservesTheOriginalEnqueueErrorAndPoison) {
+    Fixture f;
+    f.initialize();
+    f.fake.fail_at = 7;
+    f.fake.cancellation_error = -88;
+    auto ops = f.fake.ops();
+    install_cancellation(ops, 0);
+    const auto result = launch_bound_kernel(f.binding, ptr(100), f.fake.gate(), ops);
+    EXPECT_EQ(result.status, -1707);
+    EXPECT_EQ(result.cleanup_status, -88);
+    EXPECT_EQ(f.fake.cancellations, 1);
+    EXPECT_TRUE(f.fake.poisoned);
+}
+
+TEST(KernelBinder, UncertainCpuLaunchFailureCannotUsePreWindowCancellation) {
+    Fixture f;
+    f.initialize();
+    f.fake.fail_at = 8;  // AICPU API has been attempted: acceptance is unconfirmed.
+    auto ops = f.fake.ops();
+    install_cancellation(ops, 0);
+    const auto result = launch_bound_kernel(f.binding, ptr(100), f.fake.gate(), ops);
+    EXPECT_EQ(result.status, -1708);
+    EXPECT_EQ(f.fake.cancellations, 0);
+    EXPECT_TRUE(f.fake.poisoned);
+}
+
 TEST(KernelBinder, ThreeStreamSuccessAndSteadyStateHaveExactTrace) {
     Fixture f;
     ASSERT_NO_FATAL_FAILURE(f.initialize());
@@ -158,3 +215,23 @@ TEST(KernelBinder, ConcurrentHostLaunchIsRejectedWithoutTouchingArgs) {
     EXPECT_EQ(f.fake.finishes, 1);
 }
 }  // namespace kernel_binder_test
+
+TEST(KernelLaunchBinderReplay, EpilogueIsOrderedAfterBothNativeGroupsAndBeforeCallerCompletion) {
+    kernel_binder_test::Fixture f;
+    f.initialize();
+    auto ops = f.fake.ops();
+    ops.finish_replay = [](void *context, void *) noexcept {
+        return static_cast<kernel_binder_test::Fake *>(context)->append(
+            simpler::kernel_launch::KernelLaunchStep::FinishReplay
+        );
+    };
+    auto result =
+        simpler::kernel_launch::launch_bound_kernel(f.binding, kernel_binder_test::ptr(100), f.fake.gate(), ops);
+    ASSERT_EQ(result.status, 0);
+    const auto &trace = f.fake.trace;
+    auto join = std::find(trace.begin(), trace.end(), simpler::kernel_launch::KernelLaunchStep::JoinAicore);
+    auto finish = std::find(trace.begin(), trace.end(), simpler::kernel_launch::KernelLaunchStep::FinishReplay);
+    auto caller = std::find(trace.begin(), trace.end(), simpler::kernel_launch::KernelLaunchStep::AicpuDone);
+    EXPECT_LT(join, finish);
+    EXPECT_LT(finish, caller);
+}

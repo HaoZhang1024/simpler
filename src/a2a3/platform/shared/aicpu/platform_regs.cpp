@@ -83,7 +83,8 @@ void platform_close_aicore_window(uint64_t reg_addr) {
     (void)read_reg(reg_addr, RegId::FAST_PATH_ENABLE);
 }
 
-int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released) {
+template <bool CurrentAck>
+static int32_t retire_aicore_group(const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released) {
     // `released` is filled before anything can return, rejection included, so a
     // caller may read it without initializing the buffer. An over-large `count`
     // says nothing about how big that buffer is, so the fill stops at the one
@@ -98,6 +99,23 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
         if (targets[i].reg_addr == 0 || targets[i].teardown == nullptr) return -1;
     }
 
+    // Pick a nonzero request different from the ACK currently in memory. A
+    // retained EXITED and retained ACK cannot acknowledge this request. Only the
+    // exclusively-claimed caller writes the request; AICore owns the ACK line.
+    uint32_t exit_requests[PLATFORM_MAX_CORES];
+    if constexpr (CurrentAck) {
+        for (size_t i = 0; i < count; ++i) {
+            auto *control = targets[i].teardown;
+            cache_invalidate_range(&control->exit_ack, sizeof(control->exit_ack));
+            const uint32_t previous_ack = __atomic_load_n(&control->exit_ack, __ATOMIC_ACQUIRE);
+            const uint32_t request = previous_ack == UINT32_MAX ? 1U : previous_ack + 1U;
+            exit_requests[i] = request;
+            __atomic_store_n(&control->exit_request, request, __ATOMIC_RELAXED);
+        }
+        // The request is Normal memory and EXIT is posted Device memory. Publish
+        // every request before any core can observe the EXIT that asks for it.
+        wmb();
+    }
     // Broadcast to the whole group before waiting on any member, so the cores
     // drain concurrently and a dead core's wait does not serialize behind the
     // cores ahead of it.
@@ -120,7 +138,18 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
     while (remaining != 0) {
         for (size_t i = 0; i < count; ++i) {
             if (acknowledged[i]) continue;
-            if (read_reg(targets[i].reg_addr, RegId::COND) == AICORE_EXITED_VALUE) {
+            const uint32_t cond = static_cast<uint32_t>(read_reg(targets[i].reg_addr, RegId::COND));
+            if (cond != AICORE_EXITED_VALUE) continue;
+            if constexpr (CurrentAck) {
+                auto *control = targets[i].teardown;
+                // This line has no AICPU writer. Invalidation cannot write back a
+                // competing value, and its drain precedes the fresh ACK load.
+                cache_invalidate_range(&control->exit_ack, sizeof(control->exit_ack));
+                if (__atomic_load_n(&control->exit_ack, __ATOMIC_ACQUIRE) == exit_requests[i]) {
+                    acknowledged[i] = true;
+                    --remaining;
+                }
+            } else {
                 acknowledged[i] = true;
                 --remaining;
             }
@@ -160,6 +189,16 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
         if (released != nullptr) released[i] = acknowledged[i];
     }
     return rc;
+}
+
+int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released) {
+    return retire_aicore_group<false>(targets, count, deadline, released);
+}
+
+int32_t platform_retire_aicore_current_ack_group(
+    const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released
+) {
+    return retire_aicore_group<true>(targets, count, deadline, released);
 }
 
 uint32_t platform_get_physical_cores_count() {

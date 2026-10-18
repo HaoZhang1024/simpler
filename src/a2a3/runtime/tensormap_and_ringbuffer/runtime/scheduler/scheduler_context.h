@@ -53,7 +53,13 @@ struct RuntimeContext;
  */
 class SchedulerContext {
 public:
-    void bind_handshakes(Handshake *reports) { reports_ = reports; }
+    void bind_handshakes(
+        Handshake *reports, uint64_t epoch = 0, const simpler::tmr::TmrReplayAdmission *admission = nullptr
+    ) {
+        reports_ = reports;
+        report_epoch_ = epoch;
+        replay_admission_ = admission;
+    }
     bool initialization_aborted() const { return initialization_aborted_.load(std::memory_order_acquire); }
     // =========================================================================
     // Lifecycle
@@ -74,7 +80,7 @@ public:
     pre_handshake_init(Runtime *runtime, int32_t aicpu_thread_num, int32_t sched_thread_num, uint64_t regs_base);
     int32_t pre_handshake_init(
         Runtime *runtime, int32_t aicpu_thread_num, int32_t sched_thread_num, uint64_t regs_base,
-        simpler::tmr::CallableTableView functions, void *sm
+        simpler::tmr::CallableTableView functions, void *sm, uint64_t startup_start = 0
     );
     // All threads: handshake this thread's contiguous slice [lo, hi) of cores
     // (partitioned by tidx/nthreads). Each core is touched by exactly one thread.
@@ -92,11 +98,16 @@ public:
     // Latch completion + shutdown cores on a handshake failure seen without the
     // barrier (non-DFX path). Idempotent.
     void abort_and_shutdown(Runtime *runtime);
+    // Publish READY only after this initializer stops mutating core metadata.
+    // A retained early REQUESTED transfers retirement to this publisher.
+    void publish_all_retirement_cores(Runtime *runtime);
+    void publish_retirement_group(Runtime *runtime, int32_t owner_thread);
     // Leader-only profiling-subsystem init (DFX builds); called behind a barrier
     // in the barrier-free path since pmu_aicpu_init needs all physical_core_ids_.
     void post_handshake_profiling_init();
     bool requires_profiling_init_barrier() const;
     bool handshake_failed() const { return handshake_failed_.load(std::memory_order_acquire); }
+    bool startup_timed_out() const { return startup_timed_out_.load(std::memory_order_acquire); }
     // Leader-only, after the handshake barrier: build worker-id lists, assign
     // cores, init profiling subsystems, read task counts, init payloads.
     int32_t post_handshake_init(Runtime *runtime);
@@ -149,7 +160,14 @@ public:
 
 private:
     Handshake *reports_{nullptr};
+    uint64_t report_epoch_{0};
+    const simpler::tmr::TmrReplayAdmission *replay_admission_{nullptr};
     std::atomic<bool> initialization_aborted_{false};
+    std::atomic<uint64_t> startup_wait_start_{0};
+    std::atomic<uint64_t> startup_wait_ticks_{0};
+    std::atomic<bool> startup_timed_out_{false};
+    void *startup_sm_{nullptr};
+    bool check_startup_timeout(Runtime *runtime, int32_t thread_idx);
     // =========================================================================
     // State
     // =========================================================================
@@ -192,10 +210,13 @@ private:
     std::atomic<bool> orchestrator_done_{false};
     std::atomic<bool> completed_{false};
     std::atomic<bool> fatal_shutdown_started_{false};
-    // Per-core retirement claim. The winner owns that core's register window
-    // and return gate for the rest of the run; every other path leaves both
-    // alone. Indexed by core id, reset in pre_handshake_init.
-    std::atomic<bool> core_retired_[PLATFORM_MAX_CORES];
+    // OPENING and CANCELLED are exclusive claims. READY publishes stable
+    // metadata; the second READY/REQUESTED owner retires an open core.
+    static constexpr uint8_t RETIREMENT_READY = 1;
+    static constexpr uint8_t RETIREMENT_REQUESTED = 2;
+    static constexpr uint8_t RETIREMENT_OPENING = 4;
+    static constexpr uint8_t RETIREMENT_CANCELLED = 8;
+    uint8_t retirement_state_[PLATFORM_MAX_CORES]{};
     simpler::tmr::CallableTableView functions_{};
 
     // --- Thread/core configuration ---
@@ -243,7 +264,10 @@ private:
     void signal_emergency_shutdown(Runtime *runtime);
     // Claim and retire the named cores. Cores already claimed elsewhere are
     // skipped, so callers may name overlapping sets.
+    bool claim_core_opening(int32_t core_id);
     int32_t retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
+    int32_t retire_claimed_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
+    void publish_retirement_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
     int32_t retire_all_cores(Runtime *runtime);
     void emergency_shutdown(Runtime *runtime);
 

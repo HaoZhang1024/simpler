@@ -50,6 +50,36 @@ __aicore__ inline uint32_t read_aicore_teardown_control(__gm__ uint32_t *control
 
 // EXITED acknowledges quiescence, not permission to return. The AICPU owns
 // this isolated line; bypass reads must not allocate a cached handshake copy.
+// Initialize only this core's ACK line, and complete the reset before its
+// report can make the core a retirement target. Zero never matches a request.
+__aicore__ inline void initialize_aicore_exit_ack(__gm__ AicoreTeardownControl *control) {
+    control->exit_ack = 0;
+    dcci(&control->exit_ack, SINGLE_CACHE_LINE, CACHELINE_OUT);
+    dsb(DSB_DDR);
+}
+
+// COND alone can retain EXITED from an earlier launch. Echo the AICPU's request
+// after all this core's writes have drained, then wait for its post-close gate.
+// A5 may broadcast EXIT before a partition publishes its request; keep observing
+// the request while parked so that ordering still makes progress.
+__aicore__ inline void acknowledge_aicore_exit_and_wait(__gm__ AicoreTeardownControl *control) {
+    dsb(DSB_DDR);
+    uint32_t published_request = 0;
+    while (true) {
+        const uint32_t request = static_cast<uint32_t>(ld_dev(&control->exit_request, 0));
+        if (request != 0 && request != published_request) {
+            control->exit_ack = request;
+            dcci(&control->exit_ack, SINGLE_CACHE_LINE, CACHELINE_OUT);
+            dsb(DSB_DDR);
+            published_request = request;
+        }
+        if (static_cast<uint32_t>(ld_dev(&control->post_close_release, 0)) == AICORE_POST_CLOSE_RELEASE) break;
+        SPIN_WAIT_HINT();
+    }
+    dsb(DSB_DDR);
+}
+
+// The AICPU owns the release line; bypass reads do not allocate a cached copy.
 __aicore__ inline void wait_for_post_close_release(__gm__ uint32_t *release) {
     while (static_cast<uint32_t>(ld_dev(release, 0)) != AICORE_POST_CLOSE_RELEASE) {
         SPIN_WAIT_HINT();

@@ -813,7 +813,7 @@ static void scope_tasks_push(OrchestratorState *orch, ChipTaskSlotState *task_sl
 
 void OrchestratorState::begin_scope(ScopeMode mode) {
     auto *orch = this;
-    if (orch->fatal) {
+    if (orch->observe_fatal()) {
         return;
     }
     assert(orch->scope_stack_top < static_cast<int32_t>(orch->scope_stack_capacity - 1) && "Scope stack overflow");
@@ -852,7 +852,7 @@ void OrchestratorState::begin_scope(ScopeMode mode) {
 
 void OrchestratorState::end_scope() {
     auto *orch = this;
-    if (orch->fatal) {
+    if (orch->observe_fatal()) {
         return;
     }
     assert(orch->scope_stack_top >= 0 && "Scope stack underflow");
@@ -1300,7 +1300,7 @@ TaskOutputTensors OrchestratorState::submit_task(const MixedKernels &mixed_kerne
 
     // Orchestration API should short-circuit after fatal, but keep this entry
     // robust as a no-op in case a caller reaches it directly.
-    if (orch->fatal) {
+    if (orch->observe_fatal()) {
         return TaskOutputTensors{};
     }
 
@@ -1378,7 +1378,7 @@ TaskOutputTensors OrchestratorState::submit_task(const MixedKernels &mixed_kerne
 TaskOutputTensors OrchestratorState::submit_dummy_task(const CoreTaskArgs &args) {
     auto *orch = this;
 
-    if (orch->fatal) {
+    if (orch->observe_fatal()) {
         return TaskOutputTensors{};
     }
 
@@ -1409,7 +1409,7 @@ TaskOutputTensors OrchestratorState::alloc_tensors(const CoreTaskArgs &args) {
     auto *orch = this;
     // Orchestration API should short-circuit after fatal, but keep this entry
     // robust as a no-op in case a caller reaches it directly.
-    if (orch->fatal) {
+    if (orch->observe_fatal()) {
         return TaskOutputTensors{};
     }
 

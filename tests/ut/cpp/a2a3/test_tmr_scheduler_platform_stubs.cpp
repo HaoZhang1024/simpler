@@ -11,4 +11,16 @@
 
 #include "aicpu/platform_regs.h"
 
-int32_t platform_retire_aicore_group(const AicoreExitTarget *, size_t, uint64_t, bool *) { return 0; }
+int32_t platform_retire_aicore_group(const AicoreExitTarget *, size_t count, uint64_t, bool *released) {
+    if (released != nullptr) {
+        for (size_t i = 0; i < count; ++i)
+            released[i] = true;
+    }
+    return 0;
+}
+
+int32_t platform_retire_aicore_current_ack_group(
+    const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released
+) {
+    return platform_retire_aicore_group(targets, count, deadline, released);
+}

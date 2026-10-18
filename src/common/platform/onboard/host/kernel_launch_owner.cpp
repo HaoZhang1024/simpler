@@ -94,6 +94,8 @@ int DeviceRunnerBase::launch_kernel_callable(
             s.runner->kernel_previous_caller_ = reinterpret_cast<uintptr_t>(s.caller);
         } else if (result.enqueue_started) {
             s.runner->kernel_exec_state_.poison(result.status);
+            if (result.cleanup_status != 0)
+                LOG_ERROR("Kernel unpaired AICore cancellation could not be queued: %d", result.cleanup_status);
         }
     };
     gate.query_tail = [](void *, void *event, bool *complete) noexcept {
@@ -112,12 +114,9 @@ int DeviceRunnerBase::launch_kernel_callable(
     };
     ops.memset_handshake = [](void *context, void *stream) noexcept {
         const auto &s = *static_cast<Submission *>(context);
-        for (const auto &region : s.clear.regions) {
-            const int result =
-                aclrtMemsetAsync(reinterpret_cast<void *>(region.address), region.bytes, 0, region.bytes, stream);
-            if (result != 0) return result;
-        }
-        return 0;
+        const auto &d = s.runner->kernel_descriptor_;
+        simpler::tmr::TmrContextRegistrationArgs args{d.self_address, d.context_generation};
+        return s.runner->launch_aicpu_payload(stream, &args, sizeof(args), "simpler_aicpu_begin_tmr_replay", 1);
     };
     ops.launch_aicore = [](void *context, void *stream) noexcept {
         auto &r = *static_cast<Submission *>(context)->runner;
@@ -140,6 +139,30 @@ int DeviceRunnerBase::launch_kernel_callable(
         return rtsLaunchCpuKernel(
             s.runner->kernel_aicpu_handle_, s.runner->kernel_runtime_.get_aicpu_launch_count(), stream, &config, &native
         );
+    };
+    ops.finish_replay = [](void *context, void *stream) noexcept -> int {
+        auto &r = *static_cast<Submission *>(context)->runner;
+        const auto &d = r.kernel_descriptor_;
+        simpler::tmr::TmrContextRegistrationArgs args{d.self_address, d.context_generation};
+        return r.launch_aicpu_payload(stream, &args, sizeof(args), "simpler_aicpu_end_tmr_replay", 1);
+    };
+    ops.cancel_unpaired_aicore = [](void *context, void *stream) noexcept -> int {
+        auto &r = *static_cast<Submission *>(context)->runner;
+        // Address arithmetic uses the host mirror's compatible Runtime layout;
+        // no device pointer is dereferenced on Host. Only the cancellation word
+        // is written, leaving the AICore-owned ACK cache line untouched.
+        const auto *host_runtime = reinterpret_cast<const uint8_t *>(&r.kernel_runtime_);
+        const auto *host_gates = reinterpret_cast<const uint8_t *>(r.kernel_runtime_.get_teardown_gates());
+        const size_t offset = static_cast<size_t>(host_gates - host_runtime);
+        auto *device_gates = reinterpret_cast<uint8_t *>(r.persistent_args_.args().runtime_args) + offset;
+        for (int32_t i = 0; i < r.worker_count_; ++i) {
+            const int rc = aclrtMemsetAsync(
+                device_gates + static_cast<size_t>(i) * sizeof(AicoreTeardownControl), sizeof(uint32_t), 0xff,
+                sizeof(uint32_t), stream
+            );
+            if (rc != 0) return rc;
+        }
+        return 0;
     };
     return kl::launch_bound_kernel({submission.packet, submission.bytes, nullptr, 0}, caller_stream, gate, ops).status;
 }

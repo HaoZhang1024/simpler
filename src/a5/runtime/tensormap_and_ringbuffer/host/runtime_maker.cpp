@@ -1111,6 +1111,8 @@ extern "C" const char *const *runtime_extra_aicpu_symbols(size_t *count) {
         "simpler_aicpu_query_topology",
         "simpler_aicpu_kernel_exec",
         "simpler_aicpu_prepare_tmr_context",
+        "simpler_aicpu_begin_tmr_replay",
+        "simpler_aicpu_end_tmr_replay",
         "simpler_aicpu_register_tmr_kernel_callable",
         "simpler_aicpu_revoke_tmr_context"
     };

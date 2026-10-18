@@ -27,6 +27,7 @@ using namespace simpler::tmr;
 struct alignas(DeviceArena::kDefaultBaseAlign) ArenaStorage {
     std::array<uint8_t, sizeof(RuntimeContext)> image{};
     TmrLaunchControl control{};
+    TmrReplayAdmission admission{};
     std::array<TmrCoreReport, 3> reports{};
     TmrKernelContextDescriptor descriptor{};
 };
@@ -78,6 +79,7 @@ protected:
         d.arena_capacity = sizeof(arena);
         d.arena_required = sizeof(arena.image);
         d.control_address = reinterpret_cast<uint64_t>(&arena.control);
+        d.admission_address = reinterpret_cast<uint64_t>(&arena.admission);
         d.control_bytes = sizeof(arena.control);
         d.reports_address = reinterpret_cast<uint64_t>(arena.reports.data());
         d.reports_bytes = sizeof(arena.reports);
@@ -127,9 +129,11 @@ TEST_F(TmrKernelPreparedContextTest, AcceptsIndependentSnapshotsAndSeparatelyAll
     auto mirror = std::make_unique<Runtime>(*resident);
     TmrKernelContextDescriptor descriptor = arena.descriptor;
     TmrLaunchControl control{};
+    TmrReplayAdmission admission{};
     std::array<TmrCoreReport, 3> reports{};
     descriptor.self_address = reinterpret_cast<uint64_t>(&descriptor);
     descriptor.control_address = reinterpret_cast<uint64_t>(&control);
+    descriptor.admission_address = reinterpret_cast<uint64_t>(&admission);
     descriptor.reports_address = reinterpret_cast<uint64_t>(reports.data());
     auto r = registration;
     r.descriptor_address = descriptor.self_address;
@@ -289,7 +293,7 @@ TEST_F(TmrKernelPreparedContextTest, RejectsInvalidStaticAndClearSpansWithoutDer
     for (auto field :
          {&TmrKernelContextDescriptor::self_address, &TmrKernelContextDescriptor::resident_runtime,
           &TmrKernelContextDescriptor::resident_kernel_args, &TmrKernelContextDescriptor::control_address,
-          &TmrKernelContextDescriptor::reports_address}) {
+          &TmrKernelContextDescriptor::reports_address, &TmrKernelContextDescriptor::admission_address}) {
         for (uint64_t address :
              {uint64_t{0}, (arena.descriptor.*field) + 1, std::numeric_limits<uint64_t>::max() - 63}) {
             auto d = arena.descriptor;

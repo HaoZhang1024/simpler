@@ -49,11 +49,19 @@ private:
     };
 
     AicpuThreadLifecycleTrace *thread_lifecycle_trace(int32_t thread_idx);
+    uint64_t shutdown_deadline();
+    int32_t retire_partition(int32_t thread_idx, int32_t *closed_core_ids, int32_t &closed_count);
 
     CoreState cores_[kMaxWorkers]{};
     uint32_t physical_core_ids_[kMaxWorkers]{};
     ThreadHandshakeTiming thread_handshake_timing_[PLATFORM_MAX_AICPU_THREADS]{};
     std::atomic<bool> handshake_failed_{false};
+    std::atomic<bool> pmu_initialized_{false};
+    // Each current-invocation report owns one EXIT and one join attempt. A
+    // failed join remains claimed until a new lifecycle is initialized.
+    enum : uint8_t { Unclaimed, Signaling, Signaled, Joining };
+    std::atomic<uint8_t> shutdown_states_[kMaxWorkers]{};
+    std::atomic<uint64_t> shutdown_deadline_{0};
     AicpuThreadLifecycleTrace *lifecycle_traces_{nullptr};
     int32_t core_count_{0};
     int32_t aicpu_thread_num_{0};

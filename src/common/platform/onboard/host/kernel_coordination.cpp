@@ -25,6 +25,7 @@ struct alignas(64) CoordinationImage {
     TmrLaunchControl control;
     TmrKernelAicoreArgs core;
     TmrContextRevokeReceipt receipt;
+    TmrReplayAdmission admission;
 };
 static_assert(sizeof(CoordinationImage) % alignof(TmrCoreReport) == 0);
 }  // namespace
@@ -63,6 +64,7 @@ int DeviceRunnerBase::prepare_kernel_coordination() {
     d.runtime_offset = kernel_runtime_.get_prebuilt_runtime_offset();
     d.control_address = base + offsetof(CoordinationImage, control);
     d.control_bytes = sizeof(TmrLaunchControl);
+    d.admission_address = base + offsetof(CoordinationImage, admission);
     d.reports_address = base + sizeof(CoordinationImage);
     d.reports_bytes = report_bytes;
     d.launch_threads = kernel_runtime_.get_aicpu_launch_count();

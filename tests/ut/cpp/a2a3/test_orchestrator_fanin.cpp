@@ -12,12 +12,14 @@
 #include <gtest/gtest.h>
 
 #include <cstdint>
+#include <cstring>
 #include <limits>
 #include <string>
 #include <vector>
 
 #include "utils/device_arena.h"
 #include "orchestrator.h"
+#include "runtime_core.h"
 #include "shared_memory.h"
 #include "tensormap_and_ringbuffer/task_id.h"
 
@@ -52,6 +54,42 @@ protected:
         ASSERT_TRUE(sched.init_data_from_layout(sched_layout, runtime_arena, sm_handle->sm_base));
         sched.wire_arena_pointers(sched_layout, runtime_arena);
         orch.wire_arena_pointers(orch_layout, runtime_arena, &sched);
+    }
+
+    void expect_external_error_before_writes(int operation) {
+        orch.begin_scope();
+        ASSERT_FALSE(orch.fatal);
+        sm_handle->header->orch_error_code.store(SIMPLER_ERROR_EXPLICIT_ORCH_FATAL, std::memory_order_release);
+        const auto *sm = static_cast<const uint8_t *>(sm_handle->sm_base);
+        const auto *arena = static_cast<const uint8_t *>(runtime_arena.base());
+        const std::vector<uint8_t> before_sm(sm, sm + sm_handle->sm_size);
+        const std::vector<uint8_t> before_arena(arena, arena + runtime_arena.total_size());
+        const auto before_heap = gm_heap;
+        const auto before_seq = orch.submit_seq;
+        const auto before_scope = orch.scope_stack_top;
+        const auto before_tasks = orch.scope_tasks_size;
+        CoreTaskArgs args;
+        uint32_t shape[] = {4};
+        TensorCreateInfo output(shape, 1, DataType::FLOAT32);
+        if (operation == 2) args.add_output(output);
+        TaskOutputTensors result;
+        if (operation == 0) {
+            MixedKernels kernels;
+            kernels.aiv0_kernel_id = 0;
+            result = orch.submit_task(kernels, args);
+        } else if (operation == 1) result = orch.submit_dummy_task(args);
+        else if (operation == 2) result = orch.alloc_tensors(args);
+        else if (operation == 3) orch.begin_scope();
+        else orch.end_scope();
+        EXPECT_FALSE(result.task_id().is_valid());
+        EXPECT_TRUE(orch.fatal);
+        EXPECT_EQ(sm_handle->header->orch_error_code.load(), SIMPLER_ERROR_EXPLICIT_ORCH_FATAL);
+        EXPECT_EQ(orch.submit_seq, before_seq);
+        EXPECT_EQ(orch.scope_stack_top, before_scope);
+        EXPECT_EQ(orch.scope_tasks_size, before_tasks);
+        EXPECT_EQ(std::memcmp(before_sm.data(), sm, before_sm.size()), 0);
+        EXPECT_EQ(std::memcmp(before_arena.data(), arena, before_arena.size()), 0);
+        EXPECT_EQ(gm_heap, before_heap);
     }
 
     void TearDown() override {
@@ -1032,4 +1070,54 @@ TEST(OrchestratorLayoutScopeTasksCap, FollowsRuntimeWindowSum) {
         windows[r] = big;
     EXPECT_EQ(cap_for(windows), big * CHIP_MAX_RING_DEPTH);
     EXPECT_GT(cap_for(windows), CHIP_SCOPE_TASKS_CAP);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorRejectsFirstSubmitBeforeSharedWrites) {
+    expect_external_error_before_writes(0);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorRejectsFirstDummyBeforeSharedWrites) {
+    expect_external_error_before_writes(1);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorRejectsFirstAllocBeforeSharedWrites) {
+    expect_external_error_before_writes(2);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorRejectsFirstBeginScopeBeforeSharedWrites) {
+    expect_external_error_before_writes(3);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorRejectsFirstEndScopeBeforeSharedWrites) {
+    expect_external_error_before_writes(4);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorHealthyControlAllowsFirstSubmit) {
+    orch.begin_scope();
+    CoreTaskArgs args;
+    EXPECT_TRUE(orch.submit_dummy_task(args).task_id().is_valid());
+    MixedKernels kernels;
+    kernels.aiv0_kernel_id = 0;
+    EXPECT_TRUE(orch.submit_task(kernels, args).task_id().is_valid());
+    EXPECT_FALSE(orch.fatal);
+    EXPECT_EQ(sm_handle->header->orch_error_code.load(), SIMPLER_ERROR_NONE);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorIsFatalCallbackConsumesOwnerError) {
+    RuntimeContext runtime{};
+    runtime.orchestrator.sm_header = sm_handle->header;
+    runtime_finalize_after_wire(&runtime, 0, 0);
+    ASSERT_FALSE(runtime.ops->is_fatal(&runtime));
+    sm_handle->header->orch_error_code.store(SIMPLER_ERROR_EXPLICIT_ORCH_FATAL, std::memory_order_release);
+    EXPECT_TRUE(runtime.ops->is_fatal(&runtime));
+    EXPECT_TRUE(runtime.orchestrator.fatal);
+    EXPECT_EQ(sm_handle->header->orch_error_code.load(), SIMPLER_ERROR_EXPLICIT_ORCH_FATAL);
+}
+
+TEST_F(OrchestratorFaninTest, ExternalErrorScopeWrapperPreservesPendingMode) {
+    RuntimeContext runtime{};
+    runtime.orchestrator.fatal = true;
+    runtime.pending_scope_mode = ScopeMode::MANUAL;
+    rt_scope_begin(&runtime);
+    EXPECT_EQ(runtime.pending_scope_mode, ScopeMode::MANUAL);
 }

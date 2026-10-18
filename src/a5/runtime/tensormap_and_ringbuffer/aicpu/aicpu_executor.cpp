@@ -143,6 +143,89 @@ struct AicpuExecutor {
     std::atomic<bool> hs_setup_done_{false};
     std::atomic<int32_t> hs_arrived_{0};
     std::atomic<int32_t> hs_thread_seq_{0};
+    // One shared budget covers the short initialization rendezvous. A failed
+    // wait never publishes READY or resets another initializer's metadata.
+    std::atomic<uint64_t> init_wait_start_{0};
+    const simpler::tmr::TmrReplayAdmission *kernel_wait_admission_{nullptr};
+
+    struct SoftwareWaitContext {
+        AicpuExecutor *executor;
+        void *sm;
+        const simpler::tmr::TmrReplayAdmission *admission;
+    };
+
+    simpler::tmr::KernelWaitControl software_wait_control(SoftwareWaitContext &context) noexcept {
+        simpler::tmr::KernelWaitControl wait;
+        wait.context = &context;
+        wait.clock = []() noexcept {
+            return get_sys_cnt_aicpu();
+        };
+        const int32_t configured = get_scheduler_timeout_ms();
+        wait.timeout_ticks = simpler::tmr::kernel_wait_timeout_ticks(
+            configured, PLATFORM_SCHEDULER_TIMEOUT_MS, PLATFORM_PROF_SYS_CNT_FREQ
+        );
+        wait.keep_waiting = [](void *opaque) noexcept {
+            const auto &c = *static_cast<SoftwareWaitContext *>(opaque);
+            return c.admission == nullptr || __atomic_load_n(&c.admission->fault, __ATOMIC_ACQUIRE) == 0;
+        };
+        wait.on_abort = [](void *opaque) noexcept {
+            const auto &c = *static_cast<SoftwareWaitContext *>(opaque);
+            const int32_t abort_error =
+                c.admission != nullptr && __atomic_load_n(&c.admission->fault, __ATOMIC_ACQUIRE) != 0 ?
+                    SIMPLER_ERROR_INVALID_ARGS :
+                    SIMPLER_ERROR_SCHEDULER_TIMEOUT;
+            // SM and admission come from the trusted prepared context. Do not
+            // inspect scheduler core metadata before its owner publishes READY.
+            if (c.sm != nullptr) {
+                auto *header = static_cast<SharedMemoryHeader *>(c.sm);
+                int32_t expected = SIMPLER_ERROR_NONE;
+                header->sched_error_code.compare_exchange_strong(expected, abort_error, std::memory_order_acq_rel);
+                const int32_t error = header->sched_error_code.load(std::memory_order_acquire);
+                expected = SIMPLER_ERROR_NONE;
+                header->orch_error_code.compare_exchange_strong(expected, error, std::memory_order_acq_rel);
+            }
+            c.executor->init_failed_.store(true, std::memory_order_release);
+            int32_t expected = 0;
+            const int32_t runtime_status = read_runtime_status(c.sm);
+            c.executor->execution_error_.compare_exchange_strong(
+                expected, runtime_status != 0 ? runtime_status : -abort_error, std::memory_order_acq_rel
+            );
+            if (c.admission != nullptr) {
+                auto *admission = const_cast<simpler::tmr::TmrReplayAdmission *>(c.admission);
+                simpler::tmr::poison_replay(*admission);
+                cache_flush_range(admission, sizeof(*admission));
+                c.executor->kernel_gate_.poison();
+            }
+        };
+        return wait;
+    }
+
+    int32_t execute_prepared_kernel_round(
+        const simpler::tmr::KernelExecutionRequest &request, int32_t cpu, simpler::tmr::KernelFinalStatus *out = nullptr
+    ) noexcept {
+        // Both packet/native dispatch and the direct provider enter here.
+        // The synchronous callbacks never escape this request's lifetime.
+        SoftwareWaitContext context{this, request.binding.sm.base, request.replay_admission};
+        auto bounded = request;
+        bounded.wait_control = software_wait_control(context);
+        return simpler::tmr::execute_kernel_round_impl(*this, bounded, cpu, out);
+    }
+
+    template <typename Ready>
+    bool wait_initialization(Ready ready, void *sm) noexcept {
+        SoftwareWaitContext context{this, sm, kernel_wait_admission_};
+        const auto wait = software_wait_control(context);
+        const uint64_t local_start = wait.now();
+        while (!ready()) {
+            const uint64_t published = init_wait_start_.load(std::memory_order_acquire);
+            if (!wait.poll(published != 0 ? published : local_start)) {
+                wait.on_abort(wait.context);
+                return false;
+            }
+            SPIN_WAIT_HINT();
+        }
+        return true;
+    }
 
     int32_t aicpu_thread_num_{0};
 
@@ -275,7 +358,13 @@ int32_t AicpuExecutor::init(Runtime *runtime, const ExecutionInputs &inputs) {
     if (is_leader && !hs_setup_done_.load(std::memory_order_acquire)) {
         if (prepare_execution(runtime, inputs) != 0) return -1;
     } else {
-        while (!hs_setup_done_.load(std::memory_order_acquire)) {}
+        if (!wait_initialization(
+                [&] {
+                    return hs_setup_done_.load(std::memory_order_acquire);
+                },
+                inputs.sm
+            ))
+            return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
         if (init_done_.load(std::memory_order_acquire) && init_failed_.load(std::memory_order_acquire)) return -1;
     }
 
@@ -303,6 +392,9 @@ int32_t AicpuExecutor::init(Runtime *runtime, const ExecutionInputs &inputs) {
         sched_ctx_.handshake_owned_clusters(runtime, tidx, hs_nthreads);
         if (!sched_ctx_.handshake_failed() && !sched_ctx_.initialization_aborted())
             sched_ctx_.assign_own_clusters(tidx);
+        // Even cancellation/assignment failure must publish every late-opened
+        // window once this initializer stops changing its metadata.
+        sched_ctx_.publish_retirement_group(runtime, tidx);
     } else {
         sched_ctx_.handshake_partition(runtime, tidx, hs_nthreads);
     }
@@ -311,6 +403,7 @@ int32_t AicpuExecutor::init(Runtime *runtime, const ExecutionInputs &inputs) {
         sched_ctx_.abort_and_shutdown(runtime);
     }
     const auto initialization_status = [&] {
+        if (sched_ctx_.startup_timed_out()) return int32_t{-SIMPLER_ERROR_SCHEDULER_TIMEOUT};
         if (init_failed_.load(std::memory_order_acquire)) return int32_t{-1};
         if (!sched_ctx_.initialization_aborted()) return int32_t{0};
         const int32_t error = read_runtime_status(inputs.sm);
@@ -321,25 +414,44 @@ int32_t AicpuExecutor::init(Runtime *runtime, const ExecutionInputs &inputs) {
     if (decouple_orch && !sched_ctx_.requires_profiling_init_barrier()) return initialization_status();
     hs_arrived_.fetch_add(1, std::memory_order_acq_rel);
     if (is_leader) {
-        while (hs_arrived_.load(std::memory_order_acquire) < hs_nthreads) {}
+        if (!wait_initialization(
+                [&] {
+                    return hs_arrived_.load(std::memory_order_acquire) >= hs_nthreads;
+                },
+                inputs.sm
+            ))
+            return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
         if (initialization_status() == 0) {
             if (decouple_orch) sched_ctx_.post_handshake_profiling_init();
-            else if (sched_ctx_.post_handshake_init(runtime, inputs.functions) != 0)
-                init_failed_.store(true, std::memory_order_release);
+            else {
+                if (sched_ctx_.post_handshake_init(runtime, inputs.functions) != 0)
+                    init_failed_.store(true, std::memory_order_release);
+            }
         }
+        // Every serial initializer has arrived. Publish late-opened windows
+        // even when a fatal error made profiling/assignment inapplicable.
+        if (!decouple_orch) sched_ctx_.publish_all_retirement_cores(runtime);
         init_done_.store(true, std::memory_order_release);
     } else {
-        while (!init_done_.load(std::memory_order_acquire)) {}
+        if (!wait_initialization(
+                [&] {
+                    return init_done_.load(std::memory_order_acquire);
+                },
+                inputs.sm
+            ))
+            return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
     }
     return initialization_status();
 }
 
 int32_t AicpuExecutor::prepare_execution(Runtime *runtime, const ExecutionInputs &inputs) {
+    init_wait_start_.store(get_sys_cnt_aicpu(), std::memory_order_release);
     aicpu_thread_num_ = runtime->dev.aicpu_thread_num == 0 ? 1 : runtime->dev.aicpu_thread_num;
     sched_thread_num_ = aicpu_thread_num_ - 1;
     serial_orch_sched_ = runtime->dev.serial_orch_sched;
     const int32_t status = sched_ctx_.pre_handshake_init(
-        runtime, aicpu_thread_num_, sched_thread_num_, get_platform_regs(), inputs.functions, inputs.sm
+        runtime, aicpu_thread_num_, sched_thread_num_, get_platform_regs(), inputs.functions, inputs.sm,
+        init_wait_start_.load(std::memory_order_acquire)
     );
     if (status != 0) {
         init_failed_.store(true, std::memory_order_release);
@@ -370,11 +482,17 @@ AicpuExecutor::execute(Runtime *runtime, const ExecutionInputs &inputs, const si
         int32_t expected = 0;
         execution_error_.compare_exchange_strong(expected, status, std::memory_order_acq_rel);
         if (index == aicpu_thread_num_ - 1) runtime_init_ready_.store(true, std::memory_order_release);
-        while (!runtime_init_ready_.load(std::memory_order_acquire)) {}
+        if (!wait_initialization(
+                [&] {
+                    return runtime_init_ready_.load(std::memory_order_acquire);
+                },
+                inputs.sm
+            ))
+            return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
         sched_ctx_.abort_and_shutdown(runtime);
     }
     if (index >= 0 && index < aicpu_thread_num_) {
-        const int32_t shutdown = sched_ctx_.shutdown(index);
+        const int32_t shutdown = sched_ctx_.shutdown(index, runtime);
         if (status == 0) status = shutdown;
     }
     if (status == 0) status = read_runtime_status(inputs.sm);
@@ -839,7 +957,13 @@ int32_t AicpuExecutor::run(
             // Core-assignment capture reads every scheduler's initialized tracker.
             if (sched_ctx_.requires_profiling_init_barrier()) {
                 if (read_runtime_status(inputs.sm) != 0) sched_ctx_.abort_and_shutdown(runtime);
-                while (!init_done_.load(std::memory_order_acquire)) {}
+                if (!wait_initialization(
+                        [&] {
+                            return init_done_.load(std::memory_order_acquire);
+                        },
+                        inputs.sm
+                    ))
+                    return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
             }
 
             // Latch task count from shared memory to hand off to the
@@ -893,9 +1017,13 @@ int32_t AicpuExecutor::run(
     // Scheduler thread (orchestrator thread skips dispatch and exits after orchestration)
     if (!sched_ctx_.is_completed() && thread_idx < sched_thread_num_) {
         // Device orchestration: wait for the primary orchestrator to initialize the SM header
-        while (!runtime_init_ready_.load(std::memory_order_acquire)) {
-            SPIN_WAIT_HINT();
-        }
+        if (!wait_initialization(
+                [&] {
+                    return runtime_init_ready_.load(std::memory_order_acquire);
+                },
+                inputs.sm
+            ))
+            return -SIMPLER_ERROR_SCHEDULER_TIMEOUT;
         if (rt == nullptr) {
             LOG_ERROR("Thread %d: rt is null after orchestrator error, skipping dispatch", thread_idx);
         } else {
@@ -945,6 +1073,8 @@ void AicpuExecutor::deinit(Runtime * /*runtime*/, bool /*invalidate_host_image*/
     hs_setup_done_.store(false, std::memory_order_release);
     hs_arrived_.store(0, std::memory_order_release);
     hs_thread_seq_.store(0, std::memory_order_release);
+    init_wait_start_.store(0, std::memory_order_release);
+    kernel_wait_admission_ = nullptr;
     thread_idx_.store(0, std::memory_order_release);
 
     LOG_INFO("DeInit: AicpuExecutor reset complete");
@@ -952,6 +1082,7 @@ void AicpuExecutor::deinit(Runtime * /*runtime*/, bool /*invalidate_host_image*/
 
 int32_t AicpuExecutor::prepare_kernel_round(const simpler::tmr::KernelExecutionRequest &request) {
     using namespace simpler::tmr;
+    kernel_wait_admission_ = request.replay_admission;
     refresh_kernel_dfx(kernel_context_);
     if (request.execution_threads > MAX_AICPU_THREADS ||
         validate_execution_binding(request.binding) != InvocationStatus::Ok ||
@@ -995,7 +1126,9 @@ int32_t AicpuExecutor::prepare_kernel_round(const simpler::tmr::KernelExecutionR
     if (!configure_orchestration_args(inputs, orch_args_cached_, orch_so_table_[cid].config_func))
         return static_cast<int32_t>(KernelDispatchStatus::InvalidArgs);
     Runtime *resident = kernel_invocation_.resident();
-    sched_ctx_.bind_handshakes(kernel_storage_.reports());
+    sched_ctx_.bind_handshakes(
+        kernel_storage_.reports(), kernel_storage_.epoch(), &simpler::tmr::replay_state(kernel_context_)
+    );
     const int32_t status = prepare_execution(resident, inputs);
     if (status != 0) return status;
     chip_swimlane_aicpu_record_run_boundary();
@@ -1035,7 +1168,7 @@ namespace simpler::tmr {
 
 int32_t
 execute_kernel_round(const KernelExecutionRequest &request, int32_t reported_cpu, KernelFinalStatus *out) noexcept {
-    return execute_kernel_round_impl(g_aicpu_executor, request, reported_cpu, out);
+    return g_aicpu_executor.execute_prepared_kernel_round(request, reported_cpu, out);
 }
 
 int32_t kernel_execution_status() {
@@ -1047,6 +1180,12 @@ int32_t kernel_execution_status() {
 
 // ===== Public Entry Point =====
 
+extern "C" __attribute__((visibility("default"))) int simpler_aicpu_begin_tmr_replay(void *arg) {
+    return simpler::tmr::to_aicpu_native_status(simpler::tmr::begin_prepared_replay(g_aicpu_executor, arg));
+}
+extern "C" __attribute__((visibility("default"))) int simpler_aicpu_end_tmr_replay(void *arg) {
+    return simpler::tmr::to_aicpu_native_status(simpler::tmr::end_prepared_replay(g_aicpu_executor, arg));
+}
 extern "C" __attribute__((visibility("default"))) int simpler_aicpu_prepare_tmr_context(void *arg) {
     return simpler::tmr::to_aicpu_native_status(simpler::tmr::register_kernel_context(g_aicpu_executor, arg));
 }

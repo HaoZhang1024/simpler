@@ -73,7 +73,11 @@ struct ExecutorModel {
         KernelFinalStatus published{};
         std::function<void()> on_publish;
 
-        bool attach(KernelHandshakeView) { return true; }
+        uint64_t epoch_seen{0};
+        bool attach(KernelHandshakeView view) {
+            epoch_seen = view.epoch;
+            return true;
+        }
         void publish_status(int32_t runtime, int32_t cleanup) {
             published = {runtime, cleanup};
             ++publications;
@@ -87,6 +91,8 @@ struct ExecutorModel {
     std::array<TmrCoreReport, 3> reports{};
     const std::array<int32_t, kExecutionThreads> allowed{10, 11, 12};
     int32_t execute_status{0};
+    const TmrReplayAdmission *replay_admission{nullptr};
+    uint64_t replay_epoch{0};
     int32_t failing_run_index{-1};
     std::function<void(int32_t)> on_execute;
     std::atomic<int32_t> preparations{0};
@@ -97,6 +103,8 @@ struct ExecutorModel {
     KernelExecutionRequest request() {
         KernelExecutionRequest request;
         request.handshake = {&control, reports.data(), static_cast<int32_t>(reports.size()), 0};
+        request.handshake.epoch = replay_epoch;
+        request.replay_admission = replay_admission;
         request.allowed_cpus = allowed.data();
         request.execution_threads = kExecutionThreads;
         request.launched_threads = kLaunchedThreads;
@@ -258,3 +266,101 @@ TEST(TmrKernelExecutionRoundTest, ExactParticipantsExecuteBeforeFilteredThreadJo
 }
 
 }  // namespace
+
+TEST(TmrKernelExecutionRoundTest, ExternalReplayFaultRetainsBorrowedStorageAfterAllRolesReturn) {
+    ExecutorModel executor;
+    TmrReplayAdmission replay{1, 1, 0};
+    executor.replay_admission = &replay;
+    std::atomic<int> entered{0};
+    Signal faulted;
+    executor.on_execute = [&](int32_t index) {
+        entered.fetch_add(1, std::memory_order_acq_rel);
+        while (entered.load(std::memory_order_acquire) != ExecutorModel::kExecutionThreads)
+            std::this_thread::yield();
+        if (index == 0) {
+            __atomic_store_n(&replay.fault, uint32_t{1}, __ATOMIC_RELEASE);
+            faulted.set();
+        } else EXPECT_TRUE(faulted.wait_for());
+    };
+    for (const auto status : run_round(executor))
+        EXPECT_NE(status, 0);
+    EXPECT_EQ(executor.clears.load(), 0);
+    EXPECT_TRUE(executor.kernel_invocation_.active.load());
+    EXPECT_EQ(executor.kernel_invocation_.storage.load(), ExecutorModel::kStorageValue);
+    EXPECT_FALSE(executor.kernel_gate_.idle());
+}
+
+TEST(TmrKernelExecutionRoundTest, ReplayIdentityIsNotReplacedByInternalRendezvousEpoch) {
+    ExecutorModel executor;
+    executor.replay_epoch = 91;
+    for (const auto status : run_round(executor))
+        EXPECT_EQ(status, 0);
+    EXPECT_EQ(executor.kernel_storage_.epoch_seen, 91u);
+}
+
+TEST(TmrKernelExecutionRoundTest, ReplayFaultUnblocksFinalWithMissingNativeParticipant) {
+    ExecutorModel executor;
+    TmrReplayAdmission replay{1, 1, 0};
+    executor.replay_admission = &replay;
+    std::atomic<int32_t> executed{0}, returned{0};
+    executor.on_execute = [&](int32_t) {
+        ++executed;
+    };
+    const auto request = executor.request();
+    std::vector<std::thread> threads;
+    for (int32_t i = 0; i < ExecutorModel::kExecutionThreads; ++i) {
+        threads.emplace_back([&, i] {
+            EXPECT_NE(execute_kernel_round_impl(executor, request, 10 + i), 0);
+            ++returned;
+        });
+    }
+    const auto executing_deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    while (executed.load() != ExecutorModel::kExecutionThreads && std::chrono::steady_clock::now() < executing_deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(executed.load(), ExecutorModel::kExecutionThreads);
+    __atomic_store_n(&replay.fault, uint32_t{1}, __ATOMIC_RELEASE);
+    const auto abort_deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(100);
+    while (returned.load() != ExecutorModel::kExecutionThreads && std::chrono::steady_clock::now() < abort_deadline)
+        std::this_thread::yield();
+    EXPECT_EQ(returned.load(), ExecutorModel::kExecutionThreads);
+    // Rescue the old implementation, preserving the assertion rather than hanging CTest.
+    executor.kernel_gate_.poison();
+    for (auto &thread : threads)
+        thread.join();
+    EXPECT_EQ(executor.clears.load(), 0);
+    EXPECT_TRUE(executor.kernel_invocation_.active.load());
+    EXPECT_FALSE(executor.kernel_gate_.idle());
+    EXPECT_NE(execute_kernel_round_impl(executor, request, 13), 0);
+}
+
+TEST(TmrKernelExecutionRoundTest, WaitAbortCallbackObservesPreexistingReplayCause) {
+    static uint64_t clock = 0;
+    for (const bool already_faulted : {false, true}) {
+        ExecutorModel executor;
+        TmrReplayAdmission replay{1, 1, already_faulted ? 1u : 0u};
+        executor.replay_admission = &replay;
+        auto request = executor.request();
+        struct Cause {
+            const TmrReplayAdmission *replay;
+            bool observed{false};
+            int callbacks{0};
+        } cause{&replay};
+        clock = 0;
+        request.wait_control.context = &cause;
+        request.wait_control.clock = []() noexcept {
+            return ++clock;
+        };
+        request.wait_control.timeout_ticks = 8;
+        request.wait_control.on_abort = [](void *opaque) noexcept {
+            auto &cause = *static_cast<Cause *>(opaque);
+            cause.observed = __atomic_load_n(&cause.replay->fault, __ATOMIC_ACQUIRE) != 0;
+            ++cause.callbacks;
+        };
+        EXPECT_NE(execute_kernel_round_impl(executor, request, 10), 0);
+        EXPECT_EQ(cause.callbacks, 1);
+        EXPECT_EQ(cause.observed, already_faulted);
+        EXPECT_NE(__atomic_load_n(&replay.fault, __ATOMIC_ACQUIRE), 0u);
+        EXPECT_EQ(executor.clears.load(), 0);
+        EXPECT_FALSE(executor.kernel_gate_.idle());
+    }
+}

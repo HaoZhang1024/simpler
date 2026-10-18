@@ -119,16 +119,17 @@ inline bool make_prepared_kernel_context(
     };
     if (!valid_tmr_clear_binding(clear)) return false;
 
-    const std::array<Region, 5> auxiliary{{
+    const std::array<Region, 6> auxiliary{{
         {descriptor.self_address, sizeof(TmrKernelContextDescriptor)},
         {descriptor.resident_runtime, sizeof(DeviceRuntimeLaunchDesc)},
         {descriptor.resident_kernel_args, sizeof(KernelArgs)},
         {descriptor.control_address, descriptor.control_bytes},
         {descriptor.reports_address, descriptor.reports_bytes},
+        {descriptor.admission_address, sizeof(TmrReplayAdmission)},
     }};
     const std::array<size_t, auxiliary.size()> alignments{
-        alignof(TmrKernelContextDescriptor), alignof(Runtime), alignof(KernelArgs), alignof(TmrLaunchControl),
-        alignof(TmrCoreReport)
+        alignof(TmrKernelContextDescriptor), alignof(Runtime),       alignof(KernelArgs),
+        alignof(TmrLaunchControl),           alignof(TmrCoreReport), alignof(TmrReplayAdmission)
     };
     const Region image{descriptor.arena_base, descriptor.arena_required};
     for (size_t i = 0; i < auxiliary.size(); ++i) {

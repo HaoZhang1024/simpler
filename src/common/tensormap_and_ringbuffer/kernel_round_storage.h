@@ -43,12 +43,13 @@ public:
             !(control + sizeof(TmrLaunchControl) <= reports || reports + reports_bytes <= control))
             return false;
         view_ = view;
-        // Host DMA clears before launch; AICore report writeback is coherent with AICPU.
+        // The admitted device prelude clears before launch; AICore report writeback is coherent with AICPU.
         cache_invalidate_range(view.reports, reports_bytes);
         return true;
     }
 
     TmrCoreReport *reports() const noexcept { return view_.reports; }
+    uint64_t epoch() const noexcept { return view_.epoch; }
 
     void publish_status(int32_t runtime, int32_t cleanup) noexcept {
         auto &control = *view_.control;

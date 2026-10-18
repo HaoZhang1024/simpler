@@ -101,6 +101,7 @@ protected:
         context.resident_runtime = reinterpret_cast<uint64_t>(&runtime);
         context.control_address = reinterpret_cast<uint64_t>(&control);
         context.control_bytes = sizeof(control);
+        context.admission_address = reinterpret_cast<uint64_t>(&admission);
         context.reports_address = reinterpret_cast<uint64_t>(&report);
         context.reports_bytes = sizeof(report);
         context.worker_count = 1;
@@ -140,6 +141,7 @@ protected:
     Runtime runtime;
     TmrKernelContextDescriptor context{};
     TmrLaunchControl control{};
+    TmrReplayAdmission admission{1, 1, 0};
     TmrCoreReport report{};
     std::array<DispatchPayload, 2> payloads{};
     TaskPayload source{};
@@ -244,3 +246,25 @@ ChipSwimlaneActiveHead *get_chip_swimlane_aicore_head() { return nullptr; }
 struct PmuAicoreRing;
 PmuAicoreRing *get_aicore_pmu_ring() { return nullptr; }
 uint64_t get_aicore_pmu_reg_base() { return 0; }
+
+TEST_F(TmrKernelAicoreTest, PoisonedReplayReturnsBeforeAckReportAndPayloadWrites) {
+    admission.fault = 1;
+    runtime.dev.teardown_gates[0].exit_ack = 0x1710;
+    report.report_epoch = 0xabc;
+    auto worker = launch(CoreType::AIV);
+    worker.join();
+    EXPECT_EQ(runtime.dev.teardown_gates[0].exit_ack, 0x1710u);
+    EXPECT_EQ(report.report_epoch, 0xabcu);
+    EXPECT_EQ(report.aicore_done, 0u);
+    EXPECT_EQ(model.calls.load(), 0u);
+}
+
+TEST_F(TmrKernelAicoreTest, MismatchedReadyIdentityReturnsBeforeSharedWrites) {
+    admission.sequence = 3;
+    admission.ready_epoch = 1;
+    runtime.dev.teardown_gates[0].exit_ack = 0x1710;
+    auto worker = launch(CoreType::AIV);
+    worker.join();
+    EXPECT_EQ(runtime.dev.teardown_gates[0].exit_ack, 0x1710u);
+    EXPECT_EQ(report.aicore_done, 0u);
+}

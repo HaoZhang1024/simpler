@@ -62,6 +62,10 @@ TEST(KernelStaticConfig, RejectsInvalidAndUnsupportedRequestsWithoutInitializati
     input.enable_dump_args = 1;
     EXPECT_EQ(config.initialize(&input, 7, false), PTO_RUNTIME_ERR_UNSUPPORTED);
     input.enable_dump_args = 0;
+    input.enable_pmu = 1;
+    EXPECT_EQ(config.initialize(&input, 7, false), PTO_RUNTIME_ERR_UNSUPPORTED);
+    EXPECT_FALSE(config.initialized());
+    input.enable_pmu = 0;
     EXPECT_EQ(config.initialize(&input, 0, false), PTO_RUNTIME_ERR_INTERNAL);
     EXPECT_FALSE(config.initialized());
     EXPECT_EQ(config.initialize(&input, 7, false), 0);

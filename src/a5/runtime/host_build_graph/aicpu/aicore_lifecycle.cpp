@@ -71,6 +71,10 @@ int32_t AicoreLifecycle::pre_handshake_init(Runtime *runtime, int32_t aicpu_thre
     regs_base_ = regs_base;
     lifecycle_traces_ = nullptr;
     handshake_failed_.store(false, std::memory_order_release);
+    pmu_initialized_.store(false, std::memory_order_release);
+    shutdown_deadline_.store(0, std::memory_order_relaxed);
+    for (auto &state : shutdown_states_)
+        state.store(Unclaimed, std::memory_order_relaxed);
 
     const bool chip_swimlane_enabled = is_chip_swimlane_enabled();
     if (is_pmu_enabled() || is_dump_args_enabled()) {
@@ -89,15 +93,7 @@ void AicoreLifecycle::handshake_partition(Runtime *runtime, int32_t tidx, int32_
     const uint32_t physical_core_count = platform_get_physical_cores_count();
     uint64_t *regs = reinterpret_cast<uint64_t *>(regs_base_);
 
-    struct ReadyCore {
-        int32_t worker_id;
-        uint32_t physical_core_id;
-        uint64_t reg_addr;
-        CoreType core_type;
-    };
-    ReadyCore ready[kMaxWorkers]{};
     bool observed[kMaxWorkers]{};
-    int32_t ready_count = 0;
     const bool record_lifecycle_timing = lifecycle_timing_enabled();
     const uint64_t wait_start = get_sys_cnt_aicpu();
     if (record_lifecycle_timing) thread_handshake_timing_[tidx].start_cycles = wait_start;
@@ -123,7 +119,10 @@ void AicoreLifecycle::handshake_partition(Runtime *runtime, int32_t tidx, int32_
                 handshake_failed_.store(true, std::memory_order_release);
                 continue;
             }
-            ready[ready_count++] = {i, physical_core_id, regs[physical_core_id], handshake->core_type};
+            // Keep every validated current report even if a peer never reports.
+            // Init-abort may retire these known targets; unknown peers stay absent.
+            cores_[i] = {regs[physical_core_id], physical_core_id, handshake->core_type};
+            physical_core_ids_[i] = physical_core_id;
         }
         if (scheduler_watchdog_expired(wait_start, get_sys_cnt_aicpu(), timeout_cycles)) {
             LOG_ERROR("A5 HBG AICore Scheduler handshake timeout thread=%d remaining=%d", tidx, remaining);
@@ -133,11 +132,6 @@ void AicoreLifecycle::handshake_partition(Runtime *runtime, int32_t tidx, int32_
         }
     }
 
-    for (int32_t i = 0; i < ready_count; ++i) {
-        const ReadyCore &core = ready[i];
-        cores_[core.worker_id] = {core.reg_addr, core.physical_core_id, core.core_type};
-        physical_core_ids_[core.worker_id] = core.physical_core_id;
-    }
     if (record_lifecycle_timing) thread_handshake_timing_[tidx].end_cycles = get_sys_cnt_aicpu();
 }
 
@@ -300,7 +294,10 @@ int32_t AicoreLifecycle::post_handshake_init(Runtime *runtime) {
     const uint64_t topology_complete_cycles = record_lifecycle_timing ? get_sys_cnt_aicpu() : 0;
     lifecycle_traces[0].topology_complete_cycles = topology_complete_cycles;
 
-    if (is_pmu_enabled()) pmu_aicpu_init(physical_core_ids_, core_count_);
+    if (is_pmu_enabled()) {
+        pmu_aicpu_init(physical_core_ids_, core_count_);
+        pmu_initialized_.store(true, std::memory_order_release);
+    }
     cache_flush_range(contexts, static_cast<size_t>(core_count_) * sizeof(*contexts));
     cache_flush_range(run_control, sizeof(*run_control));
     cache_flush_range(lifecycle_traces, static_cast<size_t>(aicpu_thread_num_) * sizeof(*lifecycle_traces));
@@ -379,17 +376,30 @@ int32_t AicoreLifecycle::release_partition(int32_t thread_idx, bool start_execut
     if (start_execution && trace != nullptr && lifecycle_timing_enabled())
         trace->register_release_start_cycles = get_sys_cnt_aicpu();
     wmb();
-    for (int32_t i = lo; i < hi; ++i) {
-        if (cores_[i].reg_addr == 0) continue;
-        if (start_execution) {
-            platform_init_aicore_regs(cores_[i].reg_addr);
-        } else {
-            if (platform_deinit_aicore_regs(cores_[i].reg_addr) != 0) rc = -1;
+    if (start_execution) {
+        for (int32_t i = lo; i < hi; ++i) {
+            if (cores_[i].reg_addr != 0) platform_init_aicore_regs(cores_[i].reg_addr);
         }
+    } else {
+        int32_t closed_core_ids[kMaxWorkers]{};
+        int32_t closed_count = 0;
+        rc = retire_partition(thread_idx, closed_core_ids, closed_count);
+        if (closed_count != 0 && pmu_initialized_.load(std::memory_order_acquire))
+            pmu_aicpu_finalize(closed_core_ids, closed_count);
     }
     if (start_execution && trace != nullptr && lifecycle_timing_enabled())
         trace->register_release_end_cycles = get_sys_cnt_aicpu();
     return rc;
+}
+
+uint64_t AicoreLifecycle::shutdown_deadline() {
+    uint64_t deadline = shutdown_deadline_.load(std::memory_order_acquire);
+    if (deadline == 0) {
+        const uint64_t candidate = platform_aicore_exit_deadline();
+        if (shutdown_deadline_.compare_exchange_strong(deadline, candidate, std::memory_order_acq_rel))
+            deadline = candidate;
+    }
+    return deadline;
 }
 
 void AicoreLifecycle::signal_shutdown_partition(int32_t thread_idx) {
@@ -399,38 +409,61 @@ void AicoreLifecycle::signal_shutdown_partition(int32_t thread_idx) {
     if (trace != nullptr && lifecycle_timing_enabled()) trace->exit_signal_start_cycles = get_sys_cnt_aicpu();
     for (int32_t i = lo; i < hi; ++i) {
         if (cores_[i].reg_addr == 0) continue;
+        uint8_t expected = Unclaimed;
+        if (!shutdown_states_[i].compare_exchange_strong(expected, Signaling, std::memory_order_acq_rel)) continue;
+        (void)shutdown_deadline();
         write_reg(cores_[i].reg_addr, RegId::DATA_MAIN_BASE, AICORE_EXIT_SIGNAL);
+        wmb();
+        shutdown_states_[i].store(Signaled, std::memory_order_release);
     }
     if (trace != nullptr && lifecycle_timing_enabled()) trace->exit_signal_end_cycles = get_sys_cnt_aicpu();
 }
 
-int32_t AicoreLifecycle::finish_shutdown_partition(int32_t thread_idx, Runtime *runtime) {
-    (void)runtime;
+int32_t AicoreLifecycle::retire_partition(int32_t thread_idx, int32_t *closed_core_ids, int32_t &closed_count) {
+    closed_count = 0;
+    signal_shutdown_partition(thread_idx);
     const int32_t lo = static_cast<int32_t>((static_cast<int64_t>(thread_idx) * core_count_) / aicpu_thread_num_);
     const int32_t hi = static_cast<int32_t>((static_cast<int64_t>(thread_idx + 1) * core_count_) / aicpu_thread_num_);
-    int32_t rc = 0;
+    uint64_t reg_addrs[kMaxWorkers]{};
+    int32_t core_ids[kMaxWorkers]{};
+    size_t count = 0;
+    for (int32_t i = lo; i < hi; ++i) {
+        uint8_t expected = Signaled;
+        if (!shutdown_states_[i].compare_exchange_strong(expected, Joining, std::memory_order_acq_rel)) continue;
+        reg_addrs[count] = cores_[i].reg_addr;
+        core_ids[count++] = i;
+    }
+    if (count == 0) return 0;
+    bool closed[kMaxWorkers]{};
+    // The signal phase already broadcast to every partition before the caller's
+    // shutdown barrier. Join only: never reissue EXIT or reset a peer's budget.
+    const int32_t rc = platform_deinit_aicore_regs_group(
+        reg_addrs, count, shutdown_deadline_.load(std::memory_order_acquire), closed, false
+    );
+    for (size_t i = 0; i < count; ++i) {
+        if (closed[i]) closed_core_ids[closed_count++] = core_ids[i];
+    }
+    return rc;
+}
+
+int32_t AicoreLifecycle::finish_shutdown_partition(int32_t thread_idx, Runtime *runtime) {
+    (void)runtime;
     AicpuThreadLifecycleTrace *trace = thread_lifecycle_trace(thread_idx);
     if (trace != nullptr && lifecycle_timing_enabled()) trace->exit_wait_start_cycles = get_sys_cnt_aicpu();
-    for (int32_t i = lo; i < hi; ++i) {
-        if (cores_[i].reg_addr == 0) continue;
-        if (platform_deinit_aicore_regs(cores_[i].reg_addr) != 0) {
-            rc = -1;
-        }
-    }
+    int32_t core_ids[kMaxWorkers]{};
+    int32_t count = 0;
+    const int32_t rc = retire_partition(thread_idx, core_ids, count);
     rmb();
     if (trace != nullptr && lifecycle_timing_enabled()) {
         trace->exit_wait_end_cycles = get_sys_cnt_aicpu();
         cache_flush_range(trace, sizeof(*trace));
     }
-
-    int32_t core_ids[kMaxWorkers]{};
-    int32_t count = 0;
-
-    for (int32_t i = lo; i < hi; ++i)
-        core_ids[count++] = i;
-
-    if (is_chip_swimlane_enabled()) chip_swimlane_aicpu_flush(thread_idx, core_ids, count);
-    if (is_pmu_enabled()) pmu_aicpu_finalize(core_ids, count);
+    // Profiling flush mutates shared buffers and PMU finalize restores MMIO.
+    // Both require this invocation's ACK followed by close and readback.
+    if (count != 0) {
+        if (is_chip_swimlane_enabled()) chip_swimlane_aicpu_flush(thread_idx, core_ids, count);
+        if (pmu_initialized_.load(std::memory_order_acquire)) pmu_aicpu_finalize(core_ids, count);
+    }
     return rc;
 }
 
@@ -439,6 +472,10 @@ void AicoreLifecycle::deinit() {
     std::memset(physical_core_ids_, 0, sizeof(physical_core_ids_));
     std::memset(thread_handshake_timing_, 0, sizeof(thread_handshake_timing_));
     handshake_failed_.store(false, std::memory_order_release);
+    pmu_initialized_.store(false, std::memory_order_release);
+    shutdown_deadline_.store(0, std::memory_order_relaxed);
+    for (auto &state : shutdown_states_)
+        state.store(Unclaimed, std::memory_order_relaxed);
     lifecycle_traces_ = nullptr;
     core_count_ = 0;
     aicpu_thread_num_ = 0;

@@ -31,6 +31,7 @@ struct Fake {
     void *candidate_caller{nullptr};
     int calls{0}, fail_at{0}, second_fail_at{0}, query_error{0}, validation_error{0};
     int queries{0}, acquisitions{0}, finishes{0}, runtime_error{0}, cleanup_error{0};
+    int cancellations{0}, cancellation_error{0};
     std::vector<Step> trace;
     std::promise<void> *entered{nullptr};
     std::shared_future<void> release;

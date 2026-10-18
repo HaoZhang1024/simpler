@@ -34,6 +34,26 @@ struct KernelFinalStatus {
     int32_t cleanup_status{0};
 };
 
+// Process-local wait policy; never stored in shared wire memory. Callback
+// context remains owned by the synchronous caller and is not retained by gate.
+inline uint64_t kernel_wait_timeout_ticks(int32_t configured_ms, int32_t default_ms, uint64_t frequency) noexcept {
+    return static_cast<uint64_t>(configured_ms > 0 ? configured_ms : default_ms) * (frequency / 1000);
+}
+
+struct KernelWaitControl {
+    void *context{nullptr};
+    uint64_t (*clock)() noexcept {nullptr};
+    uint64_t timeout_ticks{0};
+    bool (*keep_waiting)(void *) noexcept {nullptr};
+    void (*on_abort)(void *) noexcept {nullptr};
+
+    uint64_t now() const noexcept { return clock != nullptr ? clock() : 0; }
+    bool poll(uint64_t start, bool bounded = true) const noexcept {
+        return (keep_waiting == nullptr || keep_waiting(context)) &&
+               (!bounded || clock == nullptr || timeout_ticks == 0 || now() - start < timeout_ticks);
+    }
+};
+
 enum class RoundArrival { Invalid, Peer, Finalizer };
 enum class RoundDeparture { Invalid, Peer, Last };
 
@@ -48,10 +68,15 @@ enum class RoundDeparture { Invalid, Peer, Last };
 // cannot be overwritten by a following epoch. No pointer or atomic is a wire.
 class KernelRoundGate {
 public:
-    bool join(int32_t launched, int32_t reported_cpu, KernelRoundTicket *out) noexcept {
+    void poison() noexcept { poisoned_.store(true, std::memory_order_release); }
+
+    bool
+    join(int32_t launched, int32_t reported_cpu, KernelRoundTicket *out, const KernelWaitControl &wait = {}) noexcept {
         if (out == nullptr || launched <= 0 || launched > MAX_GATE_THREADS) return false;
+        const uint64_t local_start = wait.now();
         uint64_t state = lifecycle_.load(std::memory_order_acquire);
         for (;;) {
+            if (poisoned_.load(std::memory_order_acquire)) return false;
             const uint64_t epoch = state >> kStageBits;
             if (stage(state) == Stage::Idle) {
                 if (epoch == kMaxEpoch) return false;
@@ -59,6 +84,8 @@ public:
                         state, stamp(epoch + 1, Stage::Starting), std::memory_order_acq_rel
                     ))
                     continue;
+                membership_start_.store(wait.now(), std::memory_order_relaxed);
+                joined_.store(1, std::memory_order_relaxed);
                 launched_.store(launched, std::memory_order_relaxed);
                 admission_ = 0;
                 final_ = {};
@@ -73,11 +100,13 @@ public:
                 slots_[0].cpu = reported_cpu;
                 slots_[0].phase.store(stamp(epoch + 1, Stage::Joined), std::memory_order_relaxed);
                 claims_.store(stamp(epoch + 1, 1), std::memory_order_relaxed);
+                if (poisoned_.load(std::memory_order_acquire)) return false;
                 *out = {epoch + 1, 0};
                 lifecycle_.store(stamp(epoch + 1, Stage::Joining), std::memory_order_release);
                 return true;
             }
             if (stage(state) == Stage::Starting) {
+                if (!keep_waiting(wait, local_start)) return false;
                 state = lifecycle_.load(std::memory_order_acquire);
                 continue;
             }
@@ -87,11 +116,15 @@ public:
                 return false;
             uint64_t claim = claims_.load(std::memory_order_relaxed);
             for (;;) {
+                if (!keep_waiting(wait, membership_start_.load(std::memory_order_acquire))) return false;
                 const int32_t index = static_cast<int32_t>(stage(claim));
                 if ((claim >> kStageBits) != epoch || index >= launched) return false;
                 if (!claims_.compare_exchange_weak(claim, stamp(epoch, index + 1), std::memory_order_acq_rel)) continue;
+                if (!keep_waiting(wait, membership_start_.load(std::memory_order_acquire))) return false;
                 slots_[index].cpu = reported_cpu;
                 slots_[index].phase.store(stamp(epoch, Stage::Joined), std::memory_order_release);
+                joined_.fetch_add(1, std::memory_order_acq_rel);
+                if (poisoned_.load(std::memory_order_acquire)) return false;
                 *out = {epoch, index};
                 return true;
             }
@@ -102,7 +135,8 @@ public:
     // verdict. Classification keeps exact CPU matches, then fills missing roles
     // in report order, without touching program's static affinity gate or TLS.
     bool publish_admission(
-        const KernelRoundTicket &leader, const int32_t *allowed_cpus, int32_t count, int32_t status
+        const KernelRoundTicket &leader, const int32_t *allowed_cpus, int32_t count, int32_t status,
+        const KernelWaitControl &wait = {}
     ) noexcept {
         if (leader.epoch == 0 || leader.epoch > kMaxEpoch || leader.launch_index != 0 || allowed_cpus == nullptr ||
             count <= 0 || count > MAX_GATE_THREADS)
@@ -127,6 +161,7 @@ public:
             // Consume a contiguous slot prefix. A lower claimed slot may
             // still publish the first occurrence of an allowed CPU.
             for (;;) {
+                if (!keep_waiting(wait, membership_start_.load(std::memory_order_acquire))) return false;
                 const uint64_t phase = slots_[i].phase.load(std::memory_order_acquire);
                 if (phase == stamp(leader.epoch, Stage::Joined) ||
                     phase == stamp(leader.epoch, Stage::ReadingAdmission))
@@ -154,14 +189,17 @@ public:
             slots_[i].execution_index = role;
             filled[role++] = true;
         }
+        if (!keep_waiting(wait, membership_start_.load(std::memory_order_acquire))) return false;
         admission_ = status;
         lifecycle_.store(stamp(leader.epoch, Stage::Admitted), std::memory_order_release);
         return true;
     }
 
-    bool wait_admission(const KernelRoundTicket &ticket, KernelRoundAdmission *out) noexcept {
+    bool wait_admission(
+        const KernelRoundTicket &ticket, KernelRoundAdmission *out, const KernelWaitControl &wait = {}
+    ) noexcept {
         if (out == nullptr || !transition(ticket, Stage::Joined, Stage::ReadingAdmission)) return false;
-        wait_phase(ticket.epoch, Stage::Admitted);
+        if (!wait_phase(ticket.epoch, Stage::Admitted, wait)) return false;
         *out = {admission_, slots_[ticket.launch_index].execution_index};
         slots_[ticket.launch_index].phase.store(stamp(ticket.epoch, Stage::AdmissionRead), std::memory_order_release);
         return true;
@@ -204,6 +242,7 @@ public:
                 }
             }
         }
+        if (poisoned_.load(std::memory_order_acquire)) return false;
         final_ = {status, cleanup_status};
         publish_report(final_);
         slots_[finalizer.launch_index].phase.store(stamp(finalizer.epoch, Stage::Arrived), std::memory_order_release);
@@ -211,9 +250,11 @@ public:
         return true;
     }
 
-    bool read_final_status(const KernelRoundTicket &ticket, KernelFinalStatus *out) noexcept {
+    bool read_final_status(
+        const KernelRoundTicket &ticket, KernelFinalStatus *out, const KernelWaitControl &wait = {}
+    ) noexcept {
         if (out == nullptr || !transition(ticket, Stage::Arrived, Stage::ReadingFinal)) return false;
-        wait_phase(ticket.epoch, Stage::Final);
+        if (!wait_phase(ticket.epoch, Stage::Final, wait)) return false;
         *out = final_;
         slots_[ticket.launch_index].phase.store(stamp(ticket.epoch, Stage::FinalRead), std::memory_order_release);
         return true;
@@ -237,7 +278,10 @@ public:
         return true;
     }
 
-    bool idle() const noexcept { return stage(lifecycle_.load(std::memory_order_acquire)) == Stage::Idle; }
+    bool idle() const noexcept {
+        return !poisoned_.load(std::memory_order_acquire) &&
+               stage(lifecycle_.load(std::memory_order_acquire)) == Stage::Idle;
+    }
 
 private:
     enum class Stage : uint8_t {
@@ -275,8 +319,8 @@ private:
     };
 
     bool transition(const KernelRoundTicket &ticket, Stage from, Stage to) noexcept {
-        if (ticket.epoch == 0 || ticket.epoch > kMaxEpoch || ticket.launch_index < 0 ||
-            ticket.launch_index >= MAX_GATE_THREADS)
+        if (poisoned_.load(std::memory_order_acquire) || ticket.epoch == 0 || ticket.epoch > kMaxEpoch ||
+            ticket.launch_index < 0 || ticket.launch_index >= MAX_GATE_THREADS)
             return false;
         uint64_t expected = stamp(ticket.epoch, from);
         return slots_[ticket.launch_index].phase.compare_exchange_strong(
@@ -284,15 +328,33 @@ private:
         );
     }
 
-    void wait_phase(uint64_t epoch, Stage phase) const noexcept {
+    bool keep_waiting(const KernelWaitControl &wait, uint64_t start, bool bounded = true) noexcept {
+        if (!poisoned_.load(std::memory_order_acquire) && wait.poll(start, bounded)) return true;
+        poison();
+        if (wait.on_abort != nullptr) wait.on_abort(wait.context);
+        return false;
+    }
+
+    bool wait_phase(uint64_t epoch, Stage phase, const KernelWaitControl &wait) noexcept {
         // The caller holds a live slot that cannot depart until this wait
         // returns; lifecycle cannot advance to another epoch underneath it.
         while (stage(lifecycle_.load(std::memory_order_acquire)) < phase ||
-               (lifecycle_.load(std::memory_order_acquire) >> kStageBits) != epoch) {}
+               (lifecycle_.load(std::memory_order_acquire) >> kStageBits) != epoch) {
+            // Final may outlast the scheduler no-progress budget while a long
+            // graph makes progress. Only missing native membership remains
+            // subject to the original membership deadline here.
+            const bool bounded = phase != Stage::Final ||
+                                 joined_.load(std::memory_order_acquire) < launched_.load(std::memory_order_relaxed);
+            if (!keep_waiting(wait, membership_start_.load(std::memory_order_acquire), bounded)) return false;
+        }
+        return keep_waiting(wait, membership_start_.load(std::memory_order_acquire), false);
     }
 
+    std::atomic<bool> poisoned_{false};
     std::atomic<uint64_t> lifecycle_{0};
     std::atomic<uint64_t> claims_{0};
+    std::atomic<uint64_t> membership_start_{0};
+    std::atomic<int32_t> joined_{0};
     std::atomic<int32_t> launched_{0};
     std::atomic<int32_t> arrived_{0};
     std::atomic<int32_t> departed_{0};

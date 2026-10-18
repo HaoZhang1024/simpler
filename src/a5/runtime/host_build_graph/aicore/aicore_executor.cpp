@@ -549,6 +549,12 @@ __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, in
     }
     const bool chip_swimlane_enabled = SIMPLER_GET_DFX_FLAG(profiling_flag, SIMPLER_DFX_FLAG_CHIP_SWIMLANE);
     uint64_t aicore_entry_cycles = chip_swimlane_enabled ? get_sys_cnt_aicore() : 0;
+    // A validated report makes this core eligible for COND-only retirement,
+    // including an abort before bootstrap. Clear a previous invocation's EXITED
+    // before publishing the current report; otherwise an early EXIT could be
+    // acknowledged by that retained value while this core is still running.
+    write_reg(RegId::COND, AICORE_IDLE_VALUE);
+    dsb((mem_dsb_t)0);
     handshake->physical_core_id = get_physical_core_id();
     handshake->core_type = core_type;
     OUT_OF_ORDER_STORE_BARRIER();

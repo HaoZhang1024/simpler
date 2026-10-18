@@ -25,3 +25,12 @@ int32_t platform_deinit_aicore_regs(uint64_t base) {
     if (platform_close_aicore_window != nullptr) platform_close_aicore_window(base);
     return 0;
 }
+
+int32_t
+platform_retire_aicore_current_ack_group(const AicoreExitTarget *targets, size_t count, uint64_t, bool *released) {
+    for (size_t i = 0; i < count; ++i) {
+        if (platform_close_aicore_window != nullptr) platform_close_aicore_window(targets[i].reg_addr);
+        if (released != nullptr) released[i] = true;
+    }
+    return 0;
+}

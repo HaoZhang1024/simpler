@@ -129,6 +129,18 @@ void platform_init_aicore_regs(uint64_t reg_addr);
 
 // Kernel-mode group retirement uses one deadline and publishes its independent
 // return gates only after every acknowledged register window is quiescent.
+struct AicoreTeardownControl;
+struct AicoreExitTarget {
+    uint64_t reg_addr;
+    AicoreTeardownControl *teardown;
+};
+
+// TMR targets are exclusively claimed before entering this current-ACK helper.
+// Every member shares one deadline; only acknowledged windows are closed and
+// read back before a drain and publication of their independent return gates.
+int32_t platform_retire_aicore_current_ack_group(
+    const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released = nullptr
+);
 uint64_t platform_aicore_exit_deadline();
 void platform_close_aicore_window(uint64_t reg_addr);
 
@@ -141,6 +153,13 @@ void platform_close_aicore_window(uint64_t reg_addr);
  * @return 0 if the core acknowledged exit, non-zero on timeout
  */
 int32_t platform_deinit_aicore_regs(uint64_t reg_addr);
+
+// Legacy HBG acknowledges through COND, without the Kernel current-request GM
+// protocol. Broadcast before polling and spend one absolute deadline per group.
+// Only acknowledged windows are closed. Callers must exclusively claim targets.
+int32_t platform_deinit_aicore_regs_group(
+    const uint64_t *reg_addrs, size_t count, uint64_t deadline, bool *closed = nullptr, bool send_exit = true
+);
 
 /**
  * Variant-specific AICore deinit wait timeout, in ticks of get_sys_cnt_aicpu.

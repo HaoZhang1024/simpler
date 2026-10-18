@@ -9,6 +9,7 @@
  * -----------------------------------------------------------------------------------------------------------
  */
 #include "aicore/aicore.h"
+#include "aicore/kernel_replay_admission.h"
 #include "aicore/aicore_profiling_state.h"
 #include "common/core_type.h"
 #include "common/kernel_args.h"
@@ -18,6 +19,7 @@
 
 using simpler::tmr::TmrKernelAicoreArgs;
 using simpler::tmr::TmrKernelContextDescriptor;
+static_assert(std::extent_v<decltype(TmrKernelContextDescriptor::reserved)> == 2);
 
 // This separate ELF carries its own profiling storage rather than importing
 // program kernel.cpp, whose ID-0 entry would collide with the kernel-mode one.
@@ -71,15 +73,25 @@ extern "C" __global__ __aicore__ void aicore_kernel_mode_0_mix_aic(__gm__ TmrKer
         return;
     auto *context = reinterpret_cast<__gm__ const TmrKernelContextDescriptor *>(args->context_descriptor);
     auto *k_args = reinterpret_cast<__gm__ KernelArgs *>(args->resident_kernel_args);
-    dcci(k_args, ENTIRE_DATA_CACHE);
+    // The descriptor is immutable and AICore never dirties these three lines.
+    // Do not touch unrelated data-cache lines until the replay is admitted.
+    dcci(context, SINGLE_CACHE_LINE);
+    dcci(reinterpret_cast<__gm__ const uint8_t *>(context) + 64, SINGLE_CACHE_LINE);
+    dcci(reinterpret_cast<__gm__ const uint8_t *>(context) + 128, SINGLE_CACHE_LINE);
     dsb(static_cast<mem_dsb_t>(0));
     if (context->version != simpler::tmr::kTmrKernelContextVersion ||
         context->bytes != sizeof(TmrKernelContextDescriptor) || context->context_generation == 0 ||
         context->self_address != args->context_descriptor ||
         context->resident_kernel_args != args->resident_kernel_args || context->resident_runtime == 0 ||
-        context->resident_runtime != reinterpret_cast<uint64_t>(k_args->runtime_args) || context->flags != 0 ||
-        context->reserved[0] != 0 || context->reserved[1] != 0 || context->reserved[2] != 0)
+        context->flags != 0 || context->reserved[0] != 0 || context->reserved[1] != 0)
         return;
+    if (context->admission_address == 0 || context->admission_address % alignof(simpler::tmr::TmrReplayAdmission) != 0)
+        return;
+    auto *admission = reinterpret_cast<__gm__ simpler::tmr::TmrReplayAdmission *>(context->admission_address);
+    if (read_kernel_replay_epoch(admission) == 0) return;
+    dcci(k_args, ENTIRE_DATA_CACHE);
+    dsb(static_cast<mem_dsb_t>(0));
+    if (context->resident_runtime != reinterpret_cast<uint64_t>(k_args->runtime_args)) return;
 
     // The chip swimlane is the one DFX channel a kernel context carries; the
     // others have no kernel-mode path, so their bits never reach the executor.

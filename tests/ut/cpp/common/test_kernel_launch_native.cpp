@@ -48,6 +48,14 @@ struct NativeFake {
         native.placeholder_count = 1;
         native.clear_regions = &clear;
         native.clear_region_count = 1;
+        native.replay_context = this;
+        native.begin_replay = [](void *context, void *stream) noexcept {
+            auto &f = *static_cast<NativeFake *>(context);
+            return aclrtMemsetAsync(f.handshake.data(), sizeof(f.handshake), 0, sizeof(f.handshake), stream);
+        };
+        native.end_replay = [](void *, void *) noexcept {
+            return 0;
+        };
     }
     KernelLaunchResult launch(void *caller = ptr(100)) {
         return launch_bound_kernel_native(fixture.binding, native, caller, fixture.fake.gate());
@@ -172,7 +180,7 @@ TEST(KernelNativeBinder, AicpuFailurePoisonsWithoutCompensationAndRestoresPlaceh
 }
 
 TEST(KernelNativeBinder, InvalidPreparedArgumentsRejectBeforeAnyEnqueue) {
-    for (int fault = 0; fault < 10; ++fault) {
+    for (int fault = 0; fault < 12; ++fault) {
         SCOPED_TRACE(fault);
         NativeFake f;
         active = &f;
@@ -204,6 +212,12 @@ TEST(KernelNativeBinder, InvalidPreparedArgumentsRejectBeforeAnyEnqueue) {
             break;
         case 8:
             f.fixture.fake.validation_error = -99;
+            break;
+        case 10:
+            f.native.begin_replay = nullptr;
+            break;
+        case 11:
+            f.native.end_replay = nullptr;
             break;
         case 9:
             f.native.clear_regions = nullptr;

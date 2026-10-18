@@ -43,13 +43,22 @@ enqueue_kernel_launch_sequence(const KernelLaunchOps &ops, const KernelLaunchHan
     if (!step(KernelLaunchStep::AicoreWait, ops.wait_event(ops.context, h.aicore, h.aicore_start))) return result;
     if (!step(KernelLaunchStep::AicoreLaunch, ops.launch_aicore(ops.context, h.aicore))) return result;
     if (!step(KernelLaunchStep::AicoreDone, ops.record_event(ops.context, h.aicore_done, h.aicore))) {
+        // AICPU has never been submitted, so no window can be opened by this
+        // invocation. Let the already launched workers observe cancellation.
+        // Failure of the publication retains the original submission error.
+        if (ops.cancel_unpaired_aicore) result.cleanup_status = ops.cancel_unpaired_aicore(ops.context, h.aicpu);
         return result;
     }
     if (!step(KernelLaunchStep::AicpuLaunch, ops.launch_aicpu(ops.context, h.aicpu))) {
+        // Acceptance of a failed launch API is unconfirmed. Pre-window cancel
+        // would be unsafe if an AICPU task could already open a window.
         return result;
     }
     // Completion/join errors stop enqueue and poison; there is no Host reset.
     if (!step(KernelLaunchStep::JoinAicore, ops.wait_event(ops.context, h.aicpu, h.aicore_done))) return result;
+    // Release the persistent lease only after both native groups have returned.
+    if (ops.finish_replay && !step(KernelLaunchStep::FinishReplay, ops.finish_replay(ops.context, h.aicpu)))
+        return result;
     if (!step(KernelLaunchStep::AicpuDone, ops.record_event(ops.context, h.aicpu_done, h.aicpu))) return result;
     if (!step(KernelLaunchStep::JoinAicpu, ops.wait_event(ops.context, h.caller, h.aicpu_done))) return result;
     if (!step(KernelLaunchStep::SerialTail, ops.record_event(ops.context, h.serial_tail, h.caller))) return result;

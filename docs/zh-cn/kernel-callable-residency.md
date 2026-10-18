@@ -19,6 +19,8 @@ HBG 和 sim 的不支持判定发生在取得 kernel 身份之前。在这种未
 它会同步 context 自己的 AICPU stream；prepare 和 launch 都不做 stream/device 同步，
 因此 prepare 可以在 capture 内调用。
 调用者负责串行执行同一 context 的 init、prepare、launch 和 finalize。
+Kernel 当前不支持 PMU、参数 dump、scope stats 和 clock anchors；相应配置在认领 context
+和设备入队之前返回 `UNSUPPORTED`。该拒绝路径不等同于 Program/Worker 的 PMU 故障处理。
 
 ```cpp
 int simpler_kernel_mode_prepare_callable(
@@ -189,12 +191,24 @@ Kernel 与 program 共用 `handshake_owned_clusters()` 和 `assign_own_clusters(
 轮询自己负责的 cluster，批量发布 task 指针和打开寄存器窗口，再初始化所属核的 tracker、
 payload 和 context。物理核 ID 由设备核身份指令产生，唯一性与 program 一样由平台保证；
 两种入口使用相同的 64 字节身份报告布局。Program 使用 Runtime 内嵌的报告，kernel 使用
-context 持有的独立报告区；Host 在启动前按轮清零，AICPU 在 kernel 准入时处理 DMA 清零的
-缓存可见性。AICore 写回身份后，scheduler 接受报告并执行读屏障，再发布 task 指针。
+context 持有的独立报告区。Kernel 的清零由设备 prelude 在取得持久租约后完成，
+不再排入无条件的 Host 清零 DMA。每次实际执行（包括同一捕获图的 replay）产生新的非零
+身份，AICore 在发布报告前读取该身份，scheduler 在写 task 和开窗前校验 report_epoch。
+租约存储独立于清零区；重入或失败永久锁存故障，后继入口在写共享状态前拒绝执行。
+图内 epilogue 只有在 AICPU/AICore 都完成后才释放成功租约。实际 epilogue 包只带 context
+身份，其逐次执行安全性依赖图节点单次执行及 completion 顺序：上一轮尚未释放时，下一轮
+不能成功准入；失败后不能重新准入。不能将组件的显式 epoch 拒绝测试等同于生产 epilogue
+自带独立 nonce，也不承诺驱动在 completion 后任意重放旧节点时仍安全。
 两种入口都由 AICore 读取自己的 DATA_MAIN_BASE 判断开窗，不使用额外的 GM OPEN 通知。
-正常任务循环和退出逻辑共用；A2/A3 保留 EXIT → EXITED → 关窗 → post-close release，
-A5 使用其平台既有的寄存器退出协议。A2/A3 的 release gate 由公共初始化在开窗前清零。
-本分支的报告有效性仍基于每轮清零，不声明主线非零 report_epoch 的运行身份保证。
+正常任务循环和退出逻辑共用；A2/A3 与 A5 的 Kernel 均广播 EXIT、收集本次 GM ACK，
+再完成关窗、readback/drain 和 post-close release；A5 保留自己的寄存器映射接口。
+release gate 在对应窗口初始化发布前清零，早到的退出请求通过 READY/REQUESTED 保留。
+OPENING 与 CANCELLED 使用排他 CAS：取消先赢时禁止写 task 和开窗；初始化者先认领
+OPENING 时必须完成实际 OPEN 和 READY，再接管早到 REQUESTED 的退休，不能同时发布
+未开窗取消。未开窗取消只写 AICPU 所属控制行，不能覆盖 AICore 专属的 ACK 行。
+Kernel 的外层入口在准入前只读取 envelope、不可变 descriptor 和独立租约的缓存行；
+整片数据缓存初始化在准入后执行。context generation 标识准备生命周期，replay epoch
+标识该生命周期内的一次实际执行，不能互相替代。失败后保留租约和资源，不能复位复用。
 
 未启用泳道图、PMU 或参数 dump 时，各 scheduler 完成本地初始化、等待 orchestrator 发布
 runtime reset 完成后即可派发，不等待其他 scheduler。这个选择按每轮的实际采集开关判断，
@@ -202,15 +216,31 @@ runtime reset 完成后即可派发，不等待其他 scheduler。这个选择�
 公共 profiling 初始化。串行配置保留统一 post-init 和建图前的初始化屏障。
 
 初始化或运行失败时，公共执行器发布失败，释放 CPU 等待者并汇总原始错误。
-已开窗核使用公共退出手段；未开窗核不参与额外取消握手，也不阻挡 AICPU 返回 CANN 错误。
+已开窗核使用公共退出手段；未开窗核由排他取消认领发布 pre-window cancel，等待开窗的
+核心观察到该词才能返回，不假装它完成了当前请求 ACK。已认领 OPENING 的核心仍需退休。
+在途 scheduler 在每轮调度前消费持久 replay 故障，并发布共享首错供生产者观察；生产者在
+首次 submit/dummy/alloc/scope 或 is_fatal 回调处读取共享错误，再由自身线程锁存 fatal。
+并发故障的观察是协作式的，已经开始的 R1 操作或退休收尾可以完成；这不授权 R2/R3 准入。
 最终状态在所有 AICPU 参与者汇合后写入 context 的诊断区。失败轮次保留 Runtime、参数和
 报告存储并拒绝再次调用，恢复由调用方负责；ACL_STOP_ON_FAILURE 不证明正在执行的
-AICore 已经停止。Host 在 AICore 提交后、AICPU 提交失败时同样立即返回原错误并 poison
-context，不发布假完成 event，不尝试写 GM 取消。调用方确认设备静止前不得释放相关资源。
+AICore 已经停止。Host 在部分入队失败时保留原错误并 poison context，不发布假完成 event。
+仅在 AICore 已提交、AicoreDone event 入队失败且 AICPU 尚未尝试提交的确定分支，
+额外排入开窗前 GM 取消；若 AICPU 已尝试提交而接受状态不明，则不发布该取消。
+取消入队本身不证明已执行或已停止，调用方确认设备静止前不得释放相关资源。
 启用采集时，orchestrator 建图后的核分配统计等待公共初始化完成，避免读取未建立的 tracker。
 
-Context descriptor 版本为 2：身份报告与最终状态各占 64 字节，取消字段和独立退出确认已删除。
-Host、AICPU、AICore 必须使用同一 runtime revision；不支持复用版本 1 的 descriptor。
+真实 packet/native dispatch 和直接 provider 共用同一等待策略。缺 native 参与者、slot、
+admission 及短初始化阶段使用现有 scheduler timeout 的共享预算，未配置时为 20 秒；
+核心启动报告等待也必须使用共享启动预算，不能按核重新计时或只依赖 profiling barrier。
+全员 Joined 后的 Final 不施加固定 20 秒整图上限，避免误杀持续进展的长图；持久故障仍
+解除等待。超时保持失败租约、参数和资源，不能发布成功 completion 或把 gate 重置 Idle。
+核心 post-close 必须等真实 release；物理 MMIO 阻塞和总 op 仍受 caller/CANN 的超时合同约束。
+Kernel 借用设备，只解析 scheduler/stream 配置；op-execute watchdog 由设备调用方设置。
+
+Context descriptor 版本为 3，仍占 192 字节：admission_address 位于偏移 168，
+两个保留字段位于偏移 176。身份报告、最终状态和独立的持久租约各占 64 字节。
+A2/A3 与 A5 均使用当前退出请求 ACK，并在关窗/readback/drain 后发布返回许可。
+Host、AICPU、AICore 必须使用同一 runtime revision；不支持复用版本 1 或版本 2 的 descriptor。
 
 HBG 已有内部 packet/restore consumer，公共 kernel launch owner 尚未接线。
 
@@ -242,3 +272,10 @@ close 前，调用者停止提交、等待 eager/replay 完成并销毁引用资
 a2a3 eager 数值路径已有真机通过记录。A5 的实现与测试入口均存在，但测试定义不等于真机验收。
 内部 HBG 单元测试以及 eager 成功也不代表完整 ACLGraph capture/replay 已完成验收；
 各次执行结果以本轮验证日志为准。
+
+## 退出与非法 replay 交错的验证
+
+清零前准入、每次 replay 身份、R1 故障后 R2/R3 的共享状态保护、当前 ACK、
+三条历史退役入口及 PMU 故障边界的实验与证明，见
+[Kernel replay admission and retirement validation](../kernel-replay-admission-validation.md)。
+文中分别列出 CPU 反例、实际设备注入、原始证据身份及仍依赖调用者的完成/停止合同。

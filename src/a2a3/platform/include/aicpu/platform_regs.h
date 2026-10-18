@@ -178,6 +178,12 @@ int32_t platform_retire_aicore_group(
     const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released = nullptr
 );
 
+// TMR current-request ACK protocol. Every target's AICore must initialize its
+// isolated ACK line before reporting and echo this request before release.
+int32_t platform_retire_aicore_current_ack_group(
+    const AicoreExitTarget *targets, size_t count, uint64_t deadline, bool *released = nullptr
+);
+
 /**
  * Variant-specific AICore deinit wait timeout, in ticks of get_sys_cnt_aicpu.
  *

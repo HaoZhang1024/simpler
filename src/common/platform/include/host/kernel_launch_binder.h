@@ -38,6 +38,10 @@ struct KernelLaunchOps {
     int (*record_event)(void *, void *event, void *stream) noexcept {nullptr};
     int (*launch_aicpu)(void *, void *stream) noexcept {nullptr};
     int (*launch_aicore)(void *, void *stream) noexcept {nullptr};
+    // Used only when AICore succeeded and AICPU has not been attempted. A
+    // queued cancellation is not a completion fence and does not unpoison.
+    int (*cancel_unpaired_aicore)(void *, void *stream) noexcept {nullptr};
+    int (*finish_replay)(void *, void *stream) noexcept {nullptr};
     bool valid() const { return wait_event && memset_handshake && record_event && launch_aicpu && launch_aicore; }
 };
 
@@ -75,6 +79,7 @@ enum class KernelLaunchStep : uint8_t {
     AicoreDone,
     AicpuLaunch,
     JoinAicore,
+    FinishReplay,
     AicpuDone,
     JoinAicpu,
     SerialTail

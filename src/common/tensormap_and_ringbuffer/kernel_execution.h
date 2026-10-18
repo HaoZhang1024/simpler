@@ -41,10 +41,12 @@ struct KernelExecutionRequest {
     int32_t callable_id{-1};
     KernelBindingView binding{};
     KernelHandshakeView handshake{};
+    const TmrReplayAdmission *replay_admission{nullptr};
     const int32_t *allowed_cpus{nullptr};
     int32_t execution_threads{0};
     int32_t launched_threads{0};
     int32_t admission_status{0};
+    KernelWaitControl wait_control{};
 };
 
 inline int32_t invocation_dispatch_status(InvocationStatus status) noexcept {

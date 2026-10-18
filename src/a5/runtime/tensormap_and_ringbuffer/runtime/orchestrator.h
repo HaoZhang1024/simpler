@@ -189,6 +189,14 @@ struct OrchestratorState {
     void set_scheduler(SchedulerState *scheduler);
     void mark_dep_pool_position(ChipTaskSlotState &slot_state);
     void wire_fanin_task(ChipTaskSlotState &slot_state, int32_t wfanin);
+    // Called only by the orchestration owner. External errors live in SM;
+    // consume them before an API mutates slots, heap, or scope bookkeeping.
+    bool observe_fatal() {
+        if (!fatal && sm_header != nullptr &&
+            sm_header->orch_error_code.load(std::memory_order_acquire) != SIMPLER_ERROR_NONE)
+            fatal = true;
+        return fatal;
+    }
     void report_fatal(int32_t error_code, const char *func, const char *fmt, ...);
     void begin_scope(ScopeMode mode = ScopeMode::AUTO);
     void end_scope();

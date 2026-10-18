@@ -11,6 +11,7 @@
 #include "scheduler_context.h"
 
 #include "utils/fatal_shutdown_latch.h"
+#include "tensormap_and_ringbuffer/kernel_round_gate.h"
 
 #include <cinttypes>
 #include <cstdio>
@@ -57,6 +58,8 @@ static bool latch_scheduler_error(SharedMemoryHeader *header, int32_t thread_idx
 LoopAction SchedulerContext::handle_orchestrator_exit(
     int32_t thread_idx, SharedMemoryHeader *header, Runtime *runtime, int32_t &task_count
 ) {
+    if (replay_admission_ != nullptr && __atomic_load_n(&replay_admission_->fault, __ATOMIC_ACQUIRE) != 0)
+        return check_idle_fatal_error(thread_idx, header, runtime);
     if (completed_.load(std::memory_order_acquire)) {
         return LoopAction::BREAK_LOOP;
     }
@@ -92,6 +95,19 @@ LoopAction SchedulerContext::handle_orchestrator_exit(
 }
 
 LoopAction SchedulerContext::check_idle_fatal_error(int32_t thread_idx, SharedMemoryHeader *header, Runtime *runtime) {
+    if (replay_admission_ != nullptr && __atomic_load_n(&replay_admission_->fault, __ATOMIC_ACQUIRE) != 0) {
+        // A rejected concurrent replay also retires the active invocation. Publish
+        // to both error channels: producer allocation/tensor waits poll orch_error.
+        // Preserve any earlier reason and never write the producer's plain fatal bool.
+        latch_scheduler_error(header, thread_idx, SIMPLER_ERROR_INVALID_ARGS);
+        int32_t expected = SIMPLER_ERROR_NONE;
+        header->orch_error_code.compare_exchange_strong(
+            expected, header->sched_error_code.load(std::memory_order_acquire), std::memory_order_acq_rel
+        );
+        LOG_ERROR("Thread %d: Kernel replay admission failed, retiring the active invocation", thread_idx);
+        emergency_shutdown(runtime);
+        return LoopAction::BREAK_LOOP;
+    }
     if (completed_.load(std::memory_order_acquire)) {
         return LoopAction::BREAK_LOOP;
     }
@@ -649,21 +665,96 @@ int32_t SchedulerContext::shutdown(int32_t thread_idx, Runtime *runtime) {
     return retire_cores(runtime, cores, core_num);
 }
 
+bool SchedulerContext::claim_core_opening(int32_t core_id) {
+    uint8_t state = __atomic_load_n(&retirement_state_[core_id], __ATOMIC_ACQUIRE);
+    for (;;) {
+        if ((state & (RETIREMENT_OPENING | RETIREMENT_READY | RETIREMENT_CANCELLED)) != 0) return false;
+        if (__atomic_compare_exchange_n(
+                &retirement_state_[core_id], &state, static_cast<uint8_t>(state | RETIREMENT_OPENING), false,
+                __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE
+            ))
+            return true;
+    }
+}
+
 int32_t SchedulerContext::retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
+    int32_t claimed_ids[PLATFORM_MAX_CORES];
+    int32_t count = 0;
+    for (int32_t i = 0; i < core_num; ++i) {
+        const int32_t core_id = core_ids[i];
+        if (core_id < 0 || core_id >= cores_total_num_) continue;
+        const uint8_t previous = __atomic_fetch_or(&retirement_state_[core_id], RETIREMENT_REQUESTED, __ATOMIC_ACQ_REL);
+        if ((previous & (RETIREMENT_READY | RETIREMENT_REQUESTED)) == RETIREMENT_READY) {
+            claimed_ids[count++] = core_id;
+        } else if (initialization_aborted()) {
+            // A core without an OPEN owner may be cancelled in GM. If the
+            // initializer won OPENING, its READY publication owns the handoff.
+            uint8_t expected = RETIREMENT_REQUESTED;
+            if (__atomic_compare_exchange_n(
+                    &retirement_state_[core_id], &expected,
+                    static_cast<uint8_t>(RETIREMENT_REQUESTED | RETIREMENT_CANCELLED), false, __ATOMIC_ACQ_REL,
+                    __ATOMIC_ACQUIRE
+                )) {
+                __atomic_store_n(
+                    &runtime->get_teardown_gates()[core_id].post_close_release, AICORE_PRE_WINDOW_HOST_CANCEL,
+                    __ATOMIC_RELEASE
+                );
+                wmb();
+            }
+        }
+    }
+    return retire_claimed_cores(runtime, claimed_ids, count);
+}
+
+void SchedulerContext::publish_retirement_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
+    int32_t claimed_ids[PLATFORM_MAX_CORES];
+    int32_t count = 0;
+    for (int32_t i = 0; i < core_num; ++i) {
+        const int32_t core_id = core_ids[i];
+        // The OPEN owner alone publishes stable metadata. A cancelled core
+        // never acquires that ownership and has no window to retire.
+        if (core_id < 0 || core_id >= cores_total_num_) continue;
+        if (core_exec_states_[core_id].reg_addr == 0) continue;
+        if ((__atomic_fetch_or(&retirement_state_[core_id], RETIREMENT_READY, __ATOMIC_ACQ_REL) &
+             (RETIREMENT_READY | RETIREMENT_REQUESTED)) == RETIREMENT_REQUESTED) {
+            claimed_ids[count++] = core_id;
+        }
+    }
+    (void)retire_claimed_cores(runtime, claimed_ids, count);
+}
+
+void SchedulerContext::publish_all_retirement_cores(Runtime *runtime) {
+    // The serial initializer has joined every handshake before reading metadata.
+    int32_t ids[PLATFORM_MAX_CORES];
+    for (int32_t i = 0; i < cores_total_num_; ++i)
+        ids[i] = i;
+    publish_retirement_cores(runtime, ids, cores_total_num_);
+}
+
+void SchedulerContext::publish_retirement_group(Runtime *runtime, int32_t owner_thread) {
+    // The blocked handshake partition is stable even if tracker assignment fails.
+    int32_t ids[PLATFORM_MAX_CORES];
+    int32_t count = 0;
+    const int32_t aic_n = cores_total_num_ / PLATFORM_CORES_PER_BLOCKDIM;
+    for (int32_t ci = owner_thread; ci < aic_n; ci += active_sched_threads_) {
+        ids[count++] = ci;
+        ids[count++] = aic_n + 2 * ci;
+        ids[count++] = aic_n + 2 * ci + 1;
+    }
+    publish_retirement_cores(runtime, ids, count);
+}
+
+int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
     AicoreExitTarget targets[PLATFORM_MAX_CORES];
     int32_t claimed_ids[PLATFORM_MAX_CORES];
     size_t count = 0;
     for (int32_t i = 0; i < core_num; ++i) {
         const int32_t core_id = core_ids[i];
         if (core_id < 0 || core_id >= cores_total_num_) continue;
-        if (core_exec_states_[core_id].reg_addr == 0) continue;
-        // Claiming decides ownership of this core's register window and return
-        // gate. The loser must not touch either again: writing to a window
-        // whose worker was already released is the very ordering violation the
-        // return gate exists to prevent.
-        if (core_retired_[core_id].exchange(true, std::memory_order_acq_rel)) continue;
+        const uint64_t reg_addr = core_exec_states_[core_id].reg_addr;
+        if (reg_addr == 0) continue;
         claimed_ids[count] = core_id;
-        targets[count] = {core_exec_states_[core_id].reg_addr, &runtime->get_teardown_gates()[core_id]};
+        targets[count] = {reg_addr, &runtime->get_teardown_gates()[core_id]};
         ++count;
     }
     if (count == 0) return 0;
@@ -671,7 +762,10 @@ int32_t SchedulerContext::retire_cores(Runtime *runtime, const int32_t *core_ids
     // platform_retire_aicore_group fills every entry on every path it returns
     // from, so this needs no initializer.
     bool released[PLATFORM_MAX_CORES];
-    const int32_t rc = platform_retire_aicore_group(targets, count, platform_aicore_exit_deadline(), released);
+    // READY commits the current report, reset gate/request, and register
+    // metadata before a unique retirement claimant can enter this helper.
+    const uint64_t deadline = platform_aicore_exit_deadline();
+    const int32_t rc = platform_retire_aicore_current_ack_group(targets, count, deadline, released);
     if (rc != 0) {
         // Naming the cores is the only signal an unreleased worker leaves: it
         // spins on a gate it cannot log about, and the host sees just a stream
@@ -708,6 +802,29 @@ int32_t SchedulerContext::retire_all_cores(Runtime *runtime) {
 // built serially in post_handshake_init (core-index order) once every slice has
 // landed, so the shared aic_count_/aiv_count_ are written by one thread only.
 // =============================================================================
+
+// Every startup owner shares one phase budget, including the barrier-free
+// path where the finite orchestrator may already have returned. Expiration
+// stops admission to OPEN and requests retirement through the existing
+// OPENING/READY/REQUESTED ownership protocol, never by reading unfinished state.
+bool SchedulerContext::check_startup_timeout(Runtime *runtime, int32_t thread_idx) {
+    const uint64_t budget = startup_wait_ticks_.load(std::memory_order_acquire);
+    if (budget == 0 || get_sys_cnt_aicpu() - startup_wait_start_.load(std::memory_order_acquire) < budget) return false;
+    startup_timed_out_.store(true, std::memory_order_release);
+    auto *header = static_cast<SharedMemoryHeader *>(startup_sm_);
+    latch_scheduler_error(header, thread_idx, SIMPLER_ERROR_SCHEDULER_TIMEOUT);
+    if (header != nullptr) {
+        // Producer API entry and blocked allocator/tensor waits consume the
+        // orchestration error word. Preserve each channel's first error while
+        // making this startup failure visible to the cooperative producer.
+        const int32_t error = header->sched_error_code.load(std::memory_order_acquire);
+        int32_t expected = SIMPLER_ERROR_NONE;
+        header->orch_error_code.compare_exchange_strong(expected, error, std::memory_order_acq_rel);
+    }
+    handshake_failed_.store(true, std::memory_order_release);
+    emergency_shutdown(runtime);
+    return true;
+}
 
 void SchedulerContext::handshake_partition(Runtime *runtime, int32_t tidx, int32_t nthreads) {
     Handshake *all_handshakes = reports_ != nullptr ? reports_ : runtime->dev.workers;
@@ -761,6 +878,11 @@ void SchedulerContext::handshake_partition(Runtime *runtime, int32_t tidx, int32
     // Phase 1: collect every reported core in this slice and prefetch its
     // CoreExecState line for write, so the Phase 4 struct store hits a warm line.
     for (int32_t remaining = hi - lo; remaining > 0;) {
+        if (check_startup_timeout(runtime, tidx)) return;
+        if (replay_admission_ != nullptr && __atomic_load_n(&replay_admission_->fault, __ATOMIC_ACQUIRE) != 0) {
+            handshake_failed_.store(true, std::memory_order_release);
+            return;
+        }
         if (handshake_failed_.load(std::memory_order_acquire) || initialization_aborted()) return;
         for (int32_t i = lo; i < hi; i++) {
             if (core_serviced[i]) continue;
@@ -770,6 +892,10 @@ void SchedulerContext::handshake_partition(Runtime *runtime, int32_t tidx, int32
                 continue;
             }
             rmb();
+            if (reports_ != nullptr && (report_epoch_ == 0 || hank->report_epoch != report_epoch_)) {
+                handshake_failed_.store(true, std::memory_order_release);
+                return;
+            }
             uint32_t physical_core_id = hank->physical_core_id;
             if (physical_core_id >= max_physical_cores_count || regs[physical_core_id] == 0) {
                 LOG_ERROR(
@@ -789,6 +915,12 @@ void SchedulerContext::handshake_partition(Runtime *runtime, int32_t tidx, int32
     }
 
     if (handshake_failed_.load(std::memory_order_acquire) || initialization_aborted()) return;
+
+    int32_t n_opening = 0;
+    for (int32_t r = 0; r < n_ready; r++) {
+        if (claim_core_opening(ready[r].i)) ready[n_opening++] = ready[r];
+    }
+    n_ready = n_opening;
 
     // Phase 2: publish every task pointer, then ONE barrier. The core reads task
     // only after its window opens (Phase 3); a single barrier orders all task
@@ -865,6 +997,11 @@ void SchedulerContext::handshake_owned_clusters(Runtime *runtime, int32_t tidx, 
 
     // Phase 1: collect every reported owned core, prefetch its CoreExecState line.
     for (int32_t remaining = own_n; remaining > 0;) {
+        if (check_startup_timeout(runtime, tidx)) return;
+        if (replay_admission_ != nullptr && __atomic_load_n(&replay_admission_->fault, __ATOMIC_ACQUIRE) != 0) {
+            handshake_failed_.store(true, std::memory_order_release);
+            return;
+        }
         if (handshake_failed_.load(std::memory_order_acquire) || initialization_aborted()) return;
         for (int32_t k = 0; k < own_n; k++) {
             int32_t i = owned[k];
@@ -875,6 +1012,10 @@ void SchedulerContext::handshake_owned_clusters(Runtime *runtime, int32_t tidx, 
                 continue;
             }
             rmb();
+            if (reports_ != nullptr && (report_epoch_ == 0 || hank->report_epoch != report_epoch_)) {
+                handshake_failed_.store(true, std::memory_order_release);
+                return;
+            }
             uint32_t physical_core_id = hank->physical_core_id;
             if (physical_core_id >= max_physical_cores_count || regs[physical_core_id] == 0) {
                 LOG_ERROR(
@@ -894,6 +1035,12 @@ void SchedulerContext::handshake_owned_clusters(Runtime *runtime, int32_t tidx, 
     }
 
     if (handshake_failed_.load(std::memory_order_acquire) || initialization_aborted()) return;
+
+    int32_t n_opening = 0;
+    for (int32_t r = 0; r < n_ready; r++) {
+        if (claim_core_opening(ready[r].i)) ready[n_opening++] = ready[r];
+    }
+    n_ready = n_opening;
 
     // Phase 2: publish every task pointer, then ONE barrier. The core reads task
     // only after its window opens (Phase 3), so a single barrier orders all task
@@ -1107,9 +1254,9 @@ bool SchedulerContext::begin_emergency_shutdown() {
 void SchedulerContext::signal_emergency_shutdown(Runtime *runtime) {
     // Sweeps every core rather than one thread's slice: a fatal run must not
     // depend on the owning threads reaching their own shutdown. Per-core
-    // claiming keeps whatever they already retired untouched. Cores whose
-    // register windows never opened remain the host recovery path's
-    // responsibility.
+    // claiming keeps whatever they already retired untouched. Unopened workers
+    // receive exclusive pre-window cancellation; an OPENING owner publishes
+    // READY after finishing its metadata so pending retirement can complete.
     LOG_WARN("Emergency shutdown: retiring all initialized AICores");
     (void)retire_all_cores(runtime);
 }
@@ -1137,15 +1284,22 @@ int32_t SchedulerContext::pre_handshake_init(
 
 int32_t SchedulerContext::pre_handshake_init(
     Runtime *runtime, int32_t aicpu_thread_num, int32_t sched_thread_num, uint64_t regs_base,
-    simpler::tmr::CallableTableView functions, void *sm
+    simpler::tmr::CallableTableView functions, void *sm, uint64_t startup_start
 ) {
     always_assert(runtime != nullptr);
+    startup_wait_start_.store(startup_start != 0 ? startup_start : get_sys_cnt_aicpu(), std::memory_order_relaxed);
+    startup_wait_ticks_.store(
+        simpler::tmr::kernel_wait_timeout_ticks(
+            get_scheduler_timeout_ms(), PLATFORM_SCHEDULER_TIMEOUT_MS, PLATFORM_PROF_SYS_CNT_FREQ
+        ),
+        std::memory_order_relaxed
+    );
+    startup_timed_out_.store(false, std::memory_order_relaxed);
+    startup_sm_ = sm;
 
     // Zero all per-core execution state before handshake
     memset(core_exec_states_, 0, sizeof(core_exec_states_));
-    for (int32_t i = 0; i < PLATFORM_MAX_CORES; ++i) {
-        core_retired_[i].store(false, std::memory_order_relaxed);
-    }
+    memset(retirement_state_, 0, sizeof(retirement_state_));
 
     // Wire thread/transition configuration that handshake/assign need to read.
     aicpu_thread_num_ = aicpu_thread_num;
@@ -1193,7 +1347,10 @@ int32_t SchedulerContext::pre_handshake_init(
     // resets before hs_setup_done_ and before any register window opens: a
     // window is a plain Device-nGnRE store, carrying no release semantics of
     // its own.
-    memset(runtime->get_teardown_gates(), 0, sizeof(AicoreTeardownControl) * cores_total_num_);
+    for (int32_t i = 0; i < cores_total_num_; ++i) {
+        __atomic_store_n(&runtime->get_teardown_gates()[i].post_close_release, 0U, __ATOMIC_RELAXED);
+        __atomic_store_n(&runtime->get_teardown_gates()[i].exit_request, 0U, __ATOMIC_RELAXED);
+    }
     wmb();
     // The blocked 1 AIC : 2 AIV layout requires an exact multiple of 3: cluster ci
     // owns cores {ci, N/3+2ci, N/3+2ci+1}, so a non-zero remainder leaves the tail
@@ -1364,6 +1521,12 @@ int32_t SchedulerContext::post_handshake_init(Runtime *runtime, simpler::tmr::Ca
 
 void SchedulerContext::deinit() {
     reports_ = nullptr;
+    report_epoch_ = 0;
+    replay_admission_ = nullptr;
+    startup_wait_start_.store(0, std::memory_order_relaxed);
+    startup_wait_ticks_.store(0, std::memory_order_relaxed);
+    startup_timed_out_.store(false, std::memory_order_relaxed);
+    startup_sm_ = nullptr;
     // Reset all per-core execution state
     for (int32_t i = 0; i < RUNTIME_MAX_WORKER; i++) {
         core_exec_states_[i] = {};

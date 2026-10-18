@@ -376,3 +376,206 @@ TEST(TmrKernelRoundGateTest, EarliestDuplicateWinsBeforeExactPrefixCompletes) {
 }
 
 }  // namespace
+
+TEST(KernelRoundGatePoison, PartialAdmissionUnblocksAndCannotBecomeReusable) {
+    simpler::tmr::KernelRoundGate gate;
+    simpler::tmr::KernelRoundTicket leader;
+    ASSERT_TRUE(gate.join(2, 7, &leader));
+    int32_t allowed[2]{7, 9};
+    bool result = true;
+    std::thread waiter([&] {
+        result = gate.publish_admission(leader, allowed, 2, 0);
+    });
+    gate.poison();
+    waiter.join();
+    EXPECT_FALSE(result);
+    EXPECT_FALSE(gate.idle());
+    simpler::tmr::KernelRoundTicket next;
+    EXPECT_FALSE(gate.join(2, 7, &next));
+}
+
+namespace {
+std::atomic<uint64_t> wait_clock{0};
+thread_local int claim_clock_calls = 0;
+Signal *claim_paused = nullptr;
+Signal *claim_release = nullptr;
+struct WaitProbe {
+    std::atomic<bool> healthy{true};
+    std::atomic<int> aborted{0};
+    KernelWaitControl policy(uint64_t ticks = 10) {
+        return {
+            this,
+            []() noexcept {
+                return wait_clock.load();
+            },
+            ticks,
+            [](void *p) noexcept {
+                return static_cast<WaitProbe *>(p)->healthy.load();
+            },
+            [](void *p) noexcept {
+                ++static_cast<WaitProbe *>(p)->aborted;
+            }
+        };
+    }
+};
+
+TEST(KernelRoundWaitBudget, MissingSlotPoisonsAdmissionAndRejectsLateParticipants) {
+    wait_clock = 100;
+    KernelRoundGate gate;
+    KernelRoundTicket leader;
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    ASSERT_TRUE(gate.join(2, 10, &leader, wait));
+    const int32_t allowed[]{10, 11};
+    wait_clock = 110;
+    EXPECT_FALSE(gate.publish_admission(leader, allowed, 2, 0, wait));
+    EXPECT_GE(probe.aborted.load(), 1);
+    EXPECT_FALSE(gate.idle());
+    KernelRoundTicket late;
+    EXPECT_FALSE(gate.join(2, 11, &late, wait));
+    EXPECT_FALSE(gate.publish_admission(leader, allowed, 2, 0));
+}
+
+TEST(KernelRoundWaitBudget, MissingAdmissionPublisherHasBoundedFailure) {
+    wait_clock = 200;
+    KernelRoundGate gate;
+    KernelRoundTicket leader, peer;
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    ASSERT_TRUE(gate.join(2, 10, &leader, wait));
+    ASSERT_TRUE(gate.join(2, 11, &peer, wait));
+    wait_clock = 210;
+    KernelRoundAdmission admission;
+    EXPECT_FALSE(gate.wait_admission(peer, &admission, wait));
+    EXPECT_GE(probe.aborted.load(), 1);
+    EXPECT_FALSE(gate.idle());
+}
+
+TEST(KernelRoundWaitBudget, LateJoinCannotEraseExpiredMembershipBudget) {
+    wait_clock = 100;
+    KernelRoundGate gate;
+    KernelRoundTicket leader, late;
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    ASSERT_TRUE(gate.join(2, 10, &leader, wait));
+    const int32_t allowed[]{10};
+    ASSERT_TRUE(gate.publish_admission(leader, allowed, 1, 0, wait));
+    wait_clock = 110;
+    EXPECT_FALSE(gate.join(2, 99, &late, wait));
+    EXPECT_FALSE(gate.idle());
+}
+
+TEST(KernelRoundWaitBudget, ClaimedSlotWithoutJoinedPublicationStillHasMembershipDeadline) {
+    wait_clock = 100;
+    KernelRoundGate gate;
+    KernelRoundTicket leader, peer;
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    ASSERT_TRUE(gate.join(2, 10, &leader, wait));
+    const int32_t allowed[]{10};
+    ASSERT_TRUE(gate.publish_admission(leader, allowed, 1, 0, wait));
+    KernelRoundAdmission admission;
+    ASSERT_TRUE(gate.wait_admission(leader, &admission, wait));
+    ASSERT_EQ(gate.arrive(leader, 0), RoundArrival::Peer);
+    Signal paused, release;
+    claim_paused = &paused;
+    claim_release = &release;
+    auto peer_wait = wait;
+    peer_wait.clock = []() noexcept {
+        // local-start, pre-claim poll, then post-claim/pre-publication poll.
+        if (++claim_clock_calls == 3) {
+            claim_paused->set();
+            claim_release->wait();
+        }
+        return wait_clock.load();
+    };
+    bool joined = true;
+    std::thread claimant([&] {
+        joined = gate.join(2, 99, &peer, peer_wait);
+    });
+    EXPECT_TRUE(paused.wait_for(std::chrono::seconds(1)));
+    wait_clock = 110;
+    KernelFinalStatus result;
+    EXPECT_FALSE(gate.read_final_status(leader, &result, wait));
+    release.set();
+    claimant.join();
+    EXPECT_FALSE(joined);
+    EXPECT_FALSE(gate.idle());
+    claim_paused = claim_release = nullptr;
+}
+
+TEST(KernelRoundWaitBudget, FinalRetainsOriginalDeadlineUntilMissingNativeParticipantJoins) {
+    wait_clock = 300;
+    KernelRoundGate gate;
+    KernelRoundTicket leader;
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    ASSERT_TRUE(gate.join(2, 10, &leader, wait));
+    const int32_t allowed[]{10};
+    ASSERT_TRUE(gate.publish_admission(leader, allowed, 1, 0, wait));
+    KernelRoundAdmission admission;
+    ASSERT_TRUE(gate.wait_admission(leader, &admission, wait));
+    ASSERT_EQ(gate.arrive(leader, 0), RoundArrival::Peer);
+    wait_clock = 310;
+    KernelFinalStatus final;
+    EXPECT_FALSE(gate.read_final_status(leader, &final, wait));
+    EXPECT_FALSE(gate.idle());
+    KernelRoundTicket late;
+    EXPECT_FALSE(gate.join(2, 99, &late, wait));
+}
+
+TEST(KernelRoundWaitBudget, JoinedLongExecutionDoesNotUseMembershipDeadlineForFinal) {
+    wait_clock = 400;
+    KernelRoundGate gate;
+    KernelRoundTicket tickets[2];
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    for (int i = 0; i < 2; ++i)
+        ASSERT_TRUE(gate.join(2, 10 + i, &tickets[i], wait));
+    const int32_t allowed[]{10, 11};
+    ASSERT_TRUE(gate.publish_admission(tickets[0], allowed, 2, 0, wait));
+    for (const auto &ticket : tickets) {
+        KernelRoundAdmission admission;
+        ASSERT_TRUE(gate.wait_admission(ticket, &admission, wait));
+    }
+    ASSERT_EQ(gate.arrive(tickets[0], 0), RoundArrival::Peer);
+    wait_clock = 1000000;
+    Signal returned;
+    bool read = false;
+    std::thread peer([&] {
+        KernelFinalStatus result;
+        read = gate.read_final_status(tickets[0], &result, wait);
+        returned.set();
+    });
+    EXPECT_FALSE(returned.wait_for(std::chrono::milliseconds(20)));
+    EXPECT_EQ(probe.aborted.load(), 0);
+    EXPECT_EQ(gate.arrive(tickets[1], 0), RoundArrival::Finalizer);
+    EXPECT_TRUE(gate.publish_final_status(tickets[1], 0, 0));
+    peer.join();
+    EXPECT_TRUE(read);
+}
+
+TEST(KernelRoundWaitBudget, FinalConsumesStickyAbortEvenAfterAllNativeParticipantsJoined) {
+    wait_clock = 500;
+    KernelRoundGate gate;
+    KernelRoundTicket tickets[2];
+    WaitProbe probe;
+    const auto wait = probe.policy();
+    for (int i = 0; i < 2; ++i)
+        ASSERT_TRUE(gate.join(2, 10 + i, &tickets[i], wait));
+    const int32_t allowed[]{10, 11};
+    ASSERT_TRUE(gate.publish_admission(tickets[0], allowed, 2, 0, wait));
+    for (const auto &ticket : tickets) {
+        KernelRoundAdmission admission;
+        ASSERT_TRUE(gate.wait_admission(ticket, &admission, wait));
+    }
+    ASSERT_EQ(gate.arrive(tickets[0], 0), RoundArrival::Peer);
+    probe.healthy = false;
+    KernelFinalStatus result;
+    EXPECT_FALSE(gate.read_final_status(tickets[0], &result, wait));
+    EXPECT_EQ(gate.arrive(tickets[1], 0), RoundArrival::Invalid);
+    EXPECT_FALSE(gate.publish_final_status(tickets[1], 0, 0));
+    EXPECT_FALSE(gate.complete_departure(tickets[0]));
+    EXPECT_FALSE(gate.idle());
+}
+}  // namespace

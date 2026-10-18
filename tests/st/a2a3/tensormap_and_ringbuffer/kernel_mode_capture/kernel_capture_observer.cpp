@@ -353,7 +353,11 @@ extern "C" rtError_t rtsLaunchCpuKernel(
     rtCpuKernelArgs_t *args
 ) {
     if (fail_prepare_step(1)) return -4333;
-    if (invocation_scope && fail_next_invocation) {
+    // The replay prelude/epilogue carry context identity, not a dispatch.
+    // Keep the failure armed until the execution launch, after AICore enqueue.
+    const bool context_only = args != nullptr && args->baseArgs.args != nullptr &&
+                              args->baseArgs.argsSize == sizeof(simpler::tmr::TmrContextRegistrationArgs);
+    if (invocation_scope && fail_next_invocation && !context_only) {
         fail_next_invocation = false;
         return -4334;
     }

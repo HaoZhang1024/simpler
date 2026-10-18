@@ -19,6 +19,17 @@
 
 namespace simpler::tmr {
 
+// Persistent context state, never part of the per-round clear plan. A failed
+// admission poisons the context permanently; only destruction after external
+// quiescence can reclaim it. Odd sequence values are live replay identities,
+// even values are completed leases. No identity is reused, including at wrap.
+struct alignas(64) TmrReplayAdmission {
+    uint64_t sequence;
+    uint64_t ready_epoch;
+    uint32_t fault;
+};
+static_assert(sizeof(TmrReplayAdmission) == 64);
+
 enum class TmrCompletion : uint32_t { Pending = 0, Complete = 1 };
 
 // AICore publishes identity before AICPU writes task and opens the register window.

@@ -26,9 +26,10 @@ bool span(const void *ptr, size_t bytes) noexcept {
 }
 int validate(void *context, const KernelInvocationBinding &binding) noexcept {
     const auto &n = get(context);
-    if (!n.aicore || !n.aicpu || !n.aicore_blocks || !n.aicpu_blocks || !span(n.aicore_args, n.aicore_args_bytes) ||
-        n.aicpu_args != binding.packet || n.aicpu_args_bytes != binding.packet_bytes || !n.clear_regions ||
-        !n.clear_region_count || n.placeholder_count != binding.placeholder_count ||
+    if (!n.begin_replay || !n.end_replay || !n.aicore || !n.aicpu || !n.aicore_blocks || !n.aicpu_blocks ||
+        !span(n.aicore_args, n.aicore_args_bytes) || n.aicpu_args != binding.packet ||
+        n.aicpu_args_bytes != binding.packet_bytes || !n.clear_regions || !n.clear_region_count ||
+        n.placeholder_count != binding.placeholder_count ||
         (n.placeholder_count && (!n.placeholders || !binding.placeholders)) ||
         n.placeholder_count > n.aicpu_args_bytes / sizeof(uint64_t))
         return PTO_RUNTIME_ERR_INTERNAL;
@@ -74,12 +75,11 @@ int wait(void *, void *stream, void *event) noexcept { return aclrtStreamWaitEve
 int record(void *, void *event, void *stream) noexcept { return aclrtRecordEvent(event, stream); }
 int clear(void *context, void *stream) noexcept {
     const auto &n = get(context);
-    for (size_t i = 0; i < n.clear_region_count; ++i) {
-        const auto &r = n.clear_regions[i];
-        const int rc = aclrtMemsetAsync(r.address, r.bytes, 0, r.bytes, stream);
-        if (rc != 0) return rc;
-    }
-    return 0;
+    return n.begin_replay(n.replay_context, stream);
+}
+int end(void *context, void *stream) noexcept {
+    const auto &n = get(context);
+    return n.end_replay(n.replay_context, stream);
 }
 int core(void *context, void *stream) noexcept {
     const auto &n = get(context);
@@ -112,7 +112,8 @@ KernelLaunchResult launch_bound_kernel_native(
     }
     NativeCall call{native, owner};
     const KernelLaunchGateOps gate{&call, acquire, finish, query};
-    const KernelLaunchOps ops{&call, wait, clear, record, cpu, core};
+    KernelLaunchOps ops{&call, wait, clear, record, cpu, core};
+    ops.finish_replay = end;
     return launch_bound_kernel(binding, caller_stream, gate, ops);
 }
 
