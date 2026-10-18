@@ -1,0 +1,1374 @@
+{
+  "schema_version": 1,
+  "issue": 1710,
+  "pr": 2600,
+  "parent": "52c4d3d0077e5de9263f275b1116ddcca040a227",
+  "measured_archive_sha256": "8fb718d262bfb0c72a3859b189adcf23e4fc3d78cfaa52ac152da03f1477396f",
+  "final_candidate_archive_sha256": "b4c4016daf6812416dbb187a1a03be0023f50587598ef0ae9e8fa610ac04f607",
+  "identity_boundary": "Measured fault SDK precedes fixed PMU-stop readbacks; no fault target acknowledged or reached that branch. Formatting and unit-test additions are separately retained.",
+  "measured_to_final_candidate_changes": {
+    "src/a2a3/platform/shared/aicpu/platform_regs.cpp": {
+      "measured": "dbf8e2734ac798160e8ff94570860f5b646796015afa8d0644e6244d8fc413ed",
+      "final_candidate": "6867d5114301ebbcf8e95db5e5abc002d392d62b736ca7d36fba27c97bb8a4b9"
+    },
+    "src/a2a3/platform/shared/aicpu/pmu_collector_aicpu.cpp": {
+      "measured": "521728a29387e1ddf57567e5875dbfd33edecbabf64c2f12f73fcfcd8f3c3a8e",
+      "final_candidate": "467996891103e6ddb1358c310266452eab8cc7ea1172dfd3bb16bcbb875d4671"
+    },
+    "src/a2a3/runtime/host_build_graph/aicore/aicore_executor.cpp": {
+      "measured": "b407ae1ffcb851e586ce255112a05c7af0dfc8aee2e94a85afd3bbf2daa4df92",
+      "final_candidate": "81715c1a415e065ffe317b17155168584d269063df172fe45a4dff76f06004f2"
+    },
+    "src/a2a3/runtime/host_build_graph/runtime/scheduler/scheduler_cold_path.cpp": {
+      "measured": "fc75d16bf390c7f4fd7287ec4ec5e548b373f61371ec08fe754f20ce683690d6",
+      "final_candidate": "b90b6b9b78d007132c58a4924cbcbda8a10ea7bea6ba51c78bbfdc808881ddc7"
+    },
+    "src/a2a3/runtime/tensormap_and_ringbuffer/aicore/aicore_executor.cpp": {
+      "measured": "6338fca331a751d28d3d87f00c065a36824625368d26773d8a0c77fd5b2bb39e",
+      "final_candidate": "f92c335e817215e63d17995fcae27b8195c4b10f27e27e2cb22887541fe6f942"
+    },
+    "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": {
+      "measured": "e172aaca2cd6a5571b3438581bc0a59ee79484ca91099b98c97f3ddb3a3ebe80",
+      "final_candidate": "9c5f84b41b48376485999f463a5fcef42ee21eb0715c2c004d4be352ff95706f"
+    },
+    "src/a5/platform/shared/aicpu/platform_regs.cpp": {
+      "measured": "8d39adaacd7738fb2d6f82753c328ab5825399577b5af7df251ce099204e6011",
+      "final_candidate": "442bc131ceda3374108db68a1223bc19f6c20bccdd831baa3f5d834e23787139"
+    },
+    "src/a5/platform/shared/aicpu/pmu_collector_aicpu.cpp": {
+      "measured": "60fb36b0d54db5b4c2916ca3a5ab515f662f85dbea47bf8545ef66ba83f1e3ea",
+      "final_candidate": "1b01910a0e5fff86c49aa74ba4a3898ba4e095326bb695885c0291cf38b3cf3f"
+    },
+    "src/a5/runtime/host_build_graph/aicore/aicore_legacy_executor.cpp": {
+      "measured": "de4261f5806ed6366dba6cdc8b6e6816c8e429a45fc95cc628de7fd5b96ed85a",
+      "final_candidate": "b2a0468c89d8115df75416e30a3c439e872238a30df534d52c3216f8f6c604a2"
+    },
+    "src/a5/runtime/host_build_graph/aicpu/aicore_lifecycle.cpp": {
+      "measured": "015de0b0ff61ed22e86f926f14cdc30305d8e86c5673f1dc4eab700508b4eaad",
+      "final_candidate": "c2b6ca5cf131ec0a17d839e2e7d96e164bc09e9e9976a9bb2992a600ddec8d46"
+    },
+    "src/a5/runtime/host_build_graph/runtime/scheduler/scheduler_cold_path.cpp": {
+      "measured": "c8564b9cf9abfea8db36be6b5de8d3f356264832e6f13c0e8e80202b0fd9b323",
+      "final_candidate": "0601c80af6d1651fadee2c8272d2fe1f87d94f6bc39b78e575ee4f26c09f47e5"
+    },
+    "src/a5/runtime/tensormap_and_ringbuffer/aicore/aicore_executor.cpp": {
+      "measured": "757bac79d042c28a4ef6992283c04ec6b64142e304f64e71b89d613971001d0d",
+      "final_candidate": "6690ede96a664539bc59e9204e2ede80b67cc4b6357aff35fec5e1bb5e982b38"
+    },
+    "src/a5/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": {
+      "measured": "61a2c1b95c3e4679e093dac224c956076764b08a0c080a9eb7c4898354c64c06",
+      "final_candidate": "1cc48790e53a8a89f0cf085db60463c5acbb617ebc543a05c925fff3b8f4aeca"
+    },
+    "tests/ut/cpp/a2a3/runtime/test_aicore_retirement.cpp": {
+      "measured": "75e2337ff30286cbc38543b025851ccd4282e43e3b83513a835e9a0e2ef75d43",
+      "final_candidate": "f6157d7bc9f1d9ec0ea8d294cb7267655e1f52cba1d1bbec1bcc324209598cee"
+    },
+    "tests/ut/cpp/a5/runtime/host_build_graph/CMakeLists.txt": {
+      "measured": "fc526b180c05ca0af0fbe289801c25acd1b5ceddb89b38605d467193e437e229",
+      "final_candidate": "fce90c372a705b6e401ff1bab3f82bed113a67f6aa353eaa68fdf66e0af5a2e4"
+    },
+    "tests/ut/cpp/a5/runtime/host_build_graph/test_hbg_retirement_wiring.cpp": {
+      "measured": "c7a2548e245c2a61afe48b1fbc143419c237c27775ea72f8c6b78b81c020ade4",
+      "final_candidate": "9b8b0a0a45b23770a9942ecd9f4fe53a5ba41f39d59c1d0efcf8e55d38d631a5"
+    },
+    "tests/ut/cpp/common/platform/test_pmu_finalize.cpp": {
+      "measured": "9d3013ddf6d4d7d89423a809e9899f30586b14952b6ebd91246ef5db3563116e",
+      "final_candidate": "c339aaa7aa37821aaf82a044028313875a82d05fcf0fa5875466657e87007700"
+    }
+  },
+  "acceptance": {
+    "current_epoch": true,
+    "all_cores_pmu_enabled": true,
+    "no_silent_target_ack": true,
+    "no_silent_target_close": true,
+    "no_silent_target_pmu_stop": true,
+    "no_silent_target_core_flush": true,
+    "retained_failed_resources": true,
+    "rejected_fresh_R2_R3": true,
+    "fresh_process_recovery_golden": true,
+    "forced_queued_kernel_successors": false,
+    "early_clear_kernel_counterexample": false,
+    "physical_core_stop_proven": false,
+    "complete_healthy_flush_trace": false
+  },
+  "retirement_metric": {
+    "unit": "seconds",
+    "scope": "group-entry through last group-return",
+    "excludes": "Host synchronization/error envelope",
+    "p95": "nearest rank per batch and three samples; equals max"
+  },
+  "final_healthy": [
+    {
+      "task": "task_20261018_042050_173706622138",
+      "arch": "a2a3",
+      "source_archive_sha256": "b4c4016daf6812416dbb187a1a03be0023f50587598ef0ae9e8fa610ac04f607",
+      "archive_sha256": "2d566a80ff901292495396f191c024f62f93c17b0ec470171afb328fe62db592",
+      "cases": [
+        {
+          "route": "legacy",
+          "device": 0,
+          "pmu": 1,
+          "golden": true,
+          "normal_close": true,
+          "loaded_component_sha256": {
+            "onboard/host_build_graph/libhost_runtime.so": "34c6ad21d558a7765ec3b314eb4babab7618537649883e2497dbe3fcdb200c31",
+            "onboard/host_build_graph/libaicpu_kernel.so": "d141b418d0fa7d3d291155a8492bf92a1f3e25b44f08a907bdf0c531f21c963a",
+            "onboard/host_build_graph/aicore_kernel.o": "7ee532d41a174db39cf3d641530ca3b065b990b779320f739288d75170a3e391",
+            "a2a3/dispatcher/libsimpler_aicpu_dispatcher.so": "2652f7f79b5b347b5c46da2c22d40e6ff601387bf4740b0b49e6fc0d03f5c610"
+          },
+          "binding_sha256": "b265c7f8b1d4ecd21d5303be8c25868d6599bef16e7be815900397a9f7b4eb61"
+        },
+        {
+          "route": "tmr",
+          "device": 0,
+          "pmu": 1,
+          "golden": true,
+          "normal_close": true,
+          "loaded_component_sha256": {
+            "onboard/tensormap_and_ringbuffer/libhost_runtime.so": "46c77403a4f97550ea4625b207d0d2bf9bb024c2dc5a34a88192cadadaca4ef3",
+            "onboard/tensormap_and_ringbuffer/libaicpu_kernel.so": "ca6f6150d8e084828ff509184c707623c0125a17ec35bfc6669b29ec90ca45f5",
+            "onboard/tensormap_and_ringbuffer/aicore_kernel.o": "286fa0e6d399d20f9ad5ed4737ebcefde56ab1db101ab896a44ce06b74a4379b",
+            "a2a3/dispatcher/libsimpler_aicpu_dispatcher.so": "2652f7f79b5b347b5c46da2c22d40e6ff601387bf4740b0b49e6fc0d03f5c610"
+          },
+          "binding_sha256": "b265c7f8b1d4ecd21d5303be8c25868d6599bef16e7be815900397a9f7b4eb61"
+        }
+      ],
+      "source_rehashed": true,
+      "components_rehashed": true,
+      "processes_exited": true
+    },
+    {
+      "task": "task_20261018_191930_327886229531",
+      "arch": "a5",
+      "source_archive_sha256": "b4c4016daf6812416dbb187a1a03be0023f50587598ef0ae9e8fa610ac04f607",
+      "archive_sha256": "54049d22a3e78e4b20706a075a14d770787d59de73d24bf877249a228726cbd4",
+      "cases": [
+        {
+          "route": "legacy",
+          "device": 0,
+          "pmu": 1,
+          "golden": true,
+          "normal_close": true,
+          "loaded_component_sha256": {
+            "onboard/host_build_graph/libhost_runtime.so": "ca5033a4110487592ce48d17c270f0a3ee7c2001a3a4355f0f4fbc848984d111",
+            "onboard/host_build_graph/libaicpu_kernel.so": "0f8a9a90d2ca2c06b8b35d125c0424b77a0bdb66def7e4f5028309114a3bb57b",
+            "onboard/host_build_graph/aicore_kernel.o": "d27c7d894fff73685f14d712cccac137e2d08b89b35d8236f5a8129f6021eade",
+            "a5/dispatcher/libsimpler_aicpu_dispatcher.so": "17c6d807b5361ea4405fe3e1a77bbd60f7dca5b41debb6a6ada6a01fd41e8d7f"
+          },
+          "binding_sha256": "a87557412ee39b98717ca4da802cb278999bea31985d376af9f5b3f75d2de5b6"
+        },
+        {
+          "route": "resident",
+          "device": 0,
+          "pmu": 1,
+          "golden": true,
+          "normal_close": true,
+          "loaded_component_sha256": {
+            "onboard/host_build_graph/libhost_runtime.so": "ca5033a4110487592ce48d17c270f0a3ee7c2001a3a4355f0f4fbc848984d111",
+            "onboard/host_build_graph/libaicpu_kernel.so": "0f8a9a90d2ca2c06b8b35d125c0424b77a0bdb66def7e4f5028309114a3bb57b",
+            "onboard/host_build_graph/aicore_kernel.o": "d27c7d894fff73685f14d712cccac137e2d08b89b35d8236f5a8129f6021eade",
+            "a5/dispatcher/libsimpler_aicpu_dispatcher.so": "17c6d807b5361ea4405fe3e1a77bbd60f7dca5b41debb6a6ada6a01fd41e8d7f"
+          },
+          "binding_sha256": "a87557412ee39b98717ca4da802cb278999bea31985d376af9f5b3f75d2de5b6"
+        },
+        {
+          "route": "tmr",
+          "device": 0,
+          "pmu": 1,
+          "golden": true,
+          "normal_close": true,
+          "loaded_component_sha256": {
+            "onboard/tensormap_and_ringbuffer/libhost_runtime.so": "fde928744c3f34ca392f3716f5de389782ed29def00ed57672c3a0ceb31cb8c5",
+            "onboard/tensormap_and_ringbuffer/libaicpu_kernel.so": "09bad23e4bc41f82f77087a7cc0621af0bb1c34992b748e932216ec4af80050e",
+            "onboard/tensormap_and_ringbuffer/aicore_kernel.o": "67935e1dfa04cac18402df50d8c53b7b83fe75fc703e9e88fcb10ed9822013ec",
+            "a5/dispatcher/libsimpler_aicpu_dispatcher.so": "17c6d807b5361ea4405fe3e1a77bbd60f7dca5b41debb6a6ada6a01fd41e8d7f"
+          },
+          "binding_sha256": "a87557412ee39b98717ca4da802cb278999bea31985d376af9f5b3f75d2de5b6"
+        }
+      ],
+      "source_rehashed": true,
+      "components_rehashed": true,
+      "processes_exited": true
+    }
+  ],
+  "batches": [
+    {
+      "batch": "a3-r4",
+      "task": "task_20261018_032838_105156212120",
+      "archive_sha256": "9b0a5430a7353c1fa08f1728ec74472dfb232f858f3bf0d22fcf5ba5a807d5f7",
+      "cards": [
+        0
+      ],
+      "faults": 12,
+      "verified_fault_and_recovery": 24,
+      "retirement_seconds": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.0000023666666666,
+          "p95": 1.00000512,
+          "min": 0.99999974,
+          "max": 1.00000512,
+          "values": [
+            0.99999974,
+            1.00000224,
+            1.00000512
+          ]
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.0000028866666666,
+          "p95": 1.00000368,
+          "min": 1.0000015,
+          "max": 1.00000368,
+          "values": [
+            1.0000015,
+            1.00000348,
+            1.00000368
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.0000037866666667,
+          "p95": 1.0000055,
+          "min": 1.00000292,
+          "max": 1.0000055,
+          "values": [
+            1.00000292,
+            1.00000294,
+            1.0000055
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.0000020266666667,
+          "p95": 1.00000486,
+          "min": 1.00000036,
+          "max": 1.00000486,
+          "values": [
+            1.00000036,
+            1.00000086,
+            1.00000486
+          ]
+        }
+      ],
+      "records": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 0.99999974,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.738875417038798
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.0000015,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.746735073043965
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000224,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.728485876927152
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000348,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.728265264071524
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000512,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.732707567047328
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000368,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.728283044998534
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000294,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.738836187054403
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000086,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.735248761018738
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000292,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.737683514948003
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000036,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.736009599058889
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.0000055,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.741786634898745
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 72,
+          "groups": 1,
+          "retirement_seconds": 1.00000486,
+          "pmu_starts": 72,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.739700815058313
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        }
+      ]
+    },
+    {
+      "batch": "a5-r4",
+      "task": "task_20261018_182720_284342124177",
+      "archive_sha256": "57956f5bbcb2e304ef92d8a243512bbc6f0c7984e93449df003716d3ef49a820",
+      "cards": [
+        0
+      ],
+      "faults": 18,
+      "verified_fault_and_recovery": 36,
+      "retirement_seconds": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.0000081636666667,
+          "p95": 1.000011057,
+          "min": 1.000006279,
+          "max": 1.000011057,
+          "values": [
+            1.000006279,
+            1.000007155,
+            1.000011057
+          ]
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.000003824,
+          "p95": 1.000010979,
+          "min": 0.999999286,
+          "max": 1.000010979,
+          "values": [
+            0.999999286,
+            1.000001207,
+            1.000010979
+          ]
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "n": 3,
+          "mean": 0.9999807963333334,
+          "p95": 0.999983024,
+          "min": 0.999978609,
+          "max": 0.999983024,
+          "values": [
+            0.999978609,
+            0.999980756,
+            0.999983024
+          ]
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.000003986,
+          "p95": 1.000005302,
+          "min": 1.00000156,
+          "max": 1.000005302,
+          "values": [
+            1.00000156,
+            1.000005096,
+            1.000005302
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.000007451,
+          "p95": 1.000012287,
+          "min": 1.000002332,
+          "max": 1.000012287,
+          "values": [
+            1.000002332,
+            1.000007734,
+            1.000012287
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.0000078383333333,
+          "p95": 1.000009987,
+          "min": 1.0000064,
+          "max": 1.000009987,
+          "values": [
+            1.0000064,
+            1.000007128,
+            1.000009987
+          ]
+        }
+      ],
+      "records": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000006279,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.90803444001358
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000010979,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.699251719983295
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000007155,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.834201189980377
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000001207,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.826536060019862
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000011057,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.701946999994107
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 0.999999286,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.829540679987986
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999983024,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.878097729990259
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.000005302,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.79291000001831
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999980756,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.743239370000083
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.00000156,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.708717880013864
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999978609,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.898520799994003
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.000005096,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.798167370026931
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000012287,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.904934150050394
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000007128,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.83484079001937
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000007734,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.87415632000193
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000009987,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.734906009980477
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000002332,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.752481330011506
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.0000064,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 9.139202789985575
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        }
+      ]
+    },
+    {
+      "batch": "a5-r5",
+      "task": "task_20261018_184017_29732737781",
+      "archive_sha256": "0f4cb768d6d17361fde76afbd52ec4ef5929b8893ee738be135e04dc7ae67827",
+      "cards": [
+        1
+      ],
+      "faults": 18,
+      "verified_fault_and_recovery": 36,
+      "retirement_seconds": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.0000075986666668,
+          "p95": 1.000010192,
+          "min": 1.00000518,
+          "max": 1.000010192,
+          "values": [
+            1.00000518,
+            1.000007424,
+            1.000010192
+          ]
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.000008437,
+          "p95": 1.000009726,
+          "min": 1.000006783,
+          "max": 1.000009726,
+          "values": [
+            1.000006783,
+            1.000008802,
+            1.000009726
+          ]
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "n": 3,
+          "mean": 0.9999812423333333,
+          "p95": 0.999982493,
+          "min": 0.999980332,
+          "max": 0.999982493,
+          "values": [
+            0.999980332,
+            0.999980902,
+            0.999982493
+          ]
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.0000030903333332,
+          "p95": 1.000003773,
+          "min": 1.000001779,
+          "max": 1.000003773,
+          "values": [
+            1.000001779,
+            1.000003719,
+            1.000003773
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "n": 3,
+          "mean": 1.000008074,
+          "p95": 1.000012722,
+          "min": 0.9999996,
+          "max": 1.000012722,
+          "values": [
+            0.9999996,
+            1.0000119,
+            1.000012722
+          ]
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "n": 3,
+          "mean": 1.0000089086666666,
+          "p95": 1.000012798,
+          "min": 1.000003566,
+          "max": 1.000012798,
+          "values": [
+            1.000003566,
+            1.000010362,
+            1.000012798
+          ]
+        }
+      ],
+      "records": [
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000010192,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.929741460015066
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000006783,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.883509810024407
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000007424,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.72191850002855
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000008802,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.99894574994687
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.00000518,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.879417669959366
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "legacy",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000009726,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.809047450020444
+        },
+        {
+          "route": "legacy",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999980902,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.699994360038545
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.000003719,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.898337939986959
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999980332,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.719474770012312
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.000003773,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.708267609996255
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 0.999982493,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.784140039992053
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "resident",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 2,
+          "retirement_seconds": 1.000001779,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.84600977995433
+        },
+        {
+          "route": "resident",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000012722,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.74129705002997
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000010362,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.76099353004247
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 0.9999996,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.724161319958512
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000012798,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.977183089999016
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "silent",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.0000119,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 9.10775437997654
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        },
+        {
+          "route": "tmr",
+          "variant": "abort",
+          "epoch": 1,
+          "cores": 96,
+          "groups": 1,
+          "retirement_seconds": 1.000003566,
+          "pmu_starts": 96,
+          "pmu_stops": 0,
+          "acks": 0,
+          "closes": 0,
+          "flush_targets": 0,
+          "host_run_seconds": 8.744364629965276
+        },
+        {
+          "route": "tmr",
+          "variant": "canonical",
+          "golden": true
+        }
+      ]
+    }
+  ]
+}

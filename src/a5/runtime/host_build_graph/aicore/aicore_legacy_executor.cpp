@@ -77,6 +77,9 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
     // this core's register window only after it observes aicore_done, so a single
     // report suffices. The host clears aicore_done before this kernel launches,
     // so the value the AICPU reads is this run's report, never a stale prior one.
+    // A current report also certifies that COND cannot acknowledge an older exit.
+    write_reg(RegId::COND, AICORE_IDLE_VALUE);
+    OUT_OF_ORDER_STORE_BARRIER();
     const uint64_t report_epoch = get_aicore_report_epoch();
     my_hank->physical_core_id = get_physical_core_id();
     my_hank->core_type = core_type;
@@ -143,7 +146,7 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
         reg_val = static_cast<uint32_t>(read_reg(RegId::DATA_MAIN_BASE));
         if (reg_val == AICORE_EXIT_SIGNAL) {
             // Signal exit acknowledgment to AICPU
-            write_reg(RegId::COND, AICORE_EXITED_VALUE);
+
             break;
         }
 
@@ -242,7 +245,6 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
                     SPIN_WAIT_HINT();
                 }
                 if (exiting) {
-                    write_reg(RegId::COND, AICORE_EXITED_VALUE);
                     break;
                 }
                 // Re-stamp receive_time at the moment the doorbell landed: the
@@ -313,4 +315,6 @@ legacy_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type
 
     // Flush all dirty cache lines to HBM before kernel exit.
     dcci(my_hank, SINGLE_CACHE_LINE, CACHELINE_OUT);
+    OUT_OF_ORDER_STORE_BARRIER();
+    write_reg(RegId::COND, AICORE_EXITED_VALUE);
 }

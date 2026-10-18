@@ -75,13 +75,15 @@ public:
     // Barrier-free counterpart of assign_cores_to_threads: thread tidx populates
     // its own CoreTracker + per-core payload state for the clusters it owns, right
     // after handshaking them — no all-thread barrier or leader post_handshake_init.
-    void assign_own_clusters(Runtime *runtime, int32_t tidx);
+    void assign_own_clusters(Runtime *runtime, int32_t tidx, bool publish_ready = true);
     // Latch completion + shutdown cores on a handshake failure seen without the
     // barrier (non-DFX path). Idempotent.
     void abort_and_shutdown(Runtime *runtime);
     // Leader-only profiling-subsystem init (DFX builds); called behind a barrier
     // in the barrier-free path since pmu_aicpu_init needs all physical_core_ids_.
     void post_handshake_profiling_init();
+    // Called after the DFX initialization barrier, including failed discovery.
+    void publish_all_retirement_cores(Runtime *runtime);
     bool handshake_failed() const { return handshake_failed_.load(std::memory_order_acquire); }
     // Leader-only, after the handshake barrier: build worker-id lists, assign
     // cores, init profiling subsystems, read task counts, init payloads.
@@ -196,6 +198,10 @@ private:
     static constexpr uint8_t RETIREMENT_READY = 1;
     static constexpr uint8_t RETIREMENT_REQUESTED = 2;
     uint8_t retirement_state_[PLATFORM_MAX_CORES]{};
+    std::atomic<uint64_t> retirement_deadline_{0};
+    std::atomic<bool> pmu_initialized_{false};
+    std::atomic<bool> core_closed_[PLATFORM_MAX_CORES]{};
+    uint64_t retirement_deadline();
     // The active callable's registration-owned object-address table and the
     // number of entries it holds, both bound from the descriptor in the cold
     // path. The table is in the callable's registration block, not in the
@@ -251,7 +257,6 @@ private:
     // The second-bit winner alone reads execution state and manages the window.
     int32_t retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
     void publish_retirement_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
-    void publish_all_retirement_cores(Runtime *runtime);
     void publish_retirement_group(Runtime *runtime, int32_t owner_thread);
     int32_t retire_claimed_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
     int32_t retire_all_cores(Runtime *runtime);

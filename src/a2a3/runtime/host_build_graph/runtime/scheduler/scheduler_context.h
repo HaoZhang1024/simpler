@@ -241,6 +241,10 @@ private:
     static constexpr uint8_t RETIREMENT_READY = 1;
     static constexpr uint8_t RETIREMENT_REQUESTED = 2;
     uint8_t retirement_state_[PLATFORM_MAX_CORES]{};
+    std::atomic<uint64_t> retirement_deadline_{0};
+    std::atomic<bool> pmu_initialized_{false};
+    std::atomic<bool> core_closed_[PLATFORM_MAX_CORES]{};
+    uint64_t retirement_deadline();
     // The active callable's registration-owned object-address table and the
     // number of entries it holds, both bound from the descriptor in the cold
     // path. The table is in the callable's registration block, not in the

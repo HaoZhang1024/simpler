@@ -257,6 +257,44 @@ TEST(AicoreRetirement, FillsReleasedOnRejectedGroups) {
 //
 // Host threads with ordinary stores: this observes *what* the producer wrote,
 // never when another processor could see it.
+void check_retained_exit_before_current_report(CoreType type) {
+    Runtime runtime;
+    registers.fill(0);
+    g_report_epoch = 719;
+    store_register(RegId::COND, AICORE_EXITED_VALUE);
+    store_register(RegId::DATA_MAIN_BASE, 0);
+    std::thread worker([&] {
+        aicore_execute(&runtime, 0, type);
+    });
+    if (!wait_until(
+            [&] {
+                return runtime.dev.workers[0].report_epoch == 719;
+            },
+            std::chrono::seconds(5)
+        ))
+        std::_Exit(2);
+    const bool stale = load_register(RegId::COND) == AICORE_EXITED_VALUE;
+    store_register(RegId::DATA_MAIN_BASE, AICORE_EXIT_SIGNAL);
+    if (!wait_until(
+            [] {
+                return load_register(RegId::COND) == AICORE_EXITED_VALUE;
+            },
+            std::chrono::seconds(5)
+        ))
+        std::_Exit(3);
+    __atomic_store_n(&runtime.get_teardown_gates()[0].post_close_release, AICORE_POST_CLOSE_RELEASE, __ATOMIC_RELEASE);
+    worker.join();
+    std::_Exit(stale ? 1 : 0);
+}
+
+TEST(AicoreRetirementDeathTest, CurrentAicReportCannotRetainAnEarlierExitAcknowledgement) {
+    EXPECT_EXIT(check_retained_exit_before_current_report(CoreType::AIC), testing::ExitedWithCode(0), "");
+}
+
+TEST(AicoreRetirementDeathTest, CurrentAivReportCannotRetainAnEarlierExitAcknowledgement) {
+    EXPECT_EXIT(check_retained_exit_before_current_report(CoreType::AIV), testing::ExitedWithCode(0), "");
+}
+
 Handshake publish_one_report(uint64_t epoch, CoreType core_type) {
     Runtime runtime;
     g_report_epoch = epoch;

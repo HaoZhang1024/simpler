@@ -684,6 +684,9 @@ __aicore__ __attribute__((weak)) void aicore_execute(__gm__ Runtime *runtime, in
     }
     const bool chip_swimlane_enabled = SIMPLER_GET_DFX_FLAG(profiling_flag, SIMPLER_DFX_FLAG_CHIP_SWIMLANE);
     uint64_t aicore_entry_cycles = chip_swimlane_enabled ? get_sys_cnt_aicore() : 0;
+    // A current report also certifies that COND cannot acknowledge an older exit.
+    write_reg(RegId::COND, AICORE_IDLE_VALUE);
+    OUT_OF_ORDER_STORE_BARRIER();
     const uint64_t report_epoch = get_aicore_report_epoch();
     if (report_epoch != 0) {
         // Native program run. Everything this report stands for is payload —

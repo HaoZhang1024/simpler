@@ -323,7 +323,7 @@ TEST_F(SchedulerRetirement, OwnedClusterPublishersServiceEarlyRequest) {
     ASSERT_TRUE(handshake_owned(*context, runtime.get(), 1, 0));
     expect_once();
     EXPECT_EQ(batches.load(), 2);
-    EXPECT_EQ(deadlines.load(), 2);
+    EXPECT_EQ(deadlines.load(), 1);
 }
 
 TEST_F(SchedulerRetirement, OverlappingSetsAndDuplicateIdsRetireOnlyOnce) {

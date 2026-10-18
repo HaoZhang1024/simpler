@@ -340,3 +340,30 @@ TEST(AicoreRetirement, SingleCoreTargetUsesTheGroupPath) {
     caller.join();
     EXPECT_TRUE(core.closed());
 }
+
+TEST(AicoreRetirement, QuiescentCleanupRunsBeforeReturnAndSkipsSilentCores) {
+    std::array<CoreRegs, 2> cores;
+    std::array<AicoreTeardownControl, 2> gates{};
+    struct Cleanup {
+        CoreRegs *core;
+        AicoreTeardownControl *gate;
+        int calls;
+    };
+    Cleanup cleanup[] = {{&cores[0], &gates[0], 0}, {&cores[1], &gates[1], 0}};
+    AicoreExitTarget targets[] = {{cores[0].addr(), &gates[0]}, {cores[1].addr(), &gates[1]}};
+    for (int i = 0; i < 2; ++i) {
+        targets[i].release_context = &cleanup[i];
+        targets[i].before_release = [](void *value) {
+            auto &state = *static_cast<Cleanup *>(value);
+            EXPECT_EQ(read_reg(state.core->addr(), RegId::COND), AICORE_EXITED_VALUE);
+            EXPECT_EQ(state.gate->post_close_release, 0u);
+            ++state.calls;
+        };
+    }
+    cores[0].ack();
+    EXPECT_EQ(platform_retire_aicore_group(targets, 2, short_deadline()), -1);
+    EXPECT_EQ(cleanup[0].calls, 1);
+    EXPECT_EQ(cleanup[1].calls, 0);
+    EXPECT_EQ(gates[0].post_close_release, AICORE_POST_CLOSE_RELEASE);
+    EXPECT_EQ(gates[1].post_close_release, 0u);
+}

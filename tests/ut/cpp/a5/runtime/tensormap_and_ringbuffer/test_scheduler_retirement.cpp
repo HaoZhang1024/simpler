@@ -110,6 +110,20 @@ TEST_F(SchedulerRetirement, OverlappingCoreSetsAreClaimedIndependently) {
     EXPECT_EQ(context->retire_all_cores(), 0);
     expect_once();
     EXPECT_EQ(retirement_batches.load(), 2);
+    EXPECT_EQ(deadlines.load(), 1);
+}
+
+TEST_F(SchedulerRetirement, ProfilingSetupRetainsEarlyExitUntilItsMetadataIsReady) {
+    EXPECT_EQ(context->retire_all_cores(), 0);
+    SchedulerRetirementTestPeer::open_cores(*context);
+    context->assign_own_clusters(0, false);
+    context->assign_own_clusters(1, false);
+    EXPECT_EQ(retirement_batches.load(), 0);
+    for (const auto &count : retirements)
+        EXPECT_EQ(count.load(), 0);
+    context->publish_all_retirement_cores();
+    expect_once();
+    EXPECT_EQ(deadlines.load(), 1);
 }
 
 TEST_F(SchedulerRetirement, NewGenerationClearsEveryReturnGateBeforePublication) {

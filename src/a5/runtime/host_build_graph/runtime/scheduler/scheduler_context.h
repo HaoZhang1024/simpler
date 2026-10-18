@@ -194,7 +194,13 @@ private:
     CoreExecState core_exec_states_[RUNTIME_MAX_WORKER];
     // Normal and emergency teardown may race; one winner owns each register
     // window and its return gate until the close has drained.
-    std::atomic<bool> core_retired_[RUNTIME_MAX_WORKER]{};
+    static constexpr uint8_t RETIREMENT_READY = 1;
+    static constexpr uint8_t RETIREMENT_REQUESTED = 2;
+    uint8_t retirement_state_[PLATFORM_MAX_CORES]{};
+    std::atomic<uint64_t> retirement_deadline_{0};
+    std::atomic<bool> pmu_initialized_{false};
+    std::atomic<bool> core_closed_[PLATFORM_MAX_CORES]{};
+    uint64_t retirement_deadline();
 
     // Cluster-ordered core trackers, one per scheduler thread
     CoreTracker core_trackers_[MAX_AICPU_THREADS];
@@ -296,6 +302,9 @@ private:
     // deinit their AICore register blocks. Idempotent.
     void emergency_shutdown(Runtime *runtime);
     int32_t retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
+    void publish_retirement_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
+    void publish_all_retirement_cores(Runtime *runtime);
+    int32_t retire_claimed_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num);
 
     __attribute__((noinline, cold)) void fail_scheduler(Runtime *runtime, int32_t thread_idx, int32_t error_code);
 

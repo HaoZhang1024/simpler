@@ -1190,24 +1190,15 @@ int32_t SchedulerContext::run_resolution_thread(Runtime *runtime, int32_t thread
 
 #if SIMPLER_DFX
     flush_async_poll(get_sys_cnt_aicpu());
-    // P owns no cores, so the AICore-keyed flushes below iterate an empty core
-    // list; the sched-phase-buffer flush is the one that matters — it drains any
-    // per-thread records P wrote (e.g. under SCHED_PROFILING) so they are not lost.
+    // Core-keyed diagnostics are flushed by shutdown after retirement.
+    // Drain this thread's phase records here.
     if (chip_swimlane.chip_swimlane_enabled) {
-        chip_swimlane_aicpu_flush(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
         if (chip_swimlane_level_ >= ChipSwimlaneLevel::SCHED_PHASES) {
             chip_swimlane_aicpu_flush_sched_phase_buffer(thread_idx);
         }
     }
     if (is_dump_args_enabled()) {
         dump_args_flush(thread_idx);
-    }
-    if (is_pmu_enabled()) {
-        pmu_aicpu_flush_buffers(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
     }
 #endif
 
@@ -1687,9 +1678,6 @@ int32_t SchedulerContext::resolve_and_dispatch(Runtime *runtime, int32_t thread_
 
 #if SIMPLER_DFX
     if (chip_swimlane.chip_swimlane_enabled) {
-        chip_swimlane_aicpu_flush(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
         if (chip_swimlane_level_ >= ChipSwimlaneLevel::SCHED_PHASES) {
             chip_swimlane_aicpu_flush_sched_phase_buffer(thread_idx);
         }
@@ -1701,11 +1689,6 @@ int32_t SchedulerContext::resolve_and_dispatch(Runtime *runtime, int32_t thread_
     }
 #endif
 #if SIMPLER_DFX
-    if (is_pmu_enabled()) {
-        pmu_aicpu_flush_buffers(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
-    }
 #endif
 
     return timeout_rc != 0 ? timeout_rc : cur_thread_completed;

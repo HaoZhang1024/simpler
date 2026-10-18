@@ -52,6 +52,11 @@ private:
 
     AicpuThreadLifecycleTrace *thread_lifecycle_trace(int32_t thread_idx);
 
+    enum class ExitState : uint8_t { UNCLAIMED, SIGNALING, SIGNALED, JOINING };
+    uint64_t shutdown_deadline();
+    std::atomic<uint64_t> shutdown_deadline_{0};
+    std::atomic<bool> pmu_initialized_{false};
+    std::atomic<ExitState> exit_state_[kMaxWorkers]{};
     CoreState cores_[kMaxWorkers]{};
     uint32_t physical_core_ids_[kMaxWorkers]{};
     ThreadHandshakeTiming thread_handshake_timing_[PLATFORM_MAX_AICPU_THREADS]{};

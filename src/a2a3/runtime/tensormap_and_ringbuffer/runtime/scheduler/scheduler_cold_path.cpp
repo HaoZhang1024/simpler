@@ -654,16 +654,23 @@ int32_t SchedulerContext::shutdown(int32_t thread_idx, Runtime *runtime) {
     const int32_t core_num = core_trackers_[thread_idx].core_num();
     if (core_num == 0) return 0;  // orchestrator threads own no core
 
+    LOG_INFO("Thread %d: retiring %d cores", thread_idx, core_num);
+    const int32_t rc = retire_cores(runtime, cores, core_num);
 #if SIMPLER_DFX
-    // A fatal run ends in a host-side device reset, so counters read here would
-    // not survive into the next generation. Retirement below still runs: it is
-    // what releases this thread's workers, and no other path will.
-    if (is_pmu_enabled() && !fatal_shutdown_started_.load(std::memory_order_acquire)) {
-        pmu_aicpu_finalize(cores, core_num);
+    int32_t closed_ids[PLATFORM_MAX_CORES];
+    int32_t closed_count = 0;
+    const auto &tracker = core_trackers_[thread_idx];
+    for (int32_t i = 0; i < tracker.core_num(); ++i) {
+        const int32_t id = tracker.core_ids()[i];
+        if (core_closed_[id].load(std::memory_order_acquire)) closed_ids[closed_count++] = id;
+    }
+    if (closed_count != 0) {
+        if (is_chip_swimlane_enabled()) chip_swimlane_aicpu_flush(thread_idx, closed_ids, closed_count);
+        if (pmu_initialized_.load(std::memory_order_acquire))
+            pmu_aicpu_flush_buffers(thread_idx, closed_ids, closed_count);
     }
 #endif
-    LOG_INFO("Thread %d: retiring %d cores", thread_idx, core_num);
-    return retire_cores(runtime, cores, core_num);
+    return rc;
 }
 
 int32_t SchedulerContext::retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
@@ -731,6 +738,14 @@ int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *
         if (reg_addr == 0) continue;
         claimed_ids[count] = core_id;
         targets[count] = {reg_addr, &runtime->get_teardown_gates()[core_id]};
+#if SIMPLER_DFX
+        if (pmu_initialized_.load(std::memory_order_acquire)) {
+            targets[count].before_release = [](void *id) {
+                pmu_aicpu_finalize(static_cast<const int32_t *>(id), 1);
+            };
+            targets[count].release_context = &claimed_ids[count];
+        }
+#endif
         ++count;
     }
     if (count == 0) return 0;
@@ -738,7 +753,7 @@ int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *
     // platform_retire_aicore_group fills every entry on every path it returns
     // from, so this needs no initializer.
     bool released[PLATFORM_MAX_CORES];
-    const int32_t rc = platform_retire_aicore_group(targets, count, platform_aicore_exit_deadline(), released);
+    const int32_t rc = platform_retire_aicore_group(targets, count, retirement_deadline(), released);
     if (rc != 0) {
         // Naming the cores is the only signal an unreleased worker leaves: it
         // spins on a gate it cannot log about, and the host sees just a stream
@@ -752,6 +767,8 @@ int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *
             }
         }
     }
+    for (size_t i = 0; i < count; ++i)
+        core_closed_[claimed_ids[i]].store(released[i], std::memory_order_release);
     return rc;
 }
 
@@ -1029,7 +1046,7 @@ void SchedulerContext::handshake_owned_clusters(Runtime *runtime, int32_t tidx, 
 // directly, so a thread populates its own CoreTracker + per-core payload state
 // right after handshaking its own clusters, with no all-thread barrier.
 // =============================================================================
-void SchedulerContext::assign_own_clusters(Runtime *runtime, int32_t tidx) {
+void SchedulerContext::assign_own_clusters(Runtime *runtime, int32_t tidx, bool publish_ready) {
     const int32_t aic_n = cores_total_num_ / PLATFORM_CORES_PER_BLOCKDIM;
     const int32_t active = active_sched_threads_;
 
@@ -1048,7 +1065,7 @@ void SchedulerContext::assign_own_clusters(Runtime *runtime, int32_t tidx) {
             CoreTracker::MAX_CLUSTERS
         );
         handshake_failed_.store(true, std::memory_order_release);
-        publish_retirement_group(runtime, tidx);
+        if (publish_ready) publish_retirement_group(runtime, tidx);
         return;
     }
     tracker.init(own_n);
@@ -1094,7 +1111,7 @@ void SchedulerContext::assign_own_clusters(Runtime *runtime, int32_t tidx) {
             }
         }
     }
-    publish_retirement_group(runtime, tidx);
+    if (publish_ready) publish_retirement_group(runtime, tidx);
 }
 
 // Abort the run on a handshake failure discovered without the all-thread barrier
@@ -1112,6 +1129,7 @@ void SchedulerContext::post_handshake_profiling_init() {
     }
     if (is_pmu_enabled()) {
         pmu_aicpu_init(physical_core_ids_, cores_total_num_);
+        pmu_initialized_.store(true, std::memory_order_release);
     }
 #endif
 }
@@ -1224,6 +1242,10 @@ int32_t SchedulerContext::pre_handshake_init(
     // Zero all per-core execution state before handshake
     memset(core_exec_states_, 0, sizeof(core_exec_states_));
     memset(retirement_state_, 0, sizeof(retirement_state_));
+    retirement_deadline_.store(0, std::memory_order_relaxed);
+    pmu_initialized_.store(false, std::memory_order_relaxed);
+    for (auto &closed : core_closed_)
+        closed.store(false, std::memory_order_relaxed);
 
     // Wire thread/transition configuration that handshake/assign need to read.
     aicpu_thread_num_ = aicpu_thread_num;
@@ -1370,6 +1392,7 @@ int32_t SchedulerContext::post_handshake_init(Runtime *runtime) {
     }
     if (is_pmu_enabled()) {
         pmu_aicpu_init(physical_core_ids_, cores_total_num_);
+        pmu_initialized_.store(true, std::memory_order_release);
     }
 #endif
 
@@ -1566,4 +1589,12 @@ void SchedulerContext::on_orchestration_done(
         }
     }
 #endif
+}
+
+uint64_t SchedulerContext::retirement_deadline() {
+    uint64_t deadline = retirement_deadline_.load(std::memory_order_acquire);
+    if (deadline != 0) return deadline;
+    const uint64_t candidate = platform_aicore_exit_deadline();
+    if (retirement_deadline_.compare_exchange_strong(deadline, candidate, std::memory_order_acq_rel)) return candidate;
+    return deadline;
 }
