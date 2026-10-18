@@ -72,7 +72,7 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
     // drain concurrently and a dead core's wait does not serialize behind the
     // cores ahead of it.
     for (size_t i = 0; i < count; ++i) {
-        platform_signal_aicore_exit(targets[i].reg_addr);
+        if (!targets[i].exit_signaled) platform_signal_aicore_exit(targets[i].reg_addr);
     }
     wmb();
 
@@ -104,6 +104,7 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
     int32_t rc = 0;
     for (size_t i = 0; i < count; ++i) {
         if (acknowledged[i]) {
+            if (targets[i].before_release != nullptr) targets[i].before_release(targets[i].release_context);
             platform_close_aicore_window(targets[i].reg_addr);
         } else {
             rc = -1;

@@ -105,6 +105,9 @@ static void pmu_start(uint64_t reg_base, uint32_t &saved_ctrl0, uint32_t &saved_
 static void pmu_stop(uint64_t reg_base, uint32_t saved_ctrl0, uint32_t saved_ctrl1) {
     write_reg(reg_base, RegId::PMU_CTRL_0, saved_ctrl0);
     write_reg(reg_base, RegId::PMU_CTRL_1, saved_ctrl1);
+    // Complete both posted restores before the retirement path releases the core.
+    (void)read_reg(reg_base, RegId::PMU_CTRL_0);
+    (void)read_reg(reg_base, RegId::PMU_CTRL_1);
 }
 
 // ---------------------------------------------------------------------------

@@ -584,17 +584,67 @@ int32_t SchedulerContext::shutdown(Runtime *runtime, int32_t thread_idx) {
     int32_t core_num = core_trackers_[thread_idx].core_num();
     if (core_num == 0) return 0;
 
+    LOG_INFO("Thread %d: Shutting down %d cores", thread_idx, core_num);
+    const int32_t rc = retire_cores(runtime, cores, core_num);
 #if SIMPLER_DFX
-    if (is_pmu_enabled()) {
-        pmu_aicpu_finalize(cores, core_num);
+    int32_t closed_ids[PLATFORM_MAX_CORES];
+    int32_t closed_count = 0;
+    const auto &tracker = core_trackers_[thread_idx];
+    for (int32_t i = 0; i < tracker.core_num(); ++i) {
+        const int32_t id = tracker.core_ids()[i];
+        if (core_closed_[id].load(std::memory_order_acquire)) closed_ids[closed_count++] = id;
+    }
+    if (closed_count != 0) {
+        if (is_chip_swimlane_enabled()) chip_swimlane_aicpu_flush(thread_idx, closed_ids, closed_count);
+        if (pmu_initialized_.load(std::memory_order_acquire))
+            pmu_aicpu_flush_buffers(thread_idx, closed_ids, closed_count);
     }
 #endif
-
-    LOG_INFO("Thread %d: Shutting down %d cores", thread_idx, core_num);
-    return retire_cores(runtime, cores, core_num);
+    return rc;
 }
 
 int32_t SchedulerContext::retire_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
+    int32_t claimed_ids[PLATFORM_MAX_CORES];
+    int32_t count = 0;
+    for (int32_t i = 0; i < core_num; ++i) {
+        const int32_t core_id = core_ids[i];
+        if (core_id < 0 || core_id >= cores_total_num_) continue;
+        // An early request remains pending. Only the operation adding the
+        // second bit owns retirement; acquire observes the publisher's state.
+        if (__atomic_fetch_or(&retirement_state_[core_id], RETIREMENT_REQUESTED, __ATOMIC_ACQ_REL) ==
+            RETIREMENT_READY) {
+            claimed_ids[count++] = core_id;
+        }
+    }
+    return retire_claimed_cores(runtime, claimed_ids, count);
+}
+
+void SchedulerContext::publish_retirement_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
+    int32_t claimed_ids[PLATFORM_MAX_CORES];
+    int32_t count = 0;
+    for (int32_t i = 0; i < core_num; ++i) {
+        const int32_t core_id = core_ids[i];
+        // The initializer owns these metadata stores; requesters do not read
+        // them until READY. Unmapped cores stay unpublished for host recovery.
+        if (core_id < 0 || core_id >= cores_total_num_) continue;
+        if (core_exec_states_[core_id].reg_addr == 0) continue;
+        if (__atomic_fetch_or(&retirement_state_[core_id], RETIREMENT_READY, __ATOMIC_ACQ_REL) ==
+            RETIREMENT_REQUESTED) {
+            claimed_ids[count++] = core_id;
+        }
+    }
+    (void)retire_claimed_cores(runtime, claimed_ids, count);
+}
+
+void SchedulerContext::publish_all_retirement_cores(Runtime *runtime) {
+    // The serial initializer has joined every handshake before reading metadata.
+    int32_t ids[PLATFORM_MAX_CORES];
+    for (int32_t i = 0; i < cores_total_num_; ++i)
+        ids[i] = i;
+    publish_retirement_cores(runtime, ids, cores_total_num_);
+}
+
+int32_t SchedulerContext::retire_claimed_cores(Runtime *runtime, const int32_t *core_ids, int32_t core_num) {
     AicoreExitTarget targets[PLATFORM_MAX_CORES];
     int32_t claimed_ids[PLATFORM_MAX_CORES];
     size_t count = 0;
@@ -603,20 +653,29 @@ int32_t SchedulerContext::retire_cores(Runtime *runtime, const int32_t *core_ids
         if (core_id < 0 || core_id >= cores_total_num_) continue;
         const uint64_t reg_addr = core_exec_states_[core_id].reg_addr;
         if (reg_addr == 0) continue;
-        if (core_retired_[core_id].exchange(true, std::memory_order_acq_rel)) continue;
         targets[count] = {reg_addr, &runtime->get_teardown_gates()[core_id]};
         claimed_ids[count] = core_id;
+#if SIMPLER_DFX
+        if (pmu_initialized_.load(std::memory_order_acquire)) {
+            targets[count].before_release = [](void *id) {
+                pmu_aicpu_finalize(static_cast<const int32_t *>(id), 1);
+            };
+            targets[count].release_context = &claimed_ids[count];
+        }
+#endif
         ++count;
     }
     if (count == 0) return 0;
 
     bool released[PLATFORM_MAX_CORES];
-    const int32_t rc = platform_retire_aicore_group(targets, count, platform_aicore_exit_deadline(), released);
+    const int32_t rc = platform_retire_aicore_group(targets, count, retirement_deadline(), released);
     if (rc != 0) {
         for (size_t i = 0; i < count; ++i) {
             if (!released[i]) LOG_ERROR("AICore retirement: core %d not released", claimed_ids[i]);
         }
     }
+    for (size_t i = 0; i < count; ++i)
+        core_closed_[claimed_ids[i]].store(released[i], std::memory_order_release);
     return rc;
 }
 
@@ -896,8 +955,11 @@ int32_t SchedulerContext::pre_handshake_init(Runtime *runtime, int32_t aicpu_thr
         return -1;
     }
     memset(runtime->get_teardown_gates(), 0, sizeof(AicoreTeardownControl) * cores_total_num_);
-    for (int32_t i = 0; i < cores_total_num_; ++i)
-        core_retired_[i].store(false, std::memory_order_relaxed);
+    memset(retirement_state_, 0, sizeof(retirement_state_));
+    retirement_deadline_.store(0, std::memory_order_relaxed);
+    pmu_initialized_.store(false, std::memory_order_relaxed);
+    for (auto &closed : core_closed_)
+        closed.store(false, std::memory_order_relaxed);
     wmb();
     aic_count_ = 0;
     aiv_count_ = 0;
@@ -909,6 +971,7 @@ int32_t SchedulerContext::pre_handshake_init(Runtime *runtime, int32_t aicpu_thr
 
 int32_t SchedulerContext::post_handshake_init(Runtime *runtime) {
     if (handshake_failed_.load(std::memory_order_acquire)) {
+        publish_all_retirement_cores(runtime);
         emergency_shutdown(runtime);
         return -1;
     }
@@ -936,6 +999,7 @@ int32_t SchedulerContext::post_handshake_init(Runtime *runtime) {
     LOG_INFO("Core discovery complete: %d AIC, %d AIV", aic_count_, aiv_count_);
 
     if (!assign_cores_to_threads()) {
+        publish_all_retirement_cores(runtime);
         return -1;
     }
 
@@ -950,6 +1014,7 @@ int32_t SchedulerContext::post_handshake_init(Runtime *runtime) {
     }
     if (is_pmu_enabled()) {
         pmu_aicpu_init(physical_core_ids_, cores_total_num_);
+        pmu_initialized_.store(true, std::memory_order_release);
     }
 #endif
 
@@ -1014,6 +1079,7 @@ int32_t SchedulerContext::post_handshake_init(Runtime *runtime) {
     func_id_to_addr_ = reinterpret_cast<uint64_t *>(runtime->dev.callable_table_addr_);
     func_id_to_addr_count_ = runtime->dev.callable_table_len_;
 
+    publish_all_retirement_cores(runtime);
     return 0;
 }
 
@@ -1176,4 +1242,12 @@ void SchedulerContext::classify_partition(int32_t thread_idx, int32_t nthreads, 
             }
         }
     }
+}
+
+uint64_t SchedulerContext::retirement_deadline() {
+    uint64_t deadline = retirement_deadline_.load(std::memory_order_acquire);
+    if (deadline != 0) return deadline;
+    const uint64_t candidate = platform_aicore_exit_deadline();
+    if (retirement_deadline_.compare_exchange_strong(deadline, candidate, std::memory_order_acq_rel)) return candidate;
+    return deadline;
 }

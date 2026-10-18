@@ -159,6 +159,11 @@ struct AicoreTeardownControl;
 struct AicoreExitTarget {
     uint64_t reg_addr;
     AicoreTeardownControl *teardown;
+    // Runs only after this core ACKs, before its return gate is released.
+    // The callback must not wait for another core.
+    void (*before_release)(void *){nullptr};
+    void *release_context{nullptr};
+    bool exit_signaled{false};
 };
 
 // Retires one exclusively-claimed set of cores: signal every member, collect

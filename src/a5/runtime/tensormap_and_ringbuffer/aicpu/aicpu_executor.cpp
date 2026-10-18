@@ -356,7 +356,11 @@ int32_t AicpuExecutor::init(Runtime *runtime) {
     // in this branch, so handshake ownership matches assign_own_clusters'.
     if (decouple_orch) {
         sched_ctx_.handshake_owned_clusters(runtime, tidx, hs_nthreads);
+#if SIMPLER_DFX
+        sched_ctx_.assign_own_clusters(tidx, false);
+#else
         sched_ctx_.assign_own_clusters(tidx);
+#endif
 #if SIMPLER_DFX
         // Profiling subsystems (pmu/dump/dep) need every core's physical_core_id,
         // so gate their one-time leader init behind a barrier — DFX builds only.
@@ -364,12 +368,14 @@ int32_t AicpuExecutor::init(Runtime *runtime) {
         if (is_leader) {
             while (hs_arrived_.load(std::memory_order_acquire) < hs_nthreads) {}
             if (sched_ctx_.handshake_failed()) {
+                sched_ctx_.publish_all_retirement_cores();
                 sched_ctx_.abort_and_shutdown(runtime);
                 init_failed_.store(true, std::memory_order_release);
                 init_done_.store(true, std::memory_order_release);
                 return -1;
             }
             sched_ctx_.post_handshake_profiling_init();
+            sched_ctx_.publish_all_retirement_cores();
             init_done_.store(true, std::memory_order_release);
         } else {
             while (!init_done_.load(std::memory_order_acquire)) {

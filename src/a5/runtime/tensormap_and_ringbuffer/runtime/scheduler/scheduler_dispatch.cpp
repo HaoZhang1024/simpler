@@ -1438,9 +1438,6 @@ int32_t SchedulerContext::resolve_and_dispatch(Runtime *runtime, int32_t thread_
 
 #if SIMPLER_DFX
     if (chip_swimlane.chip_swimlane_enabled) {
-        chip_swimlane_aicpu_flush(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
         if (chip_swimlane_level_ >= ChipSwimlaneLevel::SCHED_PHASES) {
             chip_swimlane_aicpu_flush_sched_phase_buffer(thread_idx);
         }
@@ -1452,11 +1449,6 @@ int32_t SchedulerContext::resolve_and_dispatch(Runtime *runtime, int32_t thread_
     }
 #endif
 #if SIMPLER_DFX
-    if (is_pmu_enabled()) {
-        pmu_aicpu_flush_buffers(
-            thread_idx, core_trackers_[thread_idx].core_ids(), core_trackers_[thread_idx].core_num()
-        );
-    }
 #endif
 
     return timeout_rc != 0 ? timeout_rc : cur_thread_completed;

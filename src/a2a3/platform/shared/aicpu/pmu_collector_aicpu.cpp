@@ -90,7 +90,11 @@ static uint32_t pmu_start(uint64_t reg_base) {
     return saved_ctrl0;
 }
 
-static void pmu_stop(uint64_t reg_base, uint32_t saved_ctrl0) { write_reg(reg_base, RegId::PMU_CTRL_0, saved_ctrl0); }
+static void pmu_stop(uint64_t reg_base, uint32_t saved_ctrl0) {
+    write_reg(reg_base, RegId::PMU_CTRL_0, saved_ctrl0);
+    // Complete the posted restore before the retirement path releases the core.
+    (void)read_reg(reg_base, RegId::PMU_CTRL_0);
+}
 
 static void pmu_read_counters(uint64_t reg_base, PmuRecord *out) {
     for (int i = 0; i < PMU_COUNTER_COUNT_A2A3; i++) {
