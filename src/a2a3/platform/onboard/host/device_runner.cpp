@@ -128,6 +128,11 @@ HalHostUnregisterFn get_halHostUnregister() {
     return reinterpret_cast<HalHostUnregisterFn>(dlsym(g_hal_handle, "halHostUnregister"));
 }
 
+int unregister_collector_memory(void *dev_ptr, int device_id) {
+    HalHostUnregisterFn fn = get_halHostUnregister();
+    return fn != nullptr ? fn(dev_ptr, device_id) : PTO_RUNTIME_ERR_INTERNAL;
+}
+
 }  // namespace
 
 // =============================================================================
@@ -1651,7 +1656,8 @@ int DeviceRunner::init_chip_swimlane(
     };
 
     int rc = chip_swimlane_collector_.initialize(
-        num_aicore, aicpu_thread_num, device_id, chip_swimlane_level, alloc_cb, register_cb, free_cb
+        num_aicore, aicpu_thread_num, device_id, chip_swimlane_level, alloc_cb, register_cb, free_cb,
+        unregister_collector_memory
     );
     if (rc != 0) {
         return rc;
@@ -1690,7 +1696,9 @@ int DeviceRunner::init_args_dump(
         return mem_alloc_.free(dev_ptr);
     };
 
-    int rc = dump_collector_.initialize(num_dump_threads, device_id, dump_args_level, alloc_cb, register_cb, free_cb);
+    int rc = dump_collector_.initialize(
+        num_dump_threads, device_id, dump_args_level, alloc_cb, register_cb, free_cb, unregister_collector_memory
+    );
     if (rc != 0) {
         return rc;
     }
@@ -1721,7 +1729,9 @@ int DeviceRunner::init_pmu(int num_cores, int num_threads, int device_id, Kernel
         return mem_alloc_.free(dev_ptr);
     };
 
-    int rc = pmu_collector_.init(num_cores, num_threads, alloc_cb, register_cb, free_cb, device_id);
+    int rc = pmu_collector_.init(
+        num_cores, num_threads, alloc_cb, register_cb, free_cb, device_id, unregister_collector_memory
+    );
     if (rc != 0) {
         return rc;
     }
@@ -1752,7 +1762,8 @@ int DeviceRunner::init_dep_gen(int num_threads, int device_id, KernelArgsHelper 
         return mem_alloc_.free(dev_ptr);
     };
 
-    int rc = dep_gen_collector_.init(num_threads, alloc_cb, register_cb, free_cb, device_id);
+    int rc =
+        dep_gen_collector_.init(num_threads, alloc_cb, register_cb, free_cb, device_id, unregister_collector_memory);
     if (rc != 0) {
         return rc;
     }
@@ -1783,7 +1794,9 @@ int DeviceRunner::init_scope_stats(int num_threads, int device_id, KernelArgsHel
         return mem_alloc_.free(dev_ptr);
     };
 
-    int rc = scope_stats_collector_.init(num_threads, alloc_cb, register_cb, free_cb, device_id);
+    int rc = scope_stats_collector_.init(
+        num_threads, alloc_cb, register_cb, free_cb, device_id, unregister_collector_memory
+    );
     if (rc != 0) {
         return rc;
     }

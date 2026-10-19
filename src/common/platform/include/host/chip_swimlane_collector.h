@@ -514,7 +514,7 @@ public:
     int initialize(
         int num_aicore, int aicpu_thread_num, int device_id, ChipSwimlaneLevel chip_swimlane_level,
         const ChipSwimlaneAllocCallback &alloc_cb, ChipSwimlaneRegisterCallback register_cb,
-        const ChipSwimlaneFreeCallback &free_cb
+        const ChipSwimlaneFreeCallback &free_cb, ChipSwimlaneUnregisterCallback unregister_cb = nullptr
     );
 
     /**

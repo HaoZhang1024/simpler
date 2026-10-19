@@ -119,8 +119,13 @@ bool ChipSwimlaneCollector::set_json_extension(ChipSwimlaneExtensionSection sect
 int ChipSwimlaneCollector::initialize(
     int num_aicore, int aicpu_thread_num, int device_id, ChipSwimlaneLevel chip_swimlane_level,
     const ChipSwimlaneAllocCallback &alloc_cb, ChipSwimlaneRegisterCallback register_cb,
-    const ChipSwimlaneFreeCallback &free_cb
-) {
+    const ChipSwimlaneFreeCallback &free_cb, ChipSwimlaneUnregisterCallback unregister_cb
+) try {
+    if (register_cb != nullptr && unregister_cb == nullptr) {
+        LOG_ERROR("ChipSwimlane collector registration requires an unregister callback");
+        return PTO_RUNTIME_ERR_INTERNAL;
+    }
+
     if (shm_host_ != nullptr) {
         // Already holding this run's device resources. They are not per-run,
         // with one exception: the level decides whether a device orch-phase
@@ -173,7 +178,7 @@ int ChipSwimlaneCollector::initialize(
     // start(tf) a no-op.
     set_memory_context(
         alloc_cb, register_cb, free_cb, profiling_copy_to_device_or_null(), profiling_copy_from_device_or_null(),
-        /*shm_dev=*/nullptr, /*shm_host=*/nullptr, /*shm_size=*/0, device_id
+        /*shm_dev=*/nullptr, /*shm_host=*/nullptr, /*shm_size=*/0, device_id, unregister_cb
     );
 
     // RAII rollback: shm_host_ is only set at the end of init, so finalize()
@@ -182,7 +187,9 @@ int ChipSwimlaneCollector::initialize(
     // manager-tracked device buffer + non-SVM host shadow allocated so far via
     // the guard's destructor; guard.commit() disarms it on the success path.
     // Matches dep_gen / pmu.
-    profiling_common::InitRollbackGuard<decltype(manager_)> guard(manager_, free_cb);
+    profiling_common::InitRollbackGuard<decltype(manager_)> guard(
+        manager_, free_cb, register_cb != nullptr ? unregister_cb : nullptr, device_id
+    );
 
     // Step 1: Calculate shared memory size (slot arrays only, no actual
     // buffers). Host over-allocates phase pool slots to the platform max for
@@ -482,7 +489,7 @@ int ChipSwimlaneCollector::initialize(
     // device never sees the primed free queues and AICPU/AICore read zeros.
     // The mgmt-loop mirror is read-only (device→host) and never re-pushes this
     // initial state — it must land here, before start(tf) launches mgmt.
-    profiling_copy_to_device(perf_dev_ptr, perf_host_ptr, total_size);
+    if (int rc = profiling_copy_to_device(perf_dev_ptr, perf_host_ptr, total_size); rc != 0) return rc;
 
     // Step 7: Stash device pointer for the caller to publish via
     // kernel_args.chip_swimlane_data_base (read back via get_chip_swimlane_setup_device_ptr()).
@@ -498,18 +505,12 @@ int ChipSwimlaneCollector::initialize(
 
     LOG_INFO("Performance profiling initialized (dynamic buffer mode)");
     guard.commit();
-    // Publish device-buffer members + memory context only after the rollback
-    // guard is disarmed: on a failed init they stay nullptr / shm_host_ stays
-    // null, so is_initialized() is false and finalize() never frees buffers the
-    // guard already freed. set_memory_context publishes shm_host_; start(tf)
-    // gates on it, so this is the moment the collector becomes startable.
     perf_shared_mem_dev_ = perf_dev_ptr;
     aicore_ring_addr_table_dev_ = rotation_table_dev;
-    set_memory_context(
-        alloc_cb, register_cb, free_cb, profiling_copy_to_device_or_null(), profiling_copy_from_device_or_null(),
-        perf_dev_ptr, perf_host_ptr, total_size, device_id
-    );
+    publish_shared_memory(perf_dev_ptr, perf_host_ptr, total_size);
     return 0;
+} catch (const std::bad_alloc &) {
+    return PTO_RUNTIME_ERR_INTERNAL;
 }
 
 // ---------------------------------------------------------------------------
@@ -2755,6 +2756,8 @@ int ChipSwimlaneCollector::finalize(
     // The pairing matters on a2a3, where leaking HAL registrations across
     // init_chip_swimlane() invocations makes back-to-back tests on a reused
     // Worker fail at rc=8 from halHostRegister.
+
+    if (!validate_release_callbacks(unregister_cb, free_cb)) return PTO_RUNTIME_ERR_INTERNAL;
 
     // Free standalone chip_swimlane_aicore_rotation_table table
     release_one_buffer(aicore_ring_addr_table_dev_, unregister_cb, free_cb);

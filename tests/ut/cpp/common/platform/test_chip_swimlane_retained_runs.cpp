@@ -1044,7 +1044,11 @@ TEST(ChipSwimlaneRetainedRunsTest, UnregisteredInitCleanupFailureAlsoRefusesRete
     // that follows reports failure while still reclaiming the memory.
     EXPECT_NE(
         collector.initialize(
-            1, 1, 0, ChipSwimlaneLevel::TASK_TIMING, retained_alloc, retained_register_failing, retained_free_failing
+            1, 1, 0, ChipSwimlaneLevel::TASK_TIMING, retained_alloc, retained_register_failing, retained_free_failing,
+            +[](void *, int) {
+                ADD_FAILURE() << "a failed registration has no mapping to unregister";
+                return 0;
+            }
         ),
         0
     );
