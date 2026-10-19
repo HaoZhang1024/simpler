@@ -2827,6 +2827,7 @@ protected:
     // `aicpu_seen_callable_ids_` tracks which ids have completed a successful
     // AICPU SO load for the monotonic dlopen counter.
     struct CallableState {
+        uint64_t residency_generation{0};
         // trb path (AICPU dlopens orch SO from device buffer)
         // Orchestration ELF Build-ID returned by callable_hash(); distinct from
         // chip_buffer_hash, which keys the retained buffer.
@@ -2849,6 +2850,7 @@ protected:
     // an explicit-ID claim of the same slot; runs, initialization and destroy
     // are serialized by their callers instead.
     std::mutex callable_registration_mu_;
+    uint64_t next_callable_generation_{1};
     // Opaque provider handle from dma_workspace_provision(), owned for the
     // Worker's life and released by finalize_common(). Null unless the Worker
     // was created with SDMA enabled.

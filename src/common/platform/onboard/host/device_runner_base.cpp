@@ -2332,6 +2332,11 @@ int DeviceRunnerBase::register_callable_on_device(int32_t callable_id, rtStream_
     reg_args.active_callable_id = callable_id;
     reg_args.dev_orch_so_addr = state.dev_orch_so_addr;
     reg_args.dev_orch_so_size = state.dev_orch_so_size;
+    reg_args.residency_generation = state.residency_generation;
+    for (const auto direction : state.signature) {
+        if (direction == ArgDirection::SCALAR) ++reg_args.scalar_count;
+        else ++reg_args.tensor_count;
+    }
     snprintf(reg_args.device_orch_func_name, sizeof(reg_args.device_orch_func_name), "%s", state.func_name.c_str());
     snprintf(
         reg_args.device_orch_config_name, sizeof(reg_args.device_orch_config_name), "%s", state.config_name.c_str()
@@ -2408,7 +2413,9 @@ int DeviceRunnerBase::record_device_orch_callable(
 
     const uint64_t hash = simpler::common::utils::elf_build_id_64(orch_so_data, orch_so_size);
 
+    if (next_callable_generation_ == 0) return PTO_RUNTIME_ERR_INVALID_STATE;
     CallableState state;
+    state.residency_generation = next_callable_generation_++;
     state.hash = hash;
     state.chip_buffer_hash = chip_buffer_hash;
     state.aicore_image_hash = aicore_image_hash;
@@ -4264,6 +4271,21 @@ int DeviceRunnerBase::init_runtime_args_with_metadata(
     if (rc != 0) {
         LOG_ERROR("prepare_runtime_args failed: %d", rc);
         return rc;
+    }
+    if (execution_mode_latch_.is_kernel() && runtime_launch_entry_args_plan(runtime).supported) {
+        const int32_t callable_id = runtime.get_active_callable_id();
+        const auto registered = callables_.find(callable_id);
+        if (registered == callables_.end()) return PTO_RUNTIME_ERR_INVALID_STATE;
+        uint32_t tensors = 0;
+        uint32_t scalars = 0;
+        for (const auto direction : registered->second.signature) {
+            if (direction == ArgDirection::SCALAR) ++scalars;
+            else ++tensors;
+        }
+        rc = kernel_args.prepare_kernel_invocation(
+            {callable_id, registered->second.residency_generation, tensors, scalars}
+        );
+        if (rc != 0) return rc;
     }
     // Both runtimes publish on the bound AICPU stream inside the launch
     // transaction. The slot retains the pinned source until run retirement.
