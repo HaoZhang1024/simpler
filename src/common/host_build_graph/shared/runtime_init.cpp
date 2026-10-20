@@ -80,7 +80,7 @@ SchedulerLayout SchedulerState::reserve_layout(DeviceArena &arena) {
         layout.capacities.ready_sync[i] = READY_QUEUE_CAPACITY_LIMIT;
     }
     layout.capacities.dummy = READY_QUEUE_CAPACITY_LIMIT;
-    layout.capacities.graph_prepare = READY_QUEUE_CAPACITY_LIMIT;
+    layout.capacities.graph_prepare = GRAPH_PREPARE_QUEUE_CAPACITY_LIMIT;
 
     // Fixed-capacity early-dispatch queues first, then the configurable queues.
     // The big eight are the arena's last reservations so that the bytes bind
@@ -97,7 +97,7 @@ SchedulerLayout SchedulerState::reserve_layout(DeviceArena &arena) {
         layout.off_ready_sync_queue_slots[i] = ready_queue_reserve_layout(arena, READY_QUEUE_CAPACITY_LIMIT);
     }
     layout.off_dummy_ready_queue_slots = ready_queue_reserve_layout(arena, READY_QUEUE_CAPACITY_LIMIT);
-    layout.off_graph_prepare_queue_slots = ready_queue_reserve_layout(arena, READY_QUEUE_CAPACITY_LIMIT);
+    layout.off_graph_prepare_queue_slots = ready_queue_reserve_layout(arena, GRAPH_PREPARE_QUEUE_CAPACITY_LIMIT);
     // Polling: no dep_pool arena region — producer dependencies are inline ids on
     // the payload and readiness is via the task_states array.
     return layout;

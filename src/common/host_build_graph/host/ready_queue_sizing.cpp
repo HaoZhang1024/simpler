@@ -59,7 +59,7 @@ bool ReadyQueuePopulations::derive_capacities(ReadyQueueCapacities *capacities) 
         capacities->ready_sync[i] = capacity_for_population(ready_sync[i]);
     }
     capacities->dummy = capacity_for_population(dummy);
-    capacities->graph_prepare = capacity_for_population(graph_prepare);
+    capacities->graph_prepare = 2 * capacity_for_population(graph_prepare);
     return true;
 }
 

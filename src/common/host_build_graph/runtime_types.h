@@ -146,6 +146,8 @@ inline constexpr uint64_t GRAPH_RECORD_BASE = PACKED_OUTPUT_ALIGN;
 // Per-queue arena reservation ceiling. Bind configures each queue to the next
 // power of two covering the tasks that can reach it and rejects a larger graph.
 inline constexpr uint64_t READY_QUEUE_CAPACITY_LIMIT = 32768;
+// Graph preparation keeps one extra rounded population of recycling headroom.
+inline constexpr uint64_t GRAPH_PREPARE_QUEUE_CAPACITY_LIMIT = 2 * READY_QUEUE_CAPACITY_LIMIT;
 
 // Cross-thread early-dispatch work queue (power of two)
 #define CHIP_EARLY_DISPATCH_QUEUE_SIZE 64
