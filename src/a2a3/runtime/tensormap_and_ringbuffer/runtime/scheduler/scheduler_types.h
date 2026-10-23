@@ -148,8 +148,6 @@ public:
 
         BitStates() = default;
 
-        explicit BitStates(Storage states) :
-            states_(states) {}
         void init() { states_ = 0; }
 
         // A mask with exactly `offset` set. The shift lives here so a caller
@@ -186,6 +184,8 @@ public:
         }
 
     private:
+        explicit BitStates(Storage states) :
+            states_(states) {}
         Storage states_{0};
     };
 

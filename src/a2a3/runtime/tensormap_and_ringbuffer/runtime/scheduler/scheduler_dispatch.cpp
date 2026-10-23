@@ -387,7 +387,7 @@ void SchedulerContext::dispatch_shape(
 
         for (int bi = 0; bi < got; bi++) {
             ChipTaskSlotState *slot_state = batch[bi];
-            CoreTracker::BitStates selected_mix_clusters(0ULL);
+            CoreTracker::BitStates selected_mix_clusters;
 
             if (is_mix) {
                 auto candidates = cores;
@@ -396,7 +396,7 @@ void SchedulerContext::dispatch_shape(
                 while (candidates.has_value()) {
                     int32_t cluster_offset = candidates.pop_first();
                     if (tracker.classify_mix_cluster(cluster_offset, lanes) == wanted) {
-                        selected_mix_clusters |= CoreTracker::BitStates(1ULL << cluster_offset);
+                        selected_mix_clusters |= CoreTracker::BitStates::bit(cluster_offset);
                     }
                 }
                 if (!selected_mix_clusters.has_value()) {
@@ -751,7 +751,7 @@ SchedulerContext::early_dispatch_shape(int32_t thread_idx, ResourceShape shape, 
             while (candidates.has_value()) {
                 int32_t cluster_offset = candidates.pop_first();
                 if (tracker.classify_mix_cluster(cluster_offset, lanes) == wanted) {
-                    bucket |= CoreTracker::BitStates(1ULL << cluster_offset);
+                    bucket |= CoreTracker::BitStates::bit(cluster_offset);
                 }
             }
         } else {
@@ -783,7 +783,7 @@ SchedulerContext::early_dispatch_shape(int32_t thread_idx, ResourceShape shape, 
         // stage_consumer_blocks fills the idle bucket (RUNNING slot) then the pend
         // bucket (gated pending); pass this phase's bucket in the matching slot and an
         // empty other so only the phase's cores are staged.
-        CoreTracker::BitStates empty(0ULL);
+        CoreTracker::BitStates empty;
         total_staged += is_idle ? stage_consumer_blocks(thread_idx, c, shape, start, claim, bucket, empty) :
                                   stage_consumer_blocks(thread_idx, c, shape, start, claim, empty, bucket);
     }
