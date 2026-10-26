@@ -146,9 +146,17 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
     int32_t rc = 0;
     for (size_t i = 0; i < count; ++i) {
         if (acknowledged[i]) {
-            platform_close_aicore_window(targets[i].reg_addr);
+            write_reg(targets[i].reg_addr, RegId::DATA_MAIN_BASE, AICPU_IDLE_TASK_ID);
+            write_reg(targets[i].reg_addr, RegId::FAST_PATH_ENABLE, REG_SPR_FAST_PATH_CLOSE);
         } else {
             rc = -1;
+        }
+    }
+    // Each acknowledged window retains its own completion readback before
+    // the common drain and release pass. Unacknowledged windows stay open.
+    for (size_t i = 0; i < count; ++i) {
+        if (acknowledged[i]) {
+            (void)read_reg(targets[i].reg_addr, RegId::FAST_PATH_ENABLE);
         }
     }
     // One drain covers every readback the close pass issued, and it is what
