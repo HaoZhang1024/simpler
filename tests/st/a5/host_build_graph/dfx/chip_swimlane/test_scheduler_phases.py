@@ -30,7 +30,8 @@ def _verify_runtime_clock_logs(monkeypatch, st_platform, after_finalize=None):
     original = scene_test_module.finalize_diagnostic_outputs
 
     def finalize(case_label, output_prefix, **kwargs):
-        for capture in output_prefix.rglob("chip_swimlane_records.json"):
+        captures = output_prefix.rglob("chip_swimlane_records.json") if kwargs.get("chip_swimlane", 0) else ()
+        for capture in captures:
             raw = json.loads(capture.read_text())
             logs = list(capture.parent.glob("host_clock_alignment.*.log"))
             has_host = raw["metadata"].get("orchestrator_source") == "host"
@@ -55,7 +56,10 @@ def _verify_runtime_clock_logs(monkeypatch, st_platform, after_finalize=None):
 
 
 FANOUT_WIDTH = 32
-EXPECTED_PROFILED_TASKS = 1 + FANOUT_WIDTH + 1 + 1  # root + children + final + terminal dummy
+# The terminal dummy is dependency-only. Such a node routes as an inline
+# dispatch that owns no trace cell, so the subtask count the trace array is
+# sized by excludes it and no profiled row ever carries it.
+EXPECTED_PROFILED_TASKS = 1 + FANOUT_WIDTH + 1  # root + children + final
 
 
 @scene_test(level=2, runtime="host_build_graph")
@@ -123,7 +127,7 @@ class TestSchedulerPhases(SceneTestCase):
             aicore_rows = raw["aicore_tasks"]
             assert len(aicore_rows) == EXPECTED_PROFILED_TASKS, (
                 f"task timing covers {len(aicore_rows)} tasks, expected {EXPECTED_PROFILED_TASKS} "
-                "for the fanout/fanin DAG and terminal dummy"
+                "for the fanout/fanin DAG"
             )
 
             if level >= 2:
