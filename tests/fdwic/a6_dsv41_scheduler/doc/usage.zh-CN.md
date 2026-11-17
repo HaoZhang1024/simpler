@@ -91,3 +91,37 @@ python tests/fdwic/a6_dsv41_scheduler/prepare_plan.py \
 **A6 端现在可以先执行这两条离线命令。** 返回两个 `summary.json`；失败时加上相应 `.log`。
 核编译成功和 Host 解码成功之后，仍需接入 A6 公共平台与 percounter 才能生成可执行运行包。
 所缺平台资料列在 [运行时还缺什么](a6-migration.zh-CN.md#运行时还缺什么)，不需要对方先跑通模型。
+
+## SWA 逻辑资源预检
+
+完成上述 plan 转换后，用 Host 编译器构建小工具。它读取实际 plan，逐任务检查 kernel mask、普通任务多波次和 sync_start 容量；依赖 Simpler 源码与 C++17 编译器。
+
+```bash
+SWA_DIR=tests/fdwic/a6_dsv41_scheduler
+mkdir -p "$SWA_DIR/build/resource-check"
+g++ -std=c++17 -O2 \
+  -Itests/fdwic/dsv41_scheduler/production \
+  -Isrc/common -Isrc/common/task_interface \
+  -Isrc/a5/runtime/percounter/host \
+  "$SWA_DIR/check_resources.cpp" \
+  -o "$SWA_DIR/build/resource-check/check-resources"
+
+# 54 是候选逻辑配对数；现场执行时填入公共平台确认的可用 C/V 配对数。
+"$SWA_DIR/build/resource-check/check-resources" \
+  "$SWA_DIR/build/a6-plan/plan-a6-rank0.bin" 54 1 \
+  > "$SWA_DIR/build/resource-check/summary.json"
+```
+
+末尾两个参数依次为可用逻辑配对数、每组 AIV 数。通过时退出码为 0，JSON 包含任务数、执行实例数、最少配对数，以及逐任务 mask、sync_start 和 `isolated_waves`。失败时退出非零，stderr 给出任务编号和原因，stdout 留空。
+
+当前转换后 SWA 的预期结果为 16 个任务、570 个实例、最少 48 组资源。47 组时应报告 t22 同步启动容量不足；原始 A5 plan 用 1C1V 检查时应报告 t22 的 mask 7 与拓扑不符。原始 A5 plan 使用 36 组、每组 2 AIV 可作对照。
+
+`isolated_waves` 是单个任务独占给定逻辑资源时的波次数。整图依赖、设备配对映射、内存可见性与数值正确性由运行时和上板测试验证。
+
+离线集成测试复用当前 fixture 和已有 plan 转换工具，自动编译两个 Host 小工具：
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
+```
+
+默认使用 `g++`；环境变量 `CXX` 可指定 Host 编译器可执行文件路径。测试覆盖转换后 plan、原始 A5 plan、47／48 组边界、非法参数以及缺失／截断文件。

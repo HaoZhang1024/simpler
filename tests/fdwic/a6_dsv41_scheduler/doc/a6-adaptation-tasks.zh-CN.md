@@ -100,6 +100,7 @@ SWA 资源边界已补入 CPU 测试：转换后 t22 为 48 个同步 MIX block�
 - [ ] 准备 `run.py`、`production/run.sh` 的平台、runtime 和设备选择参数，复用输入恢复、参考比较及结果统计。
 - [ ] 生成构建清单，关联平台、kernel 注册、plan、任务数、实例数与运行包内容。
 - [ ] 为黄区准备已有 plan 解码、转换和 kernel 编译检查命令，明确输入、输出及通过条件。
+- [x] 提供实际 plan 的逻辑资源预检 `check_resources.cpp`，逐任务报告 mask、sync_start、单任务波次数和最少配对数。使用原始 fixture 与现有转换工具的 6 项集成测试通过；运行命令见 [使用方法](usage.zh-CN.md#swa-逻辑资源预检)。
 
 **阶段产物：** 集成脚本与离线检查。完整目标运行包在平台、ABI 和 percounter 产物就绪后组装验证。kernel 与 plan 工具内部的问题交由同事维护，双方共用修复结果。
 

@@ -31,6 +31,7 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | [prepare.py](prepare.py) | 解包输入，编译 SWA 核与原生工具，组装运行包 |
 | [compile_kernels.py](compile_kernels.py) | 独立检查 A6 的 19 个核：编译、链接、提取机器码；不启动设备 |
 | [prepare_plan.py](prepare_plan.py)、[adapt_plan.cpp](adapt_plan.cpp) | 校验原 plan 的 Host 解码结果，只转换两处 MIX 任务描述 |
+| [check_resources.cpp](check_resources.cpp)、[test_resources.py](test_resources.py) | 按给定 C/V 逻辑拓扑检查实际 SWA plan 的任务资源需求；纯 CPU 预检与集成测试 |
 | [run.py](run.py) | 申请单卡，运行 HBG／percounter，校验并统计 |
 | [test_fixture.py](test_fixture.py) | 离线检查输入包与参考覆盖 |
 | [fixtures/](fixtures/) | 固定输入、plan、参考与来源清单 |
