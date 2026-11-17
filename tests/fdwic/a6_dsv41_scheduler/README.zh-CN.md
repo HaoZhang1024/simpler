@@ -2,7 +2,9 @@
 
 基线：`origin/main@26b0511f3`，分支 `a6-migrate-case`。本阶段只分析迁移路径，未复制算子、修改构建或执行 A6 测试。
 
-**建议先迁移 `pypto_lib_latest/swa` 的单卡回放。现有流程已经不调用 PyPTO 或 PTOAS；但重新编译仍需要 PTO-ISA 和 CANN，并且必须先具备适配 A6 的运行时。当前主线没有 `a6` 平台入口，不能直接宣称现有脚本已能在 A6 跑通。**
+**先迁移 `pypto_lib_latest/swa` 的单卡回放。A6 机器直接拉取本分支，使用已有 C++，构建与运行不调用 PyPTO 或 PTOAS；重新编译仍需要 PTO-ISA 和 CANN。当前代码没有 `a6` 平台入口，相应适配属于本次工作，不要求 A6 机器提前具备已跑通的 HBG 运行时。**
+
+去 A6 机器时，先让那边的 agent 填写 [A6 最小信息采集表](environment/README.zh-CN.md)，把填写结果和必要附件带回。适配代码在本分支完成后，再交给 A6 机器执行验证。
 
 ## 1. 当前已经有什么，哪些可以直接复用
 
@@ -101,7 +103,7 @@ MoE 要区分版本：DSL 固定回放 MoE 可以按上图复测，并保留其�
 
 ## 4. A6 迁移的关键点
 
-1. **先明确 A6 平台能力。** [platform_info.py](../../../simpler_setup/platform_info.py) 目前没有 `a6`；[toolchain.py](../../../simpler_setup/toolchain.py) 的 A5 目标写的是 `dav-c310-cube/vec`。必须确认 A6 SDK、目标架构名、PTO-ISA 支持分支及 HBG 运行时来源，核对启动、核拓扑、同步与计时接口；不能只把目录名或字符串换成 A6。
+1. **根据 A6 信息适配本分支。** [platform_info.py](../../../simpler_setup/platform_info.py) 目前没有 `a6`；[toolchain.py](../../../simpler_setup/toolchain.py) 的 A5 目标写的是 `dav-c310-cube/vec`。A6 端采集 SDK、目标架构参数、PTO-ISA 及平台配置／接口资料；本分支据此核对启动、核拓扑、同步与计时接口，完成必要适配。无需另找一份已跑通的 Simpler，也不能只把目录名或字符串换成 A6。
 2. **只构建 SWA 所需内容。** 当前 `build_sources.py --flavor pypto_lib_latest` 会编全部核并追加 native MoE；`prepare.py` 会跑整网。迁移入口应从 SWA 的实际 plan 收集使用的 kernel ID，只重编这些核和回放入口，避免把“先跑通整网”变成前置条件。[tmr_prepare.py](../dsv41_scheduler/production/tmr_prepare.py) 已有“选取使用的核、重编、重新组包”的参考实现；借鉴流程，不引入 TMR 调度来替代 HBG。
 3. **检查业务核的可移植性。** SWA 包含 MXFP8 投影、量化和混合核，例如 [mxfp8_projection.hpp](../dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/mxfp8_projection.hpp) 使用 `TMATMUL_MX`。需确认 A6 对数据格式、Tile 布局、核内存容量及 Cube／Vector 协同的支持。先保持逻辑任务、计算量与依赖；若必须调整分块或同步，单独记录，不能把变化全部当成调度收益。
 4. **输入与 ABI 要一起核对。** 可利用已有 SWA 输入快照和参考输出，但不能复用 A5 `callable.bin` 中的机器码。`plan-rank0.bin` 也不是通用图格式：[record.h](../dsv41_scheduler/production/record.h) 直接保存 `TensorData`，限定同构建布局；尺寸一致也不等于语义一致。需核对字段、shape／stride／offset、别名、数据布局和 kernel 签名，必要时由原构建解码，再按目标 ABI 重新生成。只有 `tasks.tsv`／`deps.json` 不足以执行。
@@ -109,9 +111,9 @@ MoE 要区分版本：DSL 固定回放 MoE 可以按上图复测，并保留其�
 
 ## 5. 计划与验收
 
-1. 确认 A6 的 SDK／PTO-ISA／运行时组合，先验证简单核和 HBG 启动路径；没有这些条件时停在平台适配，不启动整网编译。
+1. A6 端先返回环境与接口信息；本分支完成工具链和必要的运行时适配，迁移入口放在 `tests/fdwic/a6_dsv41_scheduler/`。随后 A6 端拉取更新，验证编译与 HBG 启动路径；跑通属于适配后的验证，不是信息采集的前置要求。
 2. 准备匹配来源的 SWA plan、输入快照和参考输出，建立只重编所需 C++ 核的路径，重新组装目标包。已保存的快照用于跳过原完整 forward 准备。
 3. 在未配置 PyPTO／PTOAS 的干净环境完成构建和单卡执行，保存实际编译命令及依赖版本，证明不是命中了旧 A5 编译缓存。
 4. 先验功能，再测 L0：保留输出检查，核对 16 个计算任务、578 个执行实例及依赖／MIX 语义；性能记录 AICore 窗口、Device wall 和 Host 准备时间，详细泳道另采。现有零权重夹具按字节比较，只能证明这份固定用例；若跨代出现数值差异，先定位并明确比较标准，再增加非零输入验证，不能直接跳过检查。
 
-当前结论：**可以把“无 PTOAS 的 SWA 单卡回放”作为首个迁移目标；未确认的关键条件是 A6 平台／HBG 运行时及现有 C++ 核的支持情况，而不是缺少模型 Python。** 后续再扩展其他算子、双卡通信与完整 forward。
+当前目标：**在本目录提供脱离 PyPTO／PTOAS 的 A6 SWA 单卡用例。A6 端负责采集信息和执行验证，本分支负责代码适配及输入／参考数据准备。** 后续再扩展其他算子、双卡通信与完整 forward。
