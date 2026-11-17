@@ -16,6 +16,15 @@
 
 using namespace mxfp8_projection;
 namespace {
+#if defined(__NPU_ARCH__) && __NPU_ARCH__ == 9201
+constexpr int PAIRED_VECTORS = 1;
+#else
+constexpr int PAIRED_VECTORS = 2;
+#endif
+// Keep the 128-column vector tile and quantizer unchanged. A6 computes twice
+// as many column tiles and exchanges credits with its single paired vector.
+constexpr int OUTPUT_COLS = PAIRED_VECTORS * 128;
+constexpr auto OUTPUT_MODE = PAIRED_VECTORS == 1 ? AccToVecMode::SingleModeVec0 : AccToVecMode::DualModeSplitN;
 template <int MT>
 using Raw = Tile<TileType::Vec, float, MT, 128>;
 template <int MT>
@@ -36,27 +45,27 @@ struct QuantizeOutput {
     SimPipe<MT> pipe;
     __aicore__ QuantizeOutput() : pipe(nullptr, 0, 0) {}
 #endif
-    __aicore__ inline void operator()(AC<256, MT>& acc) {
+    __aicore__ inline void operator()(AC<OUTPUT_COLS, MT>& acc) {
 #if defined(__CPU_SIM)
         TPUSH<SimPipe<MT>, AC<256, MT>, TileSplitAxis::TILE_LEFT_RIGHT>(pipe, acc);
 #else
         wait_intra_block(PIPE_FIX, RELEASE);
-        wait_intra_block(PIPE_FIX, RELEASE + VEC_OFFSET);
+        if constexpr (PAIRED_VECTORS == 2) wait_intra_block(PIPE_FIX, RELEASE + VEC_OFFSET);
         Raw<MT> raw;
         TASSIGN(raw, RAW_UB);
-        TMOV<Raw<MT>, AC<256, MT>, AccToVecMode::DualModeSplitN>(raw, acc);
+        TMOV<Raw<MT>, AC<OUTPUT_COLS, MT>, OUTPUT_MODE>(raw, acc);
         set_intra_block(PIPE_FIX, READY);
-        set_intra_block(PIPE_FIX, READY + VEC_OFFSET);
+        if constexpr (PAIRED_VECTORS == 2) set_intra_block(PIPE_FIX, READY + VEC_OFFSET);
 #endif
     }
     __aicore__ inline void finish() {
 #if !defined(__CPU_SIM)
         wait_intra_block(PIPE_FIX, RELEASE);
-        wait_intra_block(PIPE_FIX, RELEASE + VEC_OFFSET);
+        if constexpr (PAIRED_VECTORS == 2) wait_intra_block(PIPE_FIX, RELEASE + VEC_OFFSET);
         wait_intra_block(PIPE_FIX, STORE_DONE);
-        wait_intra_block(PIPE_FIX, STORE_DONE + VEC_OFFSET);
+        if constexpr (PAIRED_VECTORS == 2) wait_intra_block(PIPE_FIX, STORE_DONE + VEC_OFFSET);
         set_intra_block(PIPE_FIX, FINISH);
-        set_intra_block(PIPE_FIX, FINISH + VEC_OFFSET);
+        if constexpr (PAIRED_VECTORS == 2) set_intra_block(PIPE_FIX, FINISH + VEC_OFFSET);
 #endif
     }
 };
@@ -176,18 +185,18 @@ __aicore__ inline void project_oa(__gm__ int64_t* args) {
     const int active = args[7];
     const int workers = get_block_num(args);
     const int padded_rows = args[8];
-    const int columns = width / 256;
+    const int columns = width / OUTPUT_COLS;
 #if defined(__DAV_CUBE__)
     QuantizeOutput<MT> emit;
     for (int tile = get_block_idx(args); tile < (padded_rows / MT) * columns; tile += workers) {
         const int row = tile / columns * MT;
         const int column = tile % columns;
-        int group = column / 4;
-        project_emit<4096, 1024, 256, MT>(
+        int group = column / (1024 / OUTPUT_COLS);
+        project_emit<4096, 1024, OUTPUT_COLS, MT>(
             data<F>(args, 0) + (group * padded_rows + row) * 4096,
             data<F>(args, 1) + group * 4096 * 1024,
             data<S>(args, 2) + (group * padded_rows + row) * 128,
-            data<S>(args, 3) + group * 128 * 1024, column % 4 * 256, emit);
+            data<S>(args, 3) + group * 128 * 1024, column % (1024 / OUTPUT_COLS) * OUTPUT_COLS, emit);
     }
     emit.finish();
 #elif defined(__DAV_VEC__)
@@ -219,7 +228,7 @@ __aicore__ inline void project_oa(__gm__ int64_t* args) {
 #else
         set_intra_block(PIPE_V, RELEASE);
 #endif
-        const int n = column * 256 + get_sub_block_id(args) * 128;
+        const int n = column * OUTPUT_COLS + (PAIRED_VECTORS == 2 ? get_sub_block_id(args) * 128 : 0);
         using Stride = pto::Stride<1, 1, 1, DYNAMIC, 1>;
         using PayloadShape = TileShape2D<F, MT, 128>;
         using ScaleShape = TileShape2D<uint8_t, MT / 16, 64>;
