@@ -1,0 +1,133 @@
+# A6 evidence 2026-11-17 (read-only collection)
+
+Archive note: machine-specific paths and user identifiers are replaced with placeholders.
+Tool output values and comments remain historical evidence, not verified hardware contracts.
+Corrections and current questions: a6-environment.zh-CN.md.
+
+
+## uname/os
+x86_64
+NAME="Ubuntu"
+VERSION="20.04.6 LTS (Focal Fossa)"
+
+## query device 0
+device 0:
+  soc_name:           Ascend960DT_966B7  # CANN's full SoC version string
+  short_soc_version:  Ascend960DT       # CANN's chip-family identifier
+  detected_arch:      (unknown)         # mapped to this repo's arch name
+  phy_chip_id:        0                 # which physical chip this device is on (a3: devices 2k/2k+1 share it)
+  smp_id:             0                 # AICPU-OS-image group (devices with same smp_id share one OS image)
+  mainboard_id:       224               # server mainboard slot
+  is_virtual:         no                # compute-power-splitting mode
+  run_mode:           host              # this process runs on host or device side
+
+  cube_cores (AIC):   54                # runtime-visible (HAL physical may be higher; see hardware.md)
+  vector_cores (AIV): 54                # runtime-visible, 2 AIV per cluster
+  aicpu_cores:        8                 # runtime-visible AICPU (HAL OCCUPY mask reveals more; see hardware.md)
+  cube_freq:          1800 MHz          # AIC compute clock
+  cube_block_mnk:     16x16x16          # MMAD per-instruction M×N×K
+  vec_calc_size:      128   lanes       # AIV SIMD width
+
+  l2_cache:           128 MiB           # per AICore cluster, shared by AIC + AIVs
+  l1_per_aic:         512 KiB           # per-AIC scratchpad
+  l0a_per_aic:        64 KiB            # MMAD matrix-A operand
+  l0b_per_aic:        64 KiB            # MMAD matrix-B operand
+  l0c_per_aic:        256 KiB           # MMAD matrix-C accumulator
+  ubuf_per_aiv:       376 KiB           # per-AIV vector working set
+
+  hbm_total:          175.88 GiB        # per-die HBM (slightly < raw 64 GiB due to driver reserve)
+  hbm_free:           175.34 GiB        # available right now (sampled)
+
+  rt_aicpu_count:     8                 # rtGetAiCpuCount (runtime API; matches ACL aicpu_cores)
+  env:                3 (cloud)         # 0=mini 1=EP 2=RC 3=cloud
+  hw_version:         0x1000            # hardware revision code
+  ts_num:             1                 # Task Scheduler count
+  phy_die_id:         0                 # die identifier (HAL view; differs from ACL phy_chip_id)
+  aicpu_occupy:       0x7f8             # bitmap of AICPU cores in HAL view (cf. runtime-visible 6)
+  aicpu_in_used:      8                 # AICPU cores currently in use
+  aicore_hal:         54                # HAL's AICore count (may differ from ACL — see hardware.md)
+
+## CANN
+ASCEND_HOME_PATH=${ASCEND_HOME_PATH}
+Version=9.3.0
+version_dir=cann
+required_package_runtime_version="9.3"
+required_package_ge-executor_version="9.3"
+required_package_metadef_version="9.3"
+required_package_bisheng-compiler_version="9.3"
+required_package_tbe-tik_version="9.3"
+timestamp=20261103_000323501
+Version=9.3.0
+version_dir=cann
+required_package_runtime_version=">=8.5"
+required_package_ge-executor_version=">=8.5"
+required_package_metadef_version=">=8.5"
+required_package_asc-devkit_version=">=8.5"
+required_package_bisheng-compiler_version=">=8.5"
+timestamp=20261103_000323501
+
+## driver
+Version=7.12.T0.0.B280
+timestamp=20261111_000323884
+ascendhal_version=7.35.23
+aicpu_version=1.0
+tdt_version=1.0
+log_version=1.0
+prof_version=2.0
+dvppkernels_version=1.1
+tsfw_version=1.0
+required_firmware_firmware_version=1.0
+
+## ccec/bisheng/ld.lld
+Thread model: posix
+InstalledDir: ${ASCEND_HOME_PATH}/bin
+LLD 15.0.5 (compatible with GNU linkers)
+
+## aarch64 cross
+aarch64-target-linux-gnu-g++ (Do-Compiler V100R001C30B0032) 14.3.0
+Copyright (C) 2024 Free Software Foundation, Inc.
+
+## arch tokens
+dav-920r1-cube: #define __CCE_AICORE__ 920 / #define __NPU_ARCH__ 9201
+dav-920r1-vec:  #define __CCE_AICORE__ 920 / #define __NPU_ARCH__ 9201
+dav-9201-cube:  bisheng: error: Unsupported CCE architecture: dav-9201-cube
+dav-c310-cube:  #define __CCE_AICORE__ 310 / #define __NPU_ARCH__ 3510
+
+## platform ini
+Short_SoC_version=Ascend960DT
+CCEC_AIC_version=dav-920r1-cube
+CCEC_VECTOR_version=dav-920r1-vec
+core_type_list=CubeCore,VectorCore
+
+## pto-isa
+83b1b2b52ded9ec5d91e02532a57cd95e497ba86
+https://github.com/hw-native-sys/pto-isa.git
+83b1b2b52ded9ec5d91e02532a57cd95e497ba86
+
+## simpler
+4b2d9ca4b501c57abeea4a9dc86e0f6d08bedab4
+a6-migrate-case
+?? tests/fdwic/a6_dsv41_scheduler/environment/A6-environment-report-20261117.zh-CN.md
+?? tests/fdwic/a6_dsv41_scheduler/environment/evidence-20261117.txt
+
+## host tools
+g++ (Ubuntu 9.4.0-1ubuntu1~20.04.2) 9.4.0
+cmake version 3.16.3
+ninja: MISSING
+Python 3.14.8
+Python 3.11.14
+
+## devices
+/dev/davinci0
+/dev/davinci_manager
+npu-smi: MISSING
+task-submit: MISSING
+
+## SWA A6 compile result (17 PASS / 2 FAIL)
+17
+
+## A5-only flags on A6 (ccec dav-920r1, ${FLAG_TEST_DIR} + ${A6_COMPILE_LOG_DIR})
+- -fno-jump-tables: WITH -> no .rodata; WITHOUT -> .rodata contains switch.table.k (jump table)
+- ccec accepts -mllvm -cce-vf-aa-between-iters=true for dav-920r1 (object built)
+- .text bytes identical with/without the AA flag for: hc_collapse, qkv_quant, hc_post, hc_rms
+- simpler loader is text-only: simpler_setup/elf_parser.py rejects allocated .rodata (jump tables) outside .text
