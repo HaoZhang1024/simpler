@@ -7,6 +7,11 @@
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
 
+simpler_ut_add_target(NAME test_percounter_resource_order
+    SOURCES test_resource_order.cpp
+    INCLUDES ${SIMPLER_SRC}/a5/runtime/percounter/host
+    LABEL no_hardware TIMEOUT 20)
+
 set(percounter_wire_header "${SIMPLER_SRC}/a5/runtime/percounter/runtime/scheduler/wire_types.h")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${percounter_wire_header}")
 file(READ "${percounter_wire_header}" percounter_wire_source)

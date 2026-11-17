@@ -2,112 +2,156 @@
 
 [返回索引](../README.zh-CN.md) · [迁移分析](a6-migration.zh-CN.md) · [黄区接口查证](a6-environment.zh-CN.md)
 
-目标是让现有 SWA 在 A6 单卡生产 percounter 上构建、执行、校验并正常退出。适配范围包含 percounter 依赖的 Host orchestration、AICPU 生命周期与 HBG/common 共享源码；独立 `host_build_graph` resident 调度器不作为前置交付。性能优化在功能验收后开展。
+目标是让现有 SWA 在 A6 单卡生产 percounter 上构建、执行、校验并正常退出。同事负责 A6 公共平台和 HBG，我们负责 percounter 适配及其 SWA 集成。双方共用平台、计算核和 fixture，分别验收运行时。性能优化在功能验收后开展。
 
-## 当前基础与蓝区待修改总表
+## 1. 已有基础与分工
 
-当前分支已包含：SWA 的 19 个 kernel 注册、固定输入和参考 fixture、A5 HBG/percounter 验证记录、两个 MIX 核的 A6 1C1V 改写，以及 plan 转换工具。归档的 A6 核编译、链接和机器码提取为 19／19 通过；设备执行待黄区验证。SWA 保持 16 个任务，A5 为 578 个执行实例，A6 转换后为 570 个。
+当前已包含 SWA 的 19 个 kernel 注册、设备 C++、固定输入和参考 fixture、A5 验证记录、两组 MIX 核的 A6 1C1V 改写，以及 plan 转换工具。A6 转换后为 16 个任务、570 个执行实例，A5 为 578 个。输入恢复、30 个可写 Device buffer 的参考比较和统计逻辑已有实现。
 
-下表各项为待完成工作；已有离线工具作为实现基础复用。
+编译记录分为两个阶段：现场早期原始核为 17／19 编译通过，后续改写后蓝区为 19／19 编译、链接和机器码提取通过；A6 设备功能验证待完成。上述工具与数据直接复用。
 
-| 步骤 | 蓝区待修改内容 | 主要代码位置 | 黄区依赖 | 交付与验收 |
-| --- | --- | --- | --- | --- |
-| 1. 接通构建和组包 | 串联 fixture 校验、目标核编译、plan 转换和 callable 组装；接入定向构建与缓存 | `prepare.py`、`compile_kernels.py`、`prepare_plan.py`、`production/CMakeLists.txt` | 现场 Host ABI 与 SDK 复核；完整组包依赖目标运行时接口 | A6 运行包及构建清单一致；单项修改只重建相关产物 |
-| 2. 接入公共平台 | 完成 A6 平台发现、三类工具链、平台库和 dispatcher；实现映射、启动、完成与退出 | `simpler_setup/`、平台实现及共享生命周期代码 | Q1–Q4：核编号、寄存器、SSBUF、启动依据；Q5：计时与超时单位 | percounter 所需组件成套构建，基础加载、参数传递与启停验证通过 |
-| 3. 适配 percounter | 修改资源排列、1C1V 协同、SSBUF、领取与完成协议，核对任务映像 ABI | `src/a5/runtime/percounter/` 对应实现及其共享依赖 | 公共平台规则与黄区设备验证 | 普通依赖链、MIX、sync_start、多波次和重复运行通过 |
-| 4. 跑通完整 SWA | 接通目标运行入口与结果采集；核对两组 MIX 核，执行固定输入与参考检查 | `run.py`、`production/run.sh`、两个 MIX 核 | 步骤 2、3 可执行；黄区单卡占用方式 | 16 个任务完整执行，30 个可写 Device buffer 校验通过，正常退场 |
-| 5. 固定交付与回归 | 完善环境准备、增量构建、运行和失败定位说明，组织 A5 受影响路径回归 | 用例 `doc/`、构建与运行脚本、相关测试 | 黄区从新目录复现 | 固定版本可复现，源码、fixture、产物及运行结果对应 |
+| 工作范围 | 负责人 | 交付边界 |
+| -------- | ------ | -------- |
+| A6 平台发现、工具链、平台库、dispatcher、核与寄存器映射、设备启停 | 同事 | 公共平台代码、接口说明及对应验证结果 |
+| Host orchestration、AICPU 生命周期的公共适配 | 同事 | 双方共用的接口与实现；percounter 自有 hook 由我们接入 |
+| HBG resident image 与调度器 | 同事 | HBG 自有实现与验收结果 |
+| SWA kernel、fixture、plan 转换工具 | 同事维护，我们复用 | 同一版本的源码、任务描述、数据与检查结果 |
+| percounter 资源排列、任务映像、AICPU 图物化、AICore 调度协议 | 我们 | percounter 实现、基础测试及 A5 受影响路径回归 |
+| percounter SWA 构建、组包、运行与验收说明 | 我们 | 复用现有工具的集成入口、构建清单与运行结果 |
+| 环境和 Q1–Q5 查证、设备执行 | 同事协调黄区 agent；我们提供 percounter 检查项 | 公共资料双方复用，HBG 与 percounter 运行结果分别记录 |
+
+公共平台修改与 HBG 专有修改分别交付。共享脚本由同事维护已有编译、转换工具，我们负责组包与 percounter 运行选择；涉及同一文件时先对齐接口和修改范围，再由对应负责人落地。
+
+## 2. 实施步骤总表
+
+| 步骤 | 我们要做的内容 | 现在可推进 | 等待的交付 | 完成条件 |
+| ---- | -------------- | ---------- | ---------- | -------- |
+| 1. 梳理并适配 percounter 逻辑 | 清点 A5 假设，修改逻辑 1C1V 资源模型，准备协议与基础测试 | 源码分析、Host 资源排列及 CPU 可验证部分、测试样本 | 物理编号与 SSBUF 等接口确定后接入设备路径 | 逻辑资源分配与执行集合检查通过，平台接口需求明确 |
+| 2. 准备 SWA 集成 | 串联现有 fixture 检查、plan 转换和编译产物，准备 percounter 组包与运行参数 | 数据与转换结果检查、构建清单、脚本流程及结果采集 | 目标平台构建入口、参数 ABI 和运行时产物 | 完整运行包使用正确 plan、kernel 与 runtime |
+| 3. 接入公共平台 | 集成同事交付，完成 percounter 自有映像、图物化、lane loop 与生命周期 hook | 先梳理共享源文件和 hook 的调用关系 | 公共平台代码、Q1–Q4 依据与基础启停结果；Q5 超时依据 | percounter 成套构建，基础调度和启退验证通过 |
+| 4. 黄区功能验收 | 组织 percounter 基础用例、MIX 和完整 SWA 校验，定位问题 | 提前准备命令、通过条件及日志清单 | 步骤 3 可执行，黄区工具链与设备占用方式就绪 | 16 任务、570 实例、30 个可写 buffer 校验及重复运行通过 |
+| 5. 固定交付与回归 | 更新操作说明，完善增量构建，验证受影响的 A5 路径 | 随实现补充文档和回归范围 | 黄区功能结果及固定集成版本 | 新目录复现，源码、数据、产物与结果对应 |
+
+步骤 1、2 可同时推进。步骤 3 按公共平台接口和代码分批接入；集成时间由公共部分的交付情况决定，HBG 完整 SWA 验收单独推进。
 
 ```text
-蓝区：构建与组包逻辑 ──────────────────────────────┐
-黄区：Host plan 解码、目标核编译复核 ──────────────┤
-黄区：Q1–Q4 接口依据 → 蓝区：公共平台与 percounter 适配
-                                                  ↓
-                                    percounter 基础用例验证
-                                                  ↓
-                                    A6 percounter 完整 SWA
-                                                  ↓
-                                        固定交付与回归
-
-Q5 计时依据 → 超时单位核验与后续性能统计
+同事：黄区接口查证 → 公共平台、共享生命周期 → 分批交付
+                          │                    │
+                          │                    ├→ 同事：HBG 适配与验收
+                          │                    │
+我们：percounter 逻辑与测试 ─────────────────────┤
+我们：SWA 组包与运行集成准备 ────────────────────┤
+                                               ↓
+                                  接入公共平台与硬件接口
+                                               ↓
+                                  percounter 基础用例验证
+                                               ↓
+                                  A6 percounter 完整 SWA
+                                               ↓
+                                      固定交付与回归
 ```
 
-### 步骤 1：接通构建和组包
+## 3. 我们现在可以先做
 
-**当前缺口：** `compile_kernels.py` 已支持 A6；`prepare.py build` 只接受 A5，并固定校验、记录 578 个实例；`prepare_plan.py` 独立输出 A6 plan，尚未接入完整组包。两份 kernel 编译入口各自组织直接编译。
+### 步骤 1：percounter 逻辑与测试
 
-蓝区修改：
+以下路径相对于 `src/a5/runtime/percounter/`，作为目标适配的现有代码入口。
 
-- [ ] 将原始 fixture 校验、目标 plan 转换、核编译、Host 工具构建和 callable 组装接成可独立重试的流程。A5 与 A6 各自采用当前有效的任务描述和实例数。
-- [ ] 在目标 Host 解码原 plan，核对 2735 条记录的语义，再转换 t22/t28；将转换后的 plan 装入 A6 运行包，原始 fixture 保留为来源。
-- [ ] 在 `production/CMakeLists.txt` 中梳理平台与参数接口头文件来源，使 native-runner、replay、record-tool 与 percounter 使用同版本契约。
-- [ ] 复用 Simpler 的编译缓存，按平台、编译器、PTO-ISA、源码与头文件依赖区分产物；核编译、Host 工具、plan 和组包分别管理。
-- [ ] 生成构建清单，记录目标平台、kernel 注册、实际 plan、任务数、实例数及运行包内容。
+| 文件 | 现在推进的内容 | 接口交付后完成的内容 |
+| ---- | -------------- | -------------------- |
+| `host/resource_order.h` | 梳理 `cluster * 3`、双 V 容量、参与 mask；适配逻辑 1C1V 资源分配、回收、排序及 sync_start 容量检查 | 将逻辑资源接到公共平台提供的物理映射 |
+| `host/image/image_pack.h`、`runtime/task_image_layout.h`、`aicpu/graph_prepare.h` | 梳理 Host 打包、AICPU 图物化、AICore 读取的数据契约，核对 block、mask、Tensor 别名及依赖 | 使用目标 ABI 构建并验证三端数据一致性 |
+| `aicore/lane_loop.h`、`runtime/scheduler/wire_types.h` | 分析协调者、参与者、任务领取、会合、完成与代际复用，准备 1C1V 协议测试 | 接入真实 C/V 编号、共享资源和可见性规则 |
+| `runtime/scheduler/ssbuf.h` | 列出 percounter 区域容量、字段和访问顺序需求 | 根据同事交付的可用区域、共享范围与屏障规则适配 |
+| `runtime/scheduler/gm.h`、`async_completion.h` | 梳理完成计数、依赖发布及退出条件，准备重复运行测试 | 在 A6 验证原子访问、可见性与完成观察 |
+| `build_config.py` | 梳理共享源码、include 顺序、自有入口与 hook | 接入同事交付的 A6 平台和构建发现机制 |
 
-**验收：** 离线检查能识别原始 A5 plan 和转换后的 A6 plan；A6 使用 16 个任务、570 个实例；重复构建复用缓存，单核修改只重编受影响目标并重新组包。完整运行包在步骤 2、3 的接口确定后联调。
+- [ ] 整理 percounter 对公共平台的接口需求，交给同事并入 Q1–Q5 查证。
+- [x] 完成 Host 资源排序的逻辑 1C1V 模型及 CPU 测试，保留 A5 当前有效的 1C2V 行为。两个生产调用方显式传入平台 AIV 数；设备协议适配继续按下列待办推进。
+- [ ] 准备普通 AIC/AIV 依赖、1C1V MIX、sync_start、多波次、连续调用和 Worker 重建的验收用例。
+- [ ] 核对任务映像及图物化中的 A5 假设，明确需要目标 ABI 验证的字段。
 
-### 步骤 2：接入公共平台与共享生命周期
+**阶段产物：** percounter 逻辑修改、可执行的离线检查、基础用例，以及逐项对应代码的接口需求。物理地址、寄存器值和 SSBUF 布局采用公共平台交付的定义。
 
-**当前缺口：** `toolchain.py` 已有 A6 CCEC 目标，`platform_info.py` 的平台注册和运行时发现仍未包含 A6。核编译工具目前借用 A5 参数接口头文件，目标 Device ABI 仍待验证。
+2026-11-17 资源模型验证：`make_resource_order` 显式接收每组 Vector 数，统一用于参与 mask 校验、容量、分配、释放和整类资源预留。测试独立为 `tests/ut/cpp/a5/runtime/percounter/test_resource_order.cpp`，注册目标 `test_percounter_resource_order`，保留原有 6 项 A5 测试并新增 8 项。Windows LLVM-MinGW 下直接编译该测试和仓库指定的 GoogleTest 1.14.0，14／14 通过；新增小图遍历覆盖 10,368 组 1C1V 图，原有 A5 遍历覆盖 768 组。编译启用 `-Wall -Wextra -Werror`。
 
-蓝区修改：
+本轮覆盖 Host 逻辑模型，完整 CMake 测试目标、生产运行时构建及设备执行留待后续环境验证。Linux 标准入口为构建 `test_percounter_resource_order` 后执行 `ctest --test-dir tests/ut/cpp/build -R '^test_percounter_resource_order$' --output-on-failure`。本地测试结果保存在 `build/a6-resource-model/results.xml`。
 
-- [ ] 沿 `platform_info.py`、`toolchain.py`、`build_runtimes.py`、`runtime_builder.py`、`kernel_compiler.py` 接通 A6。分别配置 x86_64 Host、aarch64 AICPU 和 `dav-920r1-cube/vec` 工具链。
-- [ ] 根据构建依赖确定 A6 平台目录与共享源码引用，构建 percounter、必要平台库和 dispatcher。
-- [ ] 根据 Q1/Q2 实现物理核、逻辑 C/V 对、驱动资源 ID 和寄存器窗口映射；参考入口为 `src/a5/platform/onboard/host/host_regs.cpp` 与 `platform_config.h`。
-- [ ] 根据 Q3/Q4 核对 SSBUF 共享范围、访问屏障、联合启动、READY/完成/EXIT 握手以及参数可见性。
-- [ ] 适配 percounter 复用的 Host orchestration 和 AICPU 生命周期；运行时、kernel 与 replay 的 ABI 同步更新。
-- [ ] 在架构预检中识别现场 Ascend960DT，使用 Q5 核验超时与计时单位。
+### 参与者、任务映像与完成协议核对结果
 
-**黄区返回：** Q1–Q5 逐项答案与原始依据，目标 Host 的 plan 检查结果、SDK 编译结果和设备使用方式。
+| 代码位置 | 当前处理逻辑 | 后续动作与归属 |
+| -------- | ------------ | -------------- |
+| HBG 共享 `runtime/scheduler/scheduler_topology.h` | 已接收 aiv_per_cluster，但按启动 worker 连续排列推导同组 C/V | 同事确认 A6 启动编号和实际配对关系；我们复用该映射接口 |
+| percounter `aicpu/supervisor.h` | 握手后统计实际 C/V，按平台 AIV 数检查配比并发布拓扑 | 我们接入平台常量；黄区确认实际可用完整配对数 |
+| `host/region_plan.h`、`runtime/scheduler/argument_metadata.h` | mask 校验仍按最多三个槽位；参数函数数组按平台 lane 数遍历 | 我们补齐目标拓扑的 mask 校验；三端槽位 ABI 按 Q6 明确后统一修改 |
+| `runtime/scheduler/wire_types.h`、`aicore/lane_loop.h` | claim shape 使用三位 mask；会合按实际 mask 遍历参与者，MIX 协调者为逻辑 lane 1；入口仍实例化 lane 2 | 保留有效的参与者逻辑，适配目标 lane 实例和边界检查；编号依据来自 Q1/Q4 |
+| `host/region_plan.h`、`host/graph_template.h` | 完成总量来自 block_num × 实际 subtask 数；counter preset 为 1 − 总量 | 使用转换后 mask 和 block 数，分别验证普通任务、图体和 shell sink 计数；当前计数语义可复用 |
+| `host/image/image_pack.h`、`runtime/task_image_layout.h` | 静态断言核对固定任务 stride 和偏移，percounter 保留 AICPU 图物化 | 按 Q6 核对三端 sizeof/alignof/offsetof 与 kernel_id 槽位；逻辑 lane 数与序列化格式分别处理 |
+| `runtime/scheduler/gm.h`、`ssbuf.h` | GM 观察使用 DCCI/DSB，SSBUF 发布和读取带屏障；SSBUF 使用 A5 固定区域 | 我们按 Q3/Q7 确认的规则接入，设备端验证可见性与代际复用 |
 
-**验收：** 组件加载、基础 AIC/AIV 调用、参数读写、重复启动及正常退出通过。基础调度链在步骤 3 的 percounter 路径内验证。
+SWA 资源边界已补入 CPU 测试：转换后 t22 为 48 个同步 MIX block，47 组 1C1V 资源时拒绝，48／54 组时通过；普通 Vector 的 64／80 block 在 54 组下分两波。该结果表示逻辑资源可容纳性，实际可分配 C/V 数和配对关系由黄区确认。查证顺序、问题及返回模板统一维护于 [黄区接口查证](a6-environment.zh-CN.md#黄区查证顺序与交接)。
 
-### 步骤 3：适配 percounter 调度
+### 步骤 2：SWA 集成准备
 
-以下路径均相对于 `src/a5/runtime/percounter/`，作为 A6 实现的现有代码入口。
+当前 `compile_kernels.py` 已支持 A6，`prepare_plan.py` 已输出 A6 plan；`prepare.py build` 和 `run.py` 仍使用 A5 平台约束。
 
-| 文件 | 需要处理的内容 | 验收重点 |
-| --- | --- | --- |
-| `build_config.py` | 架构发现、共享源文件与 include 顺序；保留 percounter 自有任务映像及 AICore 入口 | 构建选择正确，实际加载 percounter |
-| `host/resource_order.h` | 当前 worker 排列含 `cluster * 3`、`worker / 3`、`worker % 3` 与三 lane 遍历 | 1C1V 分配、回收、排序及容量一致 |
-| `runtime/scheduler/ssbuf.h` | 当前采用 A5 偏移 2 KiB、大小 1 KiB 区域 | A6 布局、容量、发布与读取屏障正确 |
-| `aicore/lane_loop.h`、`runtime/scheduler/wire_types.h` | 协调者、参与 mask、任务领取、参数发布、会合、完成及代际复用 | 每个有效 block 正好执行一次，实际参与者完成后发布完成 |
-| `runtime/scheduler/gm.h`、`async_completion.h` | 原子访问、完成计数、依赖可见性与退出判断 | 消费者就绪顺序正确，重复运行状态正确 |
-| `host/image/image_pack.h`、`runtime/task_image_layout.h`、`aicpu/graph_prepare.h` | Host 打包、AICPU 物化和 AICore 读取的数据契约 | Tensor、标量、block、mask、同步与依赖一致 |
+- [ ] 复用现有 fixture 校验和 `prepare_plan.py`，在组包流程中接入转换后的 16 任务、570 实例 plan。
+- [ ] 梳理 `prepare.py`、`production/CMakeLists.txt` 的工具及参数头文件来源，准备 percounter 构建和 callable 组装流程。
+- [ ] 准备 `run.py`、`production/run.sh` 的平台、runtime 和设备选择参数，复用输入恢复、参考比较及结果统计。
+- [ ] 生成构建清单，关联平台、kernel 注册、plan、任务数、实例数与运行包内容。
+- [ ] 为黄区准备已有 plan 解码、转换和 kernel 编译检查命令，明确输入、输出及通过条件。
 
-- [ ] 核对上述 A5 假设，落实到 A6 当前平台契约，生产者、消费者和测试同步修改。
-- [ ] 复用现有 acquire/cohort 测试语义，覆盖普通 AIC/AIV 依赖、1C1V MIX、sync_start、超出物理核数的多波次，以及连续调用和 Worker 重建。
-- [ ] 实现前核对主仓对完成观察、参数预打包、SSBUF 和 MIX 准备的相关改动，选定集成基线并冻结验证版本。
+**阶段产物：** 集成脚本与离线检查。完整目标运行包在平台、ABI 和 percounter 产物就绪后组装验证。kernel 与 plan 工具内部的问题交由同事维护，双方共用修复结果。
 
-**验收：** percounter 基础用例正常执行和退出，任务完成计数与实际执行集合一致。此阶段直接使用 percounter，HBG/common 按共享依赖参与构建。
+## 4. 等待同事交付及接入工作
 
-### 步骤 4：完整 SWA 功能验证
+### 公共部分交付清单
 
-蓝区修改与检查：
+| 交付项 | 具体内容 | 我们用于 |
+| ------ | -------- | -------- |
+| 平台与构建代码 | A6 平台发现、Host/AICPU/AICore 工具链、平台库、dispatcher、构建命令与共享源文件位置 | 注册并构建 percounter，接通运行包 |
+| 核与寄存器接口（Q1/Q2） | C/V core ID、逻辑配对、有效资源、驱动 res_id、寄存器窗口与读写规则，附依据 | 逻辑 worker 映射、参数发布及启动退出 |
+| SSBUF 规则（Q3） | 容量、同组共享范围、可用偏移、kernel 预留区域、访问屏障 | percounter 自有 SSBUF 布局和会合协议 |
+| 启动与共享生命周期（Q4） | 联合启动、blockDim、sub-block、READY/完成/EXIT、公共接口和已有样例 | 接入 percounter 自有 hook 与 lane loop |
+| 计时依据（Q5） | 计数器单位、频率及获取方法 | 超时核验和结果统计 |
+| 验证与版本 | 对应代码版本、工具链、基础加载及启退日志、已确认范围与待查项 | 冻结集成版本，复用平台证据并组织 percounter 验收 |
 
-- [ ] `run.py` 和 `production/run.sh` 参数化平台、运行库、预检与设备选择，A6 目标选择 percounter。沿用黄区确认的占用方式，保留环境检查和错误提示。
-- [ ] 接通每轮输入恢复、30 个可写 Device buffer 的参考比较、异常退出、日志和结果汇总。分别记录功能结果和计时数据。
-- [ ] 检查 `sparse_gather_vf.cpp`：48 个 1C1V block 覆盖原 24 个 1C2V block 的两半 head；核对 token/partial 槽位、KV gather、UB 和事件使用。
-- [ ] 检查 `o_proj_a.cpp`：32 个 block 下单 V 与内部列循环覆盖完整输出，核对量化和 READY/RELEASE/STORE_DONE 顺序。
-- [ ] 准备可区分前后半 head/列的非零小样本，针对两组 MIX 核检查漏算、重复写回与偏移；完整 SWA 继续使用固定 fixture。
+同事按已确认的接口和可用代码分批交付，我们逐项接入。共享生命周期修改需覆盖 percounter 的调用契约：当前 percounter 复用 Host orchestration 和 AICPU 生命周期，同时保留自有 image packer、AICPU 图物化及 AICore 入口。
 
-**验收：** 黄区运行 A6 percounter SWA，核对 16 个任务、570 个实例及完整计算覆盖，逐轮输出比较通过，重复运行与退场正常。参考来自现有固定数据；独立 HBG 运行结果不作为验收依赖。
+### 步骤 3：接入并验证 percounter
 
-### 步骤 5：交付与增量回归
+- [ ] 集成公共平台代码，接通 percounter 构建配置与共享源码引用。
+- [ ] 将逻辑 1C1V 模型接到实际核映射，落实 SSBUF、屏障和参与者编号。
+- [ ] 完成 Host 打包、AICPU 图物化与 AICore lane loop 的目标 ABI 验证。
+- [ ] 验证 percounter 的初始化、参数传递、任务领取、完成观察和退出。
+- [ ] 在黄区执行基础用例，检查每个有效 block 正好执行一次、依赖顺序正确及重复运行状态正确。
 
-- [ ] 整理环境检查、构建、运行和结果收集命令，每条命令标明输入、输出和通过条件；黄区 agent 按固定步骤执行并返回报告及小日志。
-- [ ] 在新构建目录复现交付版本，确认只需要 Simpler、配套 PTO-ISA、CANN 和基础构建工具，使用已有设备 C++ 省去上游生成链路。
-- [ ] 对修改涉及的 A5 构建、共享生命周期和计算核执行定向回归，A5 与 A6 结果分别归档。
-- [ ] 按可独立构建和验证的边界整理提交：构建与组包、公共平台与 percounter、SWA 功能与交付。黄区按固定版本更新。
+**验收：** percounter 成套构建，基础用例和生命周期验证通过。公共平台问题由同事修复，percounter 协议问题由我们修复，共享接口变更由双方同步接入。
 
-| 修改内容 | 重建范围 |
-| --- | --- |
-| 单个 kernel 或其头文件 | 受影响的 AIC/AIV 编译目标，再组装 callable |
-| plan 转换 | 转换与语义检查，再组包 |
-| Host 工具或 Tensor/参数 ABI | 相关工具及依赖组件，再核验 plan 和组包 |
-| percounter 或平台代码 | 受影响运行时、dispatcher 与共享依赖，再运行对应基础检查 |
-| fixture | 数据覆盖检查及完整输出校验 |
-| 工具链、PTO-ISA 或平台版本 | 按身份失效相关缓存，重验目标组件 |
+## 5. 黄区验收与交付
+
+### 环境准备
+
+| 已有信息 | 执行安排 |
+| -------- | -------- |
+| Host 为 x86_64、Ubuntu 20.04.6，AICPU 目标为 aarch64 | 黄区本地构建 Host 工具，先验证原 plan 的 2735 条记录与转换结果；工具链按目标分别配置 |
+| CANN 9.3.0，目标为 `dav-920r1-cube/vec`，PTO-ISA 与当前 pin 一致 | 使用交付版本复核 19 个 kernel 的编译、链接和机器码提取 |
+| 54 AIC、54 AIV、8 AICPU，PTO-ISA 有 1C1V 同步实现 | 平台映射采用同事确认的接口，percounter 验证逻辑资源与真实执行集合 |
+| 记录 CMake 3.16.3，缺 Ninja、项目 venv | 黄区离线检查前准备项目 venv、满足构建要求的 CMake 和 Ninja |
+| 可从 GitHub 下载；旧记录缺 task-submit、npu-smi | 黄区确认下载及单卡占用方式，使用同事适配的设备预检入口 |
+
+### 步骤 4：完整 SWA 功能验收
+
+- [ ] 同事提供两组 MIX 核的针对性非零样本与检查结果，我们复用到 percounter 执行验证，覆盖前后半 head、列和写回范围。
+- [ ] 黄区运行完整 SWA，检查 16 个任务、570 个实例及 30 个可写 Device buffer 的参考输出。
+- [ ] 执行连续调用与 Worker 重建，检查每轮输入恢复、完成计数和正常退出。
+- [ ] 汇总功能结果、运行版本及日志；kernel／plan 问题交由同事，percounter 问题由我们处理。
+
+### 步骤 5：固定交付与回归
+
+- [ ] 在新构建目录复现，只构建 SWA、percounter 及必要公共依赖；源码仓为 Simpler 与配套 PTO-ISA，使用已有设备 C++。
+- [ ] 按实际重编范围复用缓存，区分平台、编译器、PTO-ISA、源码与头文件依赖。
+- [ ] 我们验证 percounter 修改影响的 A5 路径；同事提供公共平台、共享生命周期和 kernel 修改的对应回归结果。
+- [ ] 更新黄区构建、运行及失败定位说明，固定集成版本和结果清单。
 
 功能交付通过后，另行安排 A5/A6 percounter 性能比较及硬件优化。

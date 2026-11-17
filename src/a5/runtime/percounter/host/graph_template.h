@@ -179,8 +179,9 @@ inline TemplateResult build_graph_template(
         for (int32_t e = fanin_offsets[i]; e < fanin_offsets[i + 1]; ++e)
             node.predecessors.push_back(static_cast<uint32_t>(fanin_indices[e]));
     }
-    const auto schedule =
-        make_resource_order(order_tasks, static_cast<uint32_t>(worker_count / PLATFORM_CORES_PER_BLOCKDIM));
+    const auto schedule = make_resource_order(
+        order_tasks, static_cast<uint32_t>(worker_count / PLATFORM_CORES_PER_BLOCKDIM), PLATFORM_AIV_CORES_PER_BLOCKDIM
+    );
     if (!schedule) return fail(TemplateStatus::MALFORMED, "invalid resource schedule", -1);
     next.depth = schedule->depth;
     next.virtual_duration = schedule->duration;

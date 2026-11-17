@@ -617,7 +617,7 @@ inline bool build_tables(
             if (task.active_mask == 0) node.duration = 0;
         }
     }
-    const auto schedule = make_resource_order(order_tasks, clusters);
+    const auto schedule = make_resource_order(order_tasks, clusters, PLATFORM_AIV_CORES_PER_BLOCKDIM);
     if (!schedule) return fail(BuildStatus::INVALID_ARGUMENT, -1, -1);
     const auto &global_order = schedule->tasks;
     std::vector<uint32_t> position(task_count);

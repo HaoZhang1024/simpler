@@ -20,8 +20,8 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | 怎么构建、运行和复测 | [使用方法](doc/usage.zh-CN.md) | 命令、参数、输出位置、修改后需要重编什么 |
 | 为什么不依赖 PyPTO／PTOAS | [执行原理](doc/execution.zh-CN.md) | 已有材料、真实执行路径、依赖边界、全新算子的生成流程 |
 | A6 要改哪里、如何验证 | [迁移分析](doc/a6-migration.zh-CN.md) | percounter 范围、共享依赖、MIX 核与 ABI、实施顺序、已确认范围、待查问题、验收要求 |
-| 后续适配如何推进 | [具体任务](doc/a6-adaptation-tasks.zh-CN.md) | 蓝区待修改总表及五步实施：构建、平台、percounter、SWA、交付 |
-| 交给 A6 端查什么 | [环境核对与补充查证任务](doc/a6-environment.zh-CN.md#4-给-a6-端-agent-的补充查证任务) | Q1–Q5 待答问题、查询命令、来源要求和返回格式；前文保留环境核对 |
+| 后续适配如何推进 | [具体任务](doc/a6-adaptation-tasks.zh-CN.md) | 同事负责公共平台与 HBG，我们负责 percounter；可先做的工作、交付依赖及 CPU 验证结果 |
+| 交给 A6 端查什么 | [环境核对与补充查证任务](doc/a6-environment.zh-CN.md#4-给-a6-端-agent-的补充查证任务) | Q1–Q7、48 组同步资源要求、查询命令和可复制的 agent 执行说明 |
 | A5 跑出了什么结果 | [2026-11-17 复测报告](doc/a5-results-2026-11-17.zh-CN.md) | 性能与波动、校验范围、版本、失败记录、复现与证据 |
 
 ## 代码与数据
