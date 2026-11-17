@@ -1,0 +1,46 @@
+{
+  "archived_at": "2026-11-17T10:26:20.268099+00:00",
+  "kernel_adaptation_commit": "6cc586a256691bb0cf2d379115b730506ceed076",
+  "before_kernel_commit": "a9046d203f12a91151064ac0deffefdca7ea35a4",
+  "source_note": "编译时 HEAD 与核内容区分记录；after 逐核源码指纹已核对当前核适配提交。",
+  "targets": [
+    "dav-c310-cube",
+    "dav-c310-vec",
+    "dav-920r1-cube",
+    "dav-920r1-vec"
+  ],
+  "hardware_execution": false,
+  "host_architecture": "aarch64",
+  "comparison": "同一本地 CANN、PTO-ISA pin、编译选项；对比 .text 字节 SHA256。",
+  "baseline_run_timestamps": null,
+  "timestamp_note": "before 未单独保存起止时间；after-run.json 为实际捕获的 UTC 起止时间。",
+  "reproduction": "见 doc/usage.zh-CN.md 的 compile_kernels.py 和 prepare_plan.py 命令，输出目录须换新。",
+  "attempts": [
+    {
+      "run": "a6-original",
+      "result": "12/19",
+      "cause": "编译入口早期将 SDK include 放在 pin 前，误用 SDK 自带 PTO；调整 include 顺序后复测。未作为基线。"
+    },
+    {
+      "run": "a6-pinned-original",
+      "result": "17/19",
+      "cause": "两个双 V 搬运静态断言，完整日志保留。"
+    },
+    {
+      "run": "a6-paired-v1",
+      "result": "18/19",
+      "cause": "新增 NZ 事件曾超过 [0,7]，重分配后通过，完整失败日志保留。"
+    },
+    {
+      "run": "a6-paired-verified",
+      "result": "19/19",
+      "cause": null
+    }
+  ],
+  "omitted": "逐核 .o/.elf/.bin 和本机绝对编译命令留在被忽略的 build/；无设备输出。",
+  "plan_sources": {
+    "prepare_plan.py": "825725ce75af5934ee872fe865e22d0565bc757719e1996f9d0cbada4df43b29",
+    "adapt_plan.cpp": "fb3386197b32ddd39cec9c01f3e72533684c699f8db6395b9ab034d849615e5b",
+    "fixtures/plan-semantics.json": "6bbca8e15771d9749263fffba577c99183f664c0c73e52c688693817da12dc05"
+  }
+}

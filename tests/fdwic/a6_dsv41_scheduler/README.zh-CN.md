@@ -5,10 +5,10 @@
 | 问题 | 当前结论 |
 | ---- | -------- |
 | 测什么 | DSV4.1 的 SWA 注意力子层，含 mHC、量化、Q/KV 投影、缓存更新、Attention 和输出投影 |
-| 规模 | 19 个核、16 个计算任务、578 个执行实例；独立切片单卡运行 |
+| 规模 | 19 个核、16 个计算任务；A5 为 578 个执行实例，A6 转换为 570 个；独立切片单卡运行 |
 | A5 结果 | HBG／percounter 均逐轮校验通过；L0 AICore 均值分别为 0.267843／0.185173 ms |
 | 已完成的提取 | 只编 SWA 所需核，随目录保存固定输入和参考，复用生产 runner 与原 PR 统计器 |
-| A6 状态 | 环境已核对；远端报告 17／19 个核编译通过，两个 MIX 核与平台运行时待适配；尚无 SWA 上板结果 |
+| A6 状态 | 两个 MIX 核已改为 1C1V，19／19 通过本地编译／链接／机器码提取；plan 转换通过离线检查。HBG 平台接口待补，尚无上板结果 |
 | 依赖边界 | 仍需 CANN、PTO-ISA 和匹配的 Simpler；解除的是 PyPTO／PTOAS 的代码生成依赖 |
 
 SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 等待。因此它适合验证计算与调度，双卡 MoE／defer_wait 需要后续独立验证。
@@ -29,9 +29,11 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | ---- | ---- |
 | [prepare.py](prepare.py) | 解包输入，编译 SWA 核与原生工具，组装运行包 |
 | [compile_kernels.py](compile_kernels.py) | 独立检查 A6 的 19 个核：编译、链接、提取机器码；不启动设备 |
+| [prepare_plan.py](prepare_plan.py)、[adapt_plan.cpp](adapt_plan.cpp) | 校验原 plan 的 Host 解码结果，只转换两处 MIX 任务描述 |
 | [run.py](run.py) | 申请单卡，运行 HBG／percounter，校验并统计 |
 | [test_fixture.py](test_fixture.py) | 离线检查输入包与参考覆盖 |
 | [fixtures/](fixtures/) | 固定输入、plan、参考与来源清单 |
 | [results/2026-11-17-a5/](results/2026-11-17-a5/) | A5 逐轮数据、日志和校验和清单 |
+| [results/2026-11-17-a6-offline/](results/2026-11-17-a6-offline/) | A6 编译前后、A5 机器码不变、plan 转换的离线证据；不含设备结果 |
 
 文档集中在 `doc/`；构建产物写入 `build/`，新的测试输出由 `--output` 指定。

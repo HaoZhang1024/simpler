@@ -1,0 +1,14 @@
+{
+  "start": "2026-11-17T10:24:04.916404+00:00",
+  "end": "2026-11-17T10:24:19.624038+00:00",
+  "returncode": 0,
+  "command": [
+    "python",
+    "tests/fdwic/a6_dsv41_scheduler/compile_kernels.py",
+    "--platform",
+    "a5",
+    "--output",
+    "tests/fdwic/a6_dsv41_scheduler/build/a5-paired-verified"
+  ],
+  "cwd": "repository root"
+}

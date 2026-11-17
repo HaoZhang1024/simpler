@@ -74,3 +74,20 @@ python tests/fdwic/a6_dsv41_scheduler/compile_kernels.py \
 
 **这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 HBG 的平台启动、ABI 与上板正确性仍需单独验证。**
 `prepare.py build` 和 `run.py` 当前仍只提供已验证的 A5 运行入口。
+
+## A6 任务描述转换
+
+以下命令在 A6 的 x86_64 Host 上用本机 `g++` 执行；不使用 AICPU 交叉编译器，不需要 CANN 或设备：
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/prepare_plan.py \
+  --output tests/fdwic/a6_dsv41_scheduler/build/a6-plan
+```
+
+脚本先编译两个 Host 小工具，解包原始夹具，核对 2735 条记录的语义指纹；通过后生成 `plan-a6-rank0.bin`。
+仅 t22 改为 48 个 1C1V block，t28 改为 32 个 1C1V block；保留全部输入、标量和依赖，原始 plan 留在 `bundle/`。
+任何非预期变化都会报错。转换后的计划必须配合同分支 A6 核使用，不能交给 A5 运行时。
+
+**A6 端现在可以先执行这两条离线命令。** 返回两个 `summary.json`；失败时加上相应 `.log`。
+核编译成功和 Host 解码成功之后，仍需接入 A6 HBG 平台才能生成可执行运行包。
+所缺平台资料列在 [运行时还缺什么](a6-migration.zh-CN.md#运行时还缺什么)，不需要对方先跑通模型。

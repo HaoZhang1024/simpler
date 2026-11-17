@@ -1,0 +1,34 @@
+{
+  "runtime_executed": false,
+  "host_compiler": "g++ (GCC) 12.3.1 (openEuler 12.3.1-110.oe2403sp4)",
+  "original_plan_sha256": "2c891ce643f4903a1c7ba8dc2ef9640bf9f6bca16f6b9119ba18d4870e3cf645",
+  "original_semantic_sha256": "ba3c5c6fbc1397c7a699064f233bdae5e4d229e660dd02695da12577cebfdd8f",
+  "a6_plan_sha256": "b1eef0ad9595bd7248a0f68c23b4e2edc37038ae9a20a4cd65ac16e563b4d0ef",
+  "tasks": 16,
+  "a5_executions": 578,
+  "a6_executions": 570,
+  "changes": [
+    {
+      "task": 22,
+      "before": {
+        "blocks": 24,
+        "lanes": "C,V0,V1"
+      },
+      "after": {
+        "blocks": 48,
+        "lanes": "C,V"
+      }
+    },
+    {
+      "task": 28,
+      "before": {
+        "blocks": 32,
+        "lanes": "C,V0,V1"
+      },
+      "after": {
+        "blocks": 32,
+        "lanes": "C,V"
+      }
+    }
+  ]
+}

@@ -1,0 +1,110 @@
+{
+  "a5_binary_identity": [
+    {
+      "id": 8,
+      "equal": true,
+      "sha256": "cbd0f06cf9a97f51b4030e27d9b6e0e2c5b82942dc9af195855ba95545202674"
+    },
+    {
+      "id": 9,
+      "equal": true,
+      "sha256": "fe3369d70d2a2c23635a909fc73adfaa030b9f095b3b4814f9aeecdb8b232545"
+    },
+    {
+      "id": 10,
+      "equal": true,
+      "sha256": "0f3d26781a48681916d959e9be13279bbcfc63a92f8db3a783cb7fac4fc97575"
+    },
+    {
+      "id": 11,
+      "equal": true,
+      "sha256": "39ae198af79aff8740e9d219d2f99349df3e0067f6797ace00cc464905c4acc5"
+    },
+    {
+      "id": 12,
+      "equal": true,
+      "sha256": "60466cabf78891206bc862d7af13eaf1eb305b015e70888ece812d16e9dc8d62"
+    },
+    {
+      "id": 13,
+      "equal": true,
+      "sha256": "020e7efa4e355ae6369338d42d4a5e08866b52af5a56096c41ad21d2efd35c9d"
+    },
+    {
+      "id": 14,
+      "equal": true,
+      "sha256": "0ecac1d680bd48a5067117b49b2e1cca404fa5ffae35ae16d8f286de045fd5f9"
+    },
+    {
+      "id": 15,
+      "equal": true,
+      "sha256": "d59fec31df1a182b04cb6e7d6b9af405db3dc6134e35f9f94d9d2f2c2c9a226d"
+    },
+    {
+      "id": 16,
+      "equal": true,
+      "sha256": "744d9b517fca3f8cb239ba89f6b1c4cc2fa692b94ce65c770b547be8b7460bb7"
+    },
+    {
+      "id": 18,
+      "equal": true,
+      "sha256": "c77272e1a4c36a5cc0a51ec0cbe17d0fac09c3e78702f078ab7f8159481e23ac"
+    },
+    {
+      "id": 19,
+      "equal": true,
+      "sha256": "18cb667adfe02fc353736b62c394474d004fd048de7237f35885e8039cf0a5be"
+    },
+    {
+      "id": 20,
+      "equal": true,
+      "sha256": "e3bafa56a3f6491fe56882e37c65dadc5792620e5d171ea0b4437e43464e9f87"
+    },
+    {
+      "id": 21,
+      "equal": true,
+      "sha256": "617dadd47cf01a5473ef69add1ae412f251e966abfc1343a81d382ba00c7afd9"
+    },
+    {
+      "id": 22,
+      "equal": true,
+      "sha256": "98748a9632cd62483f577d4ab2b39bb619830710161cc3c14d31f8eb6eeef079"
+    },
+    {
+      "id": 23,
+      "equal": true,
+      "sha256": "6802e5c4e72152570737cb601223d9cb9a6d98347864f278ffe84fafde16f864"
+    },
+    {
+      "id": 24,
+      "equal": true,
+      "sha256": "3d095821e5af2049aab601832b6e7a60ab38aa1daee36b7fd766bf066b60403a"
+    },
+    {
+      "id": 25,
+      "equal": true,
+      "sha256": "beab41b5437893bac03db16a8d2045221ba082f78d64cf349c0a1d7a039efb5b"
+    },
+    {
+      "id": 26,
+      "equal": true,
+      "sha256": "302d481828cabf41fac25e9b8fc2f05262009e5a735be7709fd1aaacbc92a677"
+    },
+    {
+      "id": 27,
+      "equal": true,
+      "sha256": "e5eb397fed2b3da9295a52faeb9b54bbb99fe6183c5faae864aa5a1105c635e9"
+    }
+  ],
+  "a6_compile_link_extract": {
+    "passed": 19,
+    "total": 19
+  },
+  "repeat_plan_conversion": {
+    "returncode": 1,
+    "diagnostic": "Expected original SWA 1C2V task; refuse a modified or already adapted plan",
+    "validation": "pass"
+  },
+  "device_execution": "not_run",
+  "device_numerical_validation": "not_run"
+}
