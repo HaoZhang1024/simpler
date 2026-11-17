@@ -11,8 +11,8 @@
 | 计算核 C++ | [vendor/](../../dsv41_scheduler/kernels/pypto_lib_latest/vendor/)，复用已生成的核实现 |
 | 原始 Host 编排 C++ | [orchestration.cpp.gz](../../dsv41_scheduler/workloads/pypto_lib_latest/vendor/orchestration.cpp.gz)，供原整网构建／捕获使用 |
 | 原生执行与回放工具 | [production/](../../dsv41_scheduler/production/)，提供 native-runner、capture/replay、组包及统计逻辑 |
-| 用例目录输入夹具 | [swa.tar.gz](../fixtures/swa.tar.gz)，约 104 KB，保存 rank0 输入、plan、参考；不含核机器码 |
-| 夹具来源与校验和 | [fixture.json](../fixtures/fixture.json)，正常使用无需访问旧机器的输出目录 |
+| 用例目录输入 fixture | [swa.tar.gz](../fixtures/swa.tar.gz)，约 104 KB，保存 rank0 输入、plan、参考；不含核机器码 |
+| fixture 来源与校验和 | [fixture.json](../fixtures/fixture.json)，正常使用无需访问旧机器的输出目录 |
 | 本机旧 A5 包 | 仓库根目录下 `outputs/aicore-cost/inputs/swa/`，用于此次提取，不随分支提交 |
 | 新构建包 | 用例目录 `build/a5/bundle/`，含 `callable.bin`、`plan-rank0.bin`、`slice.txt`、`rank0.txt`、输入及参考 |
 

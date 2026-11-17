@@ -32,7 +32,7 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 | 查看结果 | 输出目录的 `summary.json`；各调度子目录保留原生结果、console 和 Host 端点日志 |
 | 离线检查输入包 | `python -I tests/fdwic/a6_dsv41_scheduler/test_fixture.py`，不占设备 |
 
-`prepare.py export` 供维护者从已有 SWA 快照更新夹具，正常构建无需执行；参数见 `prepare.py export --help`。当前脚本只接受 `--platform a5`。
+`prepare.py export` 供维护者从已有 SWA 快照更新 fixture，正常构建无需执行；参数见 `prepare.py export --help`。当前脚本只接受 `--platform a5`。
 
 ## 修改后要重做哪些步骤
 
@@ -49,7 +49,7 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 
 ## A6 复现前的构建环境
 
-**本页前面的运行命令目前仅适用于 A5；A6 平台适配和正式命令尚未完成。** 首轮 A6 只构建／运行 HBG，不默认连跑 percounter。
+**本页前面的运行命令目前仅适用于 A5；A6 平台适配和正式命令尚未完成。** A6 交付目标为 percounter，构建包含其需要的 HBG/common 共享源码。
 
 远端报告的系统 CMake 为 3.16.3。原生工具的 [CMakeLists.txt](../../dsv41_scheduler/production/CMakeLists.txt) 声明最低 3.20；现有 [AICore 运行时构建](../../../../src/a5/platform/onboard/aicore/CMakeLists.txt) 还实际使用了 Makefile 生成器的 `DEPFILE` 支持，要求 CMake 3.20。因此沿用这条构建路径时，不能只调低版本声明。
 
@@ -67,12 +67,12 @@ python tests/fdwic/a6_dsv41_scheduler/compile_kernels.py \
   --output tests/fdwic/a6_dsv41_scheduler/build/a6-kernels
 ```
 
-只编译夹具选中的 19 个核，不安装 PyPTO／PTOAS，不需要设备，也不构建运行时。
+只编译 fixture 选中的 19 个核，不安装 PyPTO／PTOAS，不需要设备，也不构建运行时。
 每个核依次执行 ccec → ld.lld → `.text` 合法性检查；任何失败都会返回非零。
 `summary.json` 保存逐核阶段、工具版本、目标参数及源码／机器码指纹；逐核 `.log` 和 `.commands.json` 保留详细诊断。
 输出目录必须是新目录，防止旧二进制混入。
 
-**这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 HBG 的平台启动、ABI 与上板正确性仍需单独验证。**
+**这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 percounter 的平台启动、ABI 与上板正确性仍需单独验证。**
 `prepare.py build` 和 `run.py` 当前仍只提供已验证的 A5 运行入口。
 
 ## A6 任务描述转换
@@ -84,10 +84,10 @@ python tests/fdwic/a6_dsv41_scheduler/prepare_plan.py \
   --output tests/fdwic/a6_dsv41_scheduler/build/a6-plan
 ```
 
-脚本先编译两个 Host 小工具，解包原始夹具，核对 2735 条记录的语义指纹；通过后生成 `plan-a6-rank0.bin`。
+脚本先编译两个 Host 小工具，解包原始 fixture，核对 2735 条记录的语义指纹；通过后生成 `plan-a6-rank0.bin`。
 仅 t22 改为 48 个 1C1V block，t28 改为 32 个 1C1V block；保留全部输入、标量和依赖，原始 plan 留在 `bundle/`。
 任何非预期变化都会报错。转换后的计划必须配合同分支 A6 核使用，不能交给 A5 运行时。
 
 **A6 端现在可以先执行这两条离线命令。** 返回两个 `summary.json`；失败时加上相应 `.log`。
-核编译成功和 Host 解码成功之后，仍需接入 A6 HBG 平台才能生成可执行运行包。
+核编译成功和 Host 解码成功之后，仍需接入 A6 公共平台与 percounter 才能生成可执行运行包。
 所缺平台资料列在 [运行时还缺什么](a6-migration.zh-CN.md#运行时还缺什么)，不需要对方先跑通模型。
