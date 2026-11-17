@@ -1,0 +1,74 @@
+{
+  "files": [
+    {
+      "path": "../../doc/a5-results-2026-11-17.zh-CN.md",
+      "bytes": 6730,
+      "sha256": "dbdf13440d0bfe42e5c83c9db4e23f707297a3d6924a8b242d0a43602c21ddf4"
+    },
+    {
+      "path": "evidence/build-1.log.gz",
+      "bytes": 701,
+      "sha256": "6511c71f806c8698548819cce8e4d9fc004005a6458008e3e1d0dd8aaf333574"
+    },
+    {
+      "path": "evidence/build-2.log.gz",
+      "bytes": 373,
+      "sha256": "48922a537a6a7f404a21f32f2016481b2ee8330a6f46f1f826e8e1ee011b2c92"
+    },
+    {
+      "path": "evidence/host_build_graph-console.log.gz",
+      "bytes": 103,
+      "sha256": "68259d2c58ed33e7a49b84c6e618300d1c53482ea9b8305742001a1b4978a176"
+    },
+    {
+      "path": "evidence/host_build_graph-host.log.gz",
+      "bytes": 5644,
+      "sha256": "58bbcd4a3910b1489dfae9e9f57498c57079af02bd3137c5d6f0262517801b89"
+    },
+    {
+      "path": "evidence/host_build_graph-result.json.gz",
+      "bytes": 184,
+      "sha256": "ec3bb19f40238f0bef0ba58cb92b6b7b6e538366210b0696476fdd005b36add6"
+    },
+    {
+      "path": "evidence/percounter-console.log.gz",
+      "bytes": 103,
+      "sha256": "eb1f88c773482ac866058fb2e3a4a0a15c06ab32c7a79a56ccc33843ac93f0f8"
+    },
+    {
+      "path": "evidence/percounter-host.log.gz",
+      "bytes": 5605,
+      "sha256": "342058c5c5a5a697d1115610c6a38a54377870db04b83d128294f181d5150fbc"
+    },
+    {
+      "path": "evidence/percounter-result.json.gz",
+      "bytes": 178,
+      "sha256": "bd36883a95f660d10b2e26b3aee925fca326b3e7e0b7554152487b85b0c97b81"
+    },
+    {
+      "path": "evidence/r001-task.log.gz",
+      "bytes": 786,
+      "sha256": "f5708b6e06408a36ebd11567871cef9a37bd5498b7888647b79af3d064af6539"
+    },
+    {
+      "path": "evidence/r002-task.log.gz",
+      "bytes": 517,
+      "sha256": "29dc44a9d9ea6449c901bf8cfb1e83d2e7015f4f3ed3c08b44b0f0a560f1723a"
+    },
+    {
+      "path": "evidence/runtime-build.log.gz",
+      "bytes": 325,
+      "sha256": "27924c06848e08e5c3aa5ff7211e523d45c143fd45b145b994af83447cf25661"
+    },
+    {
+      "path": "samples.csv",
+      "bytes": 769,
+      "sha256": "d77e6e7b8e64c0393c7fb3b90f637529bec6ca50247a432567084ced66e377b6"
+    },
+    {
+      "path": "summary.json",
+      "bytes": 13196,
+      "sha256": "079d7b6434a578f370026801da2d15f64add4a936912f08d5220b3374f0c34c1"
+    }
+  ]
+}

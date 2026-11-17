@@ -1,0 +1,318 @@
+{
+  "case": "swa",
+  "platform": "a5",
+  "device": 1,
+  "start_time": "2026-11-17T08:21:25.158915+00:00",
+  "build": {
+    "platform": "a5",
+    "source_commit": "4b2d9ca4b501c57abeea4a9dc86e0f6d08bedab4",
+    "pto_isa_commit": "83b1b2b52ded9ec5d91e02532a57cd95e497ba86",
+    "fixture_sha256": "a25b3c4241ac4a8d46e0f3103e2f0c4bad57d268abacb5f73d478b8ba7291dcf",
+    "callable_sha256": "b21d1bb2d836156808dda36fed048aadb8ff0b70836c44554bb1f75e9cf2fae6",
+    "kernels": [
+      {
+        "id": 8,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/hc_collapse.cpp",
+        "source_sha256": "43861b58ecf6c6beaf1730d8a082d5326ee5af92cdb506e468befff76d35785e",
+        "binary_sha256": "cbd0f06cf9a97f51b4030e27d9b6e0e2c5b82942dc9af195855ba95545202674",
+        "bytes": 4128,
+        "file": "kernel-8.bin"
+      },
+      {
+        "id": 9,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/aiv/decode_sp_zero_padding.cpp",
+        "source_sha256": "2afe963c103ddae3ec0380fe720e75970dd6d2c64f4cf2ad4efe5ef6de315e05",
+        "binary_sha256": "fe3369d70d2a2c23635a909fc73adfaa030b9f095b3b4814f9aeecdb8b232545",
+        "bytes": 544,
+        "file": "kernel-9.bin"
+      },
+      {
+        "id": 10,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/qkv_quant.cpp",
+        "source_sha256": "8b9c3abd0861b1f26a0a20c7f24659d424715b6f13c06cdc2cd76fc164c22d58",
+        "binary_sha256": "0f3d26781a48681916d959e9be13279bbcfc63a92f8db3a783cb7fac4fc97575",
+        "bytes": 1752,
+        "file": "kernel-10.bin"
+      },
+      {
+        "id": 11,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/proj_q_a.cpp",
+        "source_sha256": "c0bcf142c82084e96e114a7670a4ebd63e717e5ed5621604f3fe097723b3fc0d",
+        "binary_sha256": "39ae198af79aff8740e9d219d2f99349df3e0067f6797ace00cc464905c4acc5",
+        "bytes": 3384,
+        "file": "kernel-11.bin"
+      },
+      {
+        "id": 12,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/q_norm_quant.cpp",
+        "source_sha256": "b608aab4fce047342711ff7ffa51068d895f4bef176db6e99eb2113a75b6347e",
+        "binary_sha256": "60466cabf78891206bc862d7af13eaf1eb305b015e70888ece812d16e9dc8d62",
+        "bytes": 1592,
+        "file": "kernel-12.bin"
+      },
+      {
+        "id": 13,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/proj_q_b.cpp",
+        "source_sha256": "c88b65b03b8c8f7d682db8b31dc192697fcc3b3d75133e0624bf9e45ca8f4c10",
+        "binary_sha256": "020e7efa4e355ae6369338d42d4a5e08866b52af5a56096c41ad21d2efd35c9d",
+        "bytes": 54072,
+        "file": "kernel-13.bin"
+      },
+      {
+        "id": 14,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/proj_q_b.cpp",
+        "source_sha256": "c88b65b03b8c8f7d682db8b31dc192697fcc3b3d75133e0624bf9e45ca8f4c10",
+        "binary_sha256": "0ecac1d680bd48a5067117b49b2e1cca404fa5ffae35ae16d8f286de045fd5f9",
+        "bytes": 4192,
+        "file": "kernel-14.bin"
+      },
+      {
+        "id": 15,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/proj_kv.cpp",
+        "source_sha256": "46f80d86af1cd8a1de4b67df8ae78f45df9eaa914b4a3c7c86fb72910ccefce3",
+        "binary_sha256": "d59fec31df1a182b04cb6e7d6b9af405db3dc6134e35f9f94d9d2f2c2c9a226d",
+        "bytes": 3208,
+        "file": "kernel-15.bin"
+      },
+      {
+        "id": 16,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/norm_rope_publish.cpp",
+        "source_sha256": "b335430b873f0345e4e9d5e6ebc9af203cd37ccd0933063518489fe01ecb62e6",
+        "binary_sha256": "744d9b517fca3f8cb239ba89f6b1c4cc2fa692b94ce65c770b547be8b7460bb7",
+        "bytes": 3248,
+        "file": "kernel-16.bin"
+      },
+      {
+        "id": 18,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/sparse_gather_vf.cpp",
+        "source_sha256": "43002feee2b3ac9892ad42b64d73cfe54777d01171087b710249cea36d2e1b55",
+        "binary_sha256": "c77272e1a4c36a5cc0a51ec0cbe17d0fac09c3e78702f078ab7f8159481e23ac",
+        "bytes": 26672,
+        "file": "kernel-18.bin"
+      },
+      {
+        "id": 19,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/sparse_gather_vf.cpp",
+        "source_sha256": "43002feee2b3ac9892ad42b64d73cfe54777d01171087b710249cea36d2e1b55",
+        "binary_sha256": "18cb667adfe02fc353736b62c394474d004fd048de7237f35885e8039cf0a5be",
+        "bytes": 38216,
+        "file": "kernel-19.bin"
+      },
+      {
+        "id": 20,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_quant_vf.cpp",
+        "source_sha256": "dc39917ea67b4482a7b42804779508d352eb78d9440854dc1c692579c5021db5",
+        "binary_sha256": "e3bafa56a3f6491fe56882e37c65dadc5792620e5d171ea0b4437e43464e9f87",
+        "bytes": 8816,
+        "file": "kernel-20.bin"
+      },
+      {
+        "id": 21,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_proj_a.cpp",
+        "source_sha256": "fcb6958ddbc8886ca76b2e9d616b017c05c5c18527a337a7d114a711995f20b7",
+        "binary_sha256": "617dadd47cf01a5473ef69add1ae412f251e966abfc1343a81d382ba00c7afd9",
+        "bytes": 3304,
+        "file": "kernel-21.bin"
+      },
+      {
+        "id": 22,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_proj_a.cpp",
+        "source_sha256": "fcb6958ddbc8886ca76b2e9d616b017c05c5c18527a337a7d114a711995f20b7",
+        "binary_sha256": "98748a9632cd62483f577d4ab2b39bb619830710161cc3c14d31f8eb6eeef079",
+        "bytes": 2904,
+        "file": "kernel-22.bin"
+      },
+      {
+        "id": 23,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_proj_b.cpp",
+        "source_sha256": "b90a87e4c7cc53a6357786f4b7c514b6c49bf0aa05a28823a8fafe9f49e7ec46",
+        "binary_sha256": "6802e5c4e72152570737cb601223d9cb9a6d98347864f278ffe84fafde16f864",
+        "bytes": 15160,
+        "file": "kernel-23.bin"
+      },
+      {
+        "id": 24,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/aiv/hc_rms.cpp",
+        "source_sha256": "88e4796cf6ba6642b0f970402f560462e4fef126f0522eb42e556b44d0a78b67",
+        "binary_sha256": "3d095821e5af2049aab601832b6e7a60ab38aa1daee36b7fd766bf066b60403a",
+        "bytes": 3928,
+        "file": "kernel-24.bin"
+      },
+      {
+        "id": 25,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/hc_linear.cpp",
+        "source_sha256": "37828a7401eb92c8665f47b193185271305b5b1c084298307b27b14daaecf568",
+        "binary_sha256": "beab41b5437893bac03db16a8d2045221ba082f78d64cf349c0a1d7a039efb5b",
+        "bytes": 2000,
+        "file": "kernel-25.bin"
+      },
+      {
+        "id": 26,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/hc_sinkhorn.cpp",
+        "source_sha256": "0a7c5186b87e5c9cf03b789b419a624705741cde8a67c5e4cd317516ce5f02f7",
+        "binary_sha256": "302d481828cabf41fac25e9b8fc2f05262009e5a735be7709fd1aaacbc92a677",
+        "bytes": 5048,
+        "file": "kernel-26.bin"
+      },
+      {
+        "id": 27,
+        "source": "tests/fdwic/dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/hc_post.cpp",
+        "source_sha256": "7a411307ec9c7e0b40eabb0cb254c83f96a2f34586a2e60c8a1be75f4cc811ce",
+        "binary_sha256": "e5eb397fed2b3da9295a52faeb9b54bbb99fe6183c5faae864aa5a1105c635e9",
+        "bytes": 1920,
+        "file": "kernel-27.bin"
+      }
+    ],
+    "tasks": 16,
+    "executions": 578,
+    "replay_sha256": "9533a646a6d249613054197c6f730f64b9e60a94e88136c0ba7bdb0075609d9f",
+    "runner_sha256": "e57d664775457c1883c993931bbd9fe8f2b6a67bb50deec0c4e37d4bb0989e61"
+  },
+  "runtime_sha256": {
+    "dispatcher/libsimpler_aicpu_dispatcher.so": "c672f137490b9ee12f483877be08c645e4a4ef3149e9e9080f867d964bbdeb68",
+    "onboard/host_build_graph/libhost_runtime.so": "36dd16877c4e7231c1cf81b96b94b4e040f21421ea825d78d6e15dc2c86a710f",
+    "onboard/host_build_graph/libaicpu_kernel.so": "89489858a2183e3e938dcea6dc3fada68d0f8b253e06a626861a1bb76cd6df72",
+    "onboard/host_build_graph/aicore_kernel.o": "9c897bd8142f788f676304eff57aa399d5a4591825a6dfe5c5fafe7514e499d5",
+    "onboard/percounter/libhost_runtime.so": "b07427a61aa6fc8dd0630274d394604f59d62c262f47e71f9d672b22f0d9a373",
+    "onboard/percounter/libaicpu_kernel.so": "a7c951095cdd9430d5f037a07c4153c13568d571f9d93dead0f38769824b2a67",
+    "onboard/percounter/aicore_kernel.o": "0ad018500a1599057ab854ecd549b5c65b27c3b7ea828eeaf7ca3e41f2269ac7"
+  },
+  "status": "passed",
+  "results": [
+    {
+      "runtime": "host_build_graph",
+      "device": 1,
+      "profiling_level": 0,
+      "warmup": 1,
+      "rounds": 10,
+      "numerical_validation": true,
+      "aicore_mean_ms": 0.2678431,
+      "aicore_min_ms": 0.261352,
+      "aicore_max_ms": 0.272695,
+      "aicore_samples_ms": [
+        0.271529,
+        0.272695,
+        0.271903,
+        0.269068,
+        0.271278,
+        0.269384,
+        0.263588,
+        0.262881,
+        0.261352,
+        0.264753
+      ],
+      "device_mean_ms": 0.3694689,
+      "device_samples_ms": [
+        0.381159,
+        0.37631,
+        0.374983,
+        0.371763,
+        0.37091,
+        0.370407,
+        0.363572,
+        0.357678,
+        0.368369,
+        0.359538
+      ]
+    },
+    {
+      "runtime": "percounter",
+      "device": 1,
+      "profiling_level": 0,
+      "warmup": 1,
+      "rounds": 10,
+      "numerical_validation": true,
+      "aicore_mean_ms": 0.1851726,
+      "aicore_min_ms": 0.179372,
+      "aicore_max_ms": 0.192283,
+      "aicore_samples_ms": [
+        0.192283,
+        0.191458,
+        0.187231,
+        0.183171,
+        0.183558,
+        0.181911,
+        0.180491,
+        0.185321,
+        0.179372,
+        0.18693
+      ],
+      "device_mean_ms": 0.2966979,
+      "device_samples_ms": [
+        0.299991,
+        0.297421,
+        0.295227,
+        0.306376,
+        0.292749,
+        0.293895,
+        0.292186,
+        0.291591,
+        0.297237,
+        0.300306
+      ]
+    }
+  ],
+  "end_time": "2026-11-17T08:21:45.093565+00:00",
+  "runtime_source_commit": "26b0511f366c78534aed175c457c177ead4eb470",
+  "task_id": "task_20261117_162057_115609315149",
+  "environment": {
+    "platform": "a5",
+    "chip": "Ascend950DT_9581",
+    "host_arch": "aarch64",
+    "cann_installation_label": "cann-9.3.0",
+    "cann_compiler_version_info": "Version=9.2.0\nversion_dir=cann\nrequired_package_runtime_version=\"9.2\"\nrequired_package_ge-executor_version=\"9.2\"\nrequired_package_metadef_version=\"9.2\"\nrequired_package_bisheng-compiler_version=\"9.2\"\nrequired_package_tbe-tik_version=\"9.2\"\ntimestamp=20260923_000324205\n",
+    "ccec_version": "2026-09-22T19:23:28+08:00 clang version 15.0.5 (clang-5c68a1cb1231 flang-5c68a1cb1231)\nTarget: aarch64-unknown-linux-gnu\nThread model: posix",
+    "pto_isa_commit": "83b1b2b52ded9ec5d91e02532a57cd95e497ba86",
+    "profiling_dfx": 1,
+    "profiling_sched": 0,
+    "profiling_orch": 0,
+    "profiling_tensormap": 0
+  },
+  "validation": {
+    "reference": "../../fixtures/swa.tar.gz",
+    "fixture_files": 131,
+    "checked_device_buffers_per_round": 30,
+    "comparison": "bytewise; size-one reference repeats across the buffer",
+    "weights": "original zero-weight fixture",
+    "actual_output_retention": "Successful outputs checked in memory; raw output buffers not saved"
+  },
+  "historical_pr_reference": {
+    "source_commit": "f1d91abdb80a1ea455e3239b4d060003170d693d",
+    "source_table": "../../../dsv41_scheduler/RESULTS.md",
+    "host_build_graph_aicore_mean_ms": 0.293834,
+    "percounter_aicore_mean_ms": 0.183123,
+    "comparison_limit": "Different runtime build, newly compiled and repacked kernels; not a binary-identical A/B"
+  },
+  "attempts": [
+    {
+      "id": "build-1",
+      "status": "failed",
+      "reason": "Unicode paths escaped in C++ assembly manifest; no device execution",
+      "evidence": "evidence/build-1.log.gz"
+    },
+    {
+      "id": "build-2",
+      "status": "passed",
+      "evidence": "evidence/build-2.log.gz"
+    },
+    {
+      "id": "r001",
+      "task_id": "task_20261117_161926_107085618517",
+      "status": "failed",
+      "reason": "Queue appended --device before CLI accepted it; no kernels executed",
+      "evidence": "evidence/r001-task.log.gz"
+    },
+    {
+      "id": "r002",
+      "task_id": "task_20261117_162057_115609315149",
+      "status": "passed",
+      "evidence": "evidence/r002-task.log.gz"
+    }
+  ],
+  "reproduction": {
+    "cwd": "repository root",
+    "build": "python -I tests/fdwic/a6_dsv41_scheduler/prepare.py build --platform a5 --pto-isa build/pto-isa --jobs 4",
+    "run": "python -I tests/fdwic/a6_dsv41_scheduler/run.py --output outputs/swa-a5-new-run",
+    "runtime_build": "python simpler_setup/build_runtimes.py --platforms a5 --runtime host_build_graph --runtime percounter --profiling-dfx 1 --profiling-orch 0 --profiling-sched 0 --profiling-tensormap 0"
+  }
+}
