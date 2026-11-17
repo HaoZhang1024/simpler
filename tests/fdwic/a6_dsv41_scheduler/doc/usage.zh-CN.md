@@ -56,3 +56,21 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 建议在项目 `.venv` 提供 `cmake>=3.20` 和当前入口使用的 Ninja，不升级系统 CMake，也不改用户全局环境；复现时记录 `command -v cmake ninja` 和各自版本。3.20 是当前构建链要求，不是 A6 芯片本身的硬要求。若选择其他生成器或兼容旧版本，需要验证依赖追踪和重编行为。
 
 Host 的 x86_64 C++ 工具、AICPU 的 aarch64 交叉编译器、AICore 的 `dav-920r1-*` ccec 目标分别配置。没有 task-submit 的 A6 机器按实际设备占用方式提供执行入口，不能直接复用本页的 A5 队列命令。环境依据与剩余资料见 [环境核对](a6-environment.zh-CN.md)。
+
+## A6 计算核编译检查
+
+在仓库根目录、已加载 CANN 环境的项目 venv 中执行：
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/compile_kernels.py \
+  --pto-isa build/pto-isa \
+  --output tests/fdwic/a6_dsv41_scheduler/build/a6-kernels
+```
+
+只编译夹具选中的 19 个核，不安装 PyPTO／PTOAS，不需要设备，也不构建运行时。
+每个核依次执行 ccec → ld.lld → `.text` 合法性检查；任何失败都会返回非零。
+`summary.json` 保存逐核阶段、工具版本、目标参数及源码／机器码指纹；逐核 `.log` 和 `.commands.json` 保留详细诊断。
+输出目录必须是新目录，防止旧二进制混入。
+
+**这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 HBG 的平台启动、ABI 与上板正确性仍需单独验证。**
+`prepare.py build` 和 `run.py` 当前仍只提供已验证的 A5 运行入口。

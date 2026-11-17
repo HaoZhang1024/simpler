@@ -28,6 +28,7 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | 位置 | 用途 |
 | ---- | ---- |
 | [prepare.py](prepare.py) | 解包输入，编译 SWA 核与原生工具，组装运行包 |
+| [compile_kernels.py](compile_kernels.py) | 独立检查 A6 的 19 个核：编译、链接、提取机器码；不启动设备 |
 | [run.py](run.py) | 申请单卡，运行 HBG／percounter，校验并统计 |
 | [test_fixture.py](test_fixture.py) | 离线检查输入包与参考覆盖 |
 | [fixtures/](fixtures/) | 固定输入、plan、参考与来源清单 |

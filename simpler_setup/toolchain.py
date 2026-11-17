@@ -170,13 +170,15 @@ class CCECToolchain(Toolchain):
             raise FileNotFoundError(f"ccec linker not found: {self.linker_path}")
 
     def get_compile_flags(self, core_type: str = "aiv", **kwargs) -> list[str]:
-        # A5 uses dav-c310 architecture, A2A3 uses dav-c220
-        if self.platform in ("a5", "a5sim"):
+        # Kernel target selection is independent of runtime backend availability.
+        if self.platform == "a6":
+            arch = "dav-920r1-vec" if core_type == "aiv" else "dav-920r1-cube"
+        elif self.platform in ("a5", "a5sim"):
             arch = "dav-c310-vec" if core_type == "aiv" else "dav-c310-cube"
         elif self.platform in ("a2a3", "a2a3sim"):
             arch = "dav-c220-vec" if core_type == "aiv" else "dav-c220-cube"
         else:
-            raise ValueError(f"Unknown platform: {self.platform}. Supported: a2a3, a2a3sim, a5, a5sim")
+            raise ValueError(f"Unknown platform: {self.platform}. Supported: a2a3, a2a3sim, a5, a5sim, a6")
 
         flags = [
             "-c",
@@ -205,8 +207,8 @@ class CCECToolchain(Toolchain):
         # LLVM option does not apply there. Stricter inter-iteration AA constrains
         # BiSheng VF fusion scale/correctness; BiSheng plans to make this always-on
         # later, so pin it for A5 CCEC builds now.
-        if self.platform == "a5":
-            # The A5 text-only loader cannot retain CANN's switch jump tables in .rodata.
+        if self.platform in ("a5", "a6"):
+            # The text-only loader cannot retain CANN's switch jump tables in .rodata.
             flags.extend(["-fno-jump-tables", "-mllvm", "-cce-vf-aa-between-iters=true"])
         return flags
 
