@@ -1,9 +1,10 @@
-#test here
 # A6 percounter 移植任务书
 
 更新：2026-11-18 22:10。代码基线：`a6-swa-port` 分支 pin `b921a01b`。
 本文件自包含：硬件实测事实、已完成全部代码改动（意图+机制+仓库内相对路径）、验证状态、下一步任务（含验收标准）。
 精确 diff 见配套归档 `a6-port-tracked.patch`（已跟踪文件）与 `src-a6-layer.tar.gz`（新增 `src/a6/` 平台层目录）。
+
+蓝区接续说明：已收到[已有文件的补丁](a6-diff)，16 个文件通过 git apply --check。新增 src/a6 平台目录仍需与通过 MIX 的工作树一起交付。[下一轮测试命令](usage.zh-CN.md#黄区接续测试)
 
 ## 1. 任务背景
 

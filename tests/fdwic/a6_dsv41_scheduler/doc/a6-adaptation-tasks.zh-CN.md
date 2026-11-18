@@ -4,6 +4,8 @@
 
 目标是让现有 SWA 在 A6 单卡生产 percounter 上构建、执行、校验并正常退出。同事负责 A6 公共平台和 HBG，我们负责 percounter 适配及其 SWA 集成。双方共用平台、计算核和 fixture，分别验收运行时。性能优化在功能验收后开展。
 
+**11 月 18 日现场更新。** 黄区在 A6 工作树完成 percounter 构建，报告 chain16、burst16 各自的 mask3/5 共 4 项通过 golden。首轮已经定位 SSBUF 容量、release/exit 信号和单 Vector 槽折叠。下一轮从该版本复测、三端 ABI 与 SWA 回放开始；下列首轮查证表保留作接口索引。见[黄区实测记录](a6-result.md)和[接续测试](usage.zh-CN.md#黄区接续测试)。
+
 ## 1. 已有基础与分工
 
 当前已包含 SWA 的 19 个 kernel 注册、设备 C++、固定输入和参考 fixture、A5 验证记录、两组 MIX 核的 A6 1C1V 改写，以及 plan 转换工具。A6 转换后为 16 个任务、570 个执行实例，A5 为 578 个。输入恢复、30 个可写 Device buffer 的参考比较和统计逻辑已有实现。

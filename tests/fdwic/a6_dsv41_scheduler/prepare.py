@@ -15,6 +15,7 @@ import hashlib
 import io
 import json
 import shlex
+import shutil
 import subprocess
 import sys
 import tarfile
@@ -131,7 +132,7 @@ def build(args):
 
     if args.jobs < 1 or not (args.pto_isa / "include/pto").is_dir():
         raise ValueError("Need positive --jobs and --pto-isa containing include/pto")
-    build_dir = args.build_dir.resolve()
+    build_dir = (args.build_dir or HERE / "build" / args.platform).resolve()
     bundle, tools = build_dir / "bundle", build_dir / "host"
     if bundle.exists():
         raise ValueError("Bundle already exists; use a new --build-dir for another build")
@@ -147,6 +148,7 @@ def build(args):
             "Ninja",
             "-DCMAKE_BUILD_TYPE=Release",
             f"-DSIMPLER_ROOT={REPO}",
+            f"-DDSV41_ARCH={args.platform}",
         ],
         check=True,
     )
@@ -167,6 +169,16 @@ def build(args):
     metadata = unpack_fixture(bundle)
     if selected_records(tools, bundle / "plan-rank0.bin") != metadata["kernel_ids"]:
         raise ValueError("Captured plan does not match the selected SWA kernels")
+    executions = 578
+    if args.platform == "a6":
+        plan_dir = build_dir / "plan-conversion"
+        subprocess.run([sys.executable, str(HERE / "prepare_plan.py"), "--output", str(plan_dir)], check=True)
+        converted = plan_dir / "plan-a6-rank0.bin"
+        conversion = json.loads((plan_dir / "summary.json").read_text())
+        if digest(converted.read_bytes()) != conversion["a6_plan_sha256"]:
+            raise ValueError("Converted plan differs from its checked output")
+        shutil.copyfile(converted, bundle / "plan-rank0.bin")
+        executions = conversion["a6_executions"]
     compiler = KernelCompiler(args.platform)
     sources = SUITE / "kernels" / FLAVOR
     manifest = json.loads((sources / "manifest.json").read_text())
@@ -235,7 +247,8 @@ def build(args):
             "callable_sha256": digest((bundle / "callable.bin").read_bytes()),
             "kernels": compiled,
             "tasks": 16,
-            "executions": 578,
+            "executions": executions,
+            "plan_sha256": digest((bundle / "plan-rank0.bin").read_bytes()),
             "replay_sha256": digest((tools / "libreplay.so").read_bytes()),
             "runner_sha256": digest((tools / "native-runner").read_bytes()),
         },
@@ -253,9 +266,9 @@ def main():
     export.add_argument("--tools", type=Path, required=True)
     export.add_argument("--output", type=Path, default=FIXTURE)
     compile_case = commands.add_parser("build", help="Compile only SWA and the native replay tools")
-    compile_case.add_argument("--platform", choices=["a5"], default="a5")
+    compile_case.add_argument("--platform", choices=["a5", "a6"], default="a5")
     compile_case.add_argument("--pto-isa", type=Path, default=REPO / "build/pto-isa")
-    compile_case.add_argument("--build-dir", type=Path, default=HERE / "build/a5")
+    compile_case.add_argument("--build-dir", type=Path)
     compile_case.add_argument("--jobs", type=int, default=4)
     args = parser.parse_args()
     if args.command == "export":

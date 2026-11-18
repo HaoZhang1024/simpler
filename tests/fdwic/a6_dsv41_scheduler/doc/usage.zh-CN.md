@@ -32,7 +32,7 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 | 查看结果 | 输出目录的 `summary.json`；各调度子目录保留原生结果、console 和 Host 端点日志 |
 | 离线检查输入包 | `python -I tests/fdwic/a6_dsv41_scheduler/test_fixture.py`，不占设备 |
 
-`prepare.py export` 供维护者从已有 SWA 快照更新 fixture，正常构建无需执行；参数见 `prepare.py export --help`。当前脚本只接受 `--platform a5`。
+`prepare.py export` 供维护者从已有 SWA 快照更新 fixture，正常构建无需执行；参数见 `prepare.py export --help`。A6 构建入口见下文。
 
 ## 修改后要重做哪些步骤
 
@@ -49,7 +49,7 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 
 ## A6 复现前的构建环境
 
-**本页前面的运行命令目前仅适用于 A5；A6 平台适配和正式命令尚未完成。** A6 交付目标为 percounter，构建包含其需要的 HBG/common 共享源码。
+**本页前面的运行命令目前仅适用于 A5；A6 使用文末的现场平台工作树和单卡入口。** A6 交付目标为 percounter，构建包含其需要的 HBG/common 共享源码。
 
 远端报告的系统 CMake 为 3.16.3。原生工具的 [CMakeLists.txt](../../dsv41_scheduler/production/CMakeLists.txt) 声明最低 3.20；现有 [AICore 运行时构建](../../../../src/a5/platform/onboard/aicore/CMakeLists.txt) 还实际使用了 Makefile 生成器的 `DEPFILE` 支持，要求 CMake 3.20。因此沿用这条构建路径时，不能只调低版本声明。
 
@@ -73,7 +73,7 @@ python tests/fdwic/a6_dsv41_scheduler/compile_kernels.py \
 输出目录必须是新目录，防止旧二进制混入。
 
 **这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 percounter 的平台启动、ABI 与上板正确性仍需单独验证。**
-`prepare.py build` 和 `run.py` 当前仍只提供已验证的 A5 运行入口。
+黄区已验证生产 percounter 的 MIX 场景；完整 SWA 回放按文末执行。
 
 ## A6 任务描述转换
 
@@ -125,3 +125,38 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 ```
 
 默认使用 `g++`；环境变量 `CXX` 可指定 Host 编译器可执行文件路径。测试覆盖转换后 plan、原始 A5 plan、47／48 组边界、非法参数以及缺失／截断文件。
+
+## 黄区接续测试
+
+在已经跑通 MIX 4/4 的黄区工作树中保留现场平台修改，并接入本次 SWA 入口改动。以最后通过的 MIX 构建作为对照。记录 Simpler 版本、未提交 diff 和新增 src/a6 文件清单；若交接两份归档，核对解包后 runtime 链接指向和实际加载库。本分支已附[已有文件 diff](a6-diff)，包含 16 个文件的改动；新增 src/a6 目录另行交付。已通过 4/4 的工作树保留原修改，只引入本轮 SWA 入口提交。新 checkout 可先用 git apply --check 核对补丁，并配套恢复同版 src/a6 目录（含符号链接）。
+
+### 1. 构建与回放
+
+使用该工作树已通过 MIX 的 CANN、项目 venv 和 percounter runtime。以下命令从 Simpler 根目录执行。DEVICE 填现场分配的设备号，QUERY 指向现场已构建的 tools/cann-examples/query 可执行文件，LIB 指向包含 percounter 子目录的 onboard 库目录。
+
+```bash
+SWA=tests/fdwic/a6_dsv41_scheduler
+BUILD=$(mktemp -d "$SWA/build-r001-XXXXXX")
+python -I "$SWA/prepare.py" build --platform a6 --pto-isa build/pto-isa --build-dir "$BUILD" --jobs 4
+python -I "$SWA/run.py" --platform a6 --device "${DEVICE:?assigned A6 device}" \
+  --a6-query "${QUERY:?path to query executable}" --runtime-lib "${LIB:?A6 onboard library directory}" \
+  --build-dir "$BUILD" --output "$BUILD/function" --warmup 1 --rounds 1
+```
+
+prepare 先验证原始记录，再把已转换的 plan 写到 runner 实际读取的 bundle/plan-rank0.bin。核、replay adapter 与 callable 使用该工作树的平台和工具链重建。检查 build.json 的 platform=a6、tasks=16、executions=570，plan-conversion/summary.json 中 t22 为 48 个 1C1V block。run 先在指定设备执行 query device 并核对型号，再用 percounter 运行。反馈 build.json、每轮 console、result.json、总 summary 与退出状态。存在超时时沿用现场 ST 作业的限时与回收方式。
+
+### 2. 回归与待证接口
+
+- 场景测试沿用 4 个 MIX 通过时的 pytest 平台和设备参数。先对 tests/st/a5/percounter/acquire/test_acquire.py 做 --collect-only，逐类记录 collected、selected、passed、skipped 及原因。SpmdAic 先行，再测 MixedWaves、ReleasesSpmd、Predicate；按每个 case 的实际 task mask 登记支持范围。
+- Graph、GraphPure、GraphSpmd、GraphPredicate 分开跑。若普通 submit 的 mask5 通过而 Graph body 失败，对照 graph_template.h 中 body 解码的 kernel_id、active_mask 与发布到设备的函数槽。TwoVectorSync 的原用例要求同一 block 上两个 AIV 同时驻留，列为硬件语义不适用；补验 mask6/7 经提交接口返回 INVALID_ARGS。区分平台列表遗漏、真实失败、预期排除。
+- Q6 用现场三套编译器和实际平台 include 检查同一份布局断言。逐端记录 SchedulerTaskMetadata.kernel_ids、ChipTaskStorage 的 payload、PercounterControl、AicoreTeardownControl.exit_request 的大小、对齐与偏移。A6 有两个执行 lane；序列化槽位按实际结构取值。黄区报告中的 AIV 窗口 +0x100000 仍标为推断。
+- 观察 t22 是否有 48 个完整 1C1V block 同时获准执行。用单独诊断轮核对 16 个任务、570 个参与实例，记录 30 个可写 buffer 的比较结果；现有 fixture 的零权重覆盖另用两个改写 MIX 核的非零输入核对分片与写回。先确认退出和重复调用，再用新输出目录采 10 轮 L0 并保留样本。
+- release 改读 GM 后，用 A5 回归正常运行、提前退出和重复启动，核对 publish/release、metadata_ready、exit_request 与轮次。去除 A6-VERIFY 后重跑原 MIX 4 项和 SWA；记录探针清理前后构建版本。设备链 orchestrator 单独标注编译或上板覆盖。
+
+首轮反馈填写“工作树版本及现场补丁 / 命令与退出码 / 首个失败函数、task、block、lane / 预期和实际值 / 证据片段”。若设备回放已经完成而 timing 汇总失败，分别记录 golden、退出和计时结果。
+
+
+### 与现场 diff 核对的两项差异
+
+1. 探测工具 aicore_reg_mapping.h 的 InitA6() 只建立 54 个表项，按 res_id 0..53 映射，注释写明 AIV 的 +0x100000 为推断。报告描述的是每 die 35 个候选窗口、缺陷跳号。请分别返回实际平台映射函数与该工具的版本、物理 ID 到 res_id 的换算及已观测的表项。先用已有握手和映射日志核对。当前工具不能作为 70 窗口或所有物理 ID 的验证依据。
+2. lane_loop.h 的第一段等待已观察 aicpu_ready，diff 中第二段 release-wait 再检查同一个值，正常发布后会直接通过。实际放行点由 release_partition 提前到 publish_partition，且两段等待仍读 DATA_MAIN_BASE 的 EXIT。请在发布前取消、发布后首任务前取消、正常完成后复用三种时序下记录各 lane 的 ready、metadata_ready、exit_request、退出和回收状态，区分主动退出与 watchdog 超时。A5 也执行这段代码，应复验原 release 顺序依赖。清理探针时保留 GM 功能修改，按 hunk 审阅。

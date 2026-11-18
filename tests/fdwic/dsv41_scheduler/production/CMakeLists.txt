@@ -47,15 +47,19 @@ target_include_directories(record-tool PRIVATE ${COMMON} ${COMMON}/task_interfac
 
 # These are Host orchestration libraries only. AICore/AICPU executors come
 # from an existing runtime build; model kernels are compiled separately.
+set(DSV41_ARCH "a5" CACHE STRING "Target architecture for the replay orchestration headers")
+if(NOT IS_DIRECTORY "${SIMPLER_ROOT}/src/${DSV41_ARCH}/platform/include")
+    message(FATAL_ERROR "Missing Simpler platform headers for ${DSV41_ARCH}")
+endif()
 set(ORCH_INCLUDES
-    ${SIMPLER_ROOT}/src/a5/runtime/host_build_graph/runtime
-    ${SIMPLER_ROOT}/src/a5/runtime/host_build_graph/common
-    ${SIMPLER_ROOT}/src/a5/runtime
+    ${SIMPLER_ROOT}/src/${DSV41_ARCH}/runtime/host_build_graph/runtime
+    ${SIMPLER_ROOT}/src/${DSV41_ARCH}/runtime/host_build_graph/common
+    ${SIMPLER_ROOT}/src/${DSV41_ARCH}/runtime
     ${COMMON}/task_interface ${COMMON} ${COMMON}/host_build_graph
     ${COMMON}/host_build_graph/host/orchestration
     ${COMMON}/platform/include ${COMMON}/platform/include/common
     ${COMMON}/log/include
-    ${SIMPLER_ROOT}/src/a5/platform/include
+    ${SIMPLER_ROOT}/src/${DSV41_ARCH}/platform/include
 )
 add_library(orch-support OBJECT
     ${COMMON}/host_build_graph/shared/assert/assert_support.cpp

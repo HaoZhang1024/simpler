@@ -2,6 +2,8 @@
 
 [返回索引](../README.zh-CN.md) · [迁移分析](a6-migration.zh-CN.md)
 
+**11 月 18 日现场更新。** 黄区在 A6 工作树完成 percounter 构建，报告 chain16、burst16 各自的 mask3/5 共 4 项通过 golden。首轮已经定位 SSBUF 容量、release/exit 信号和单 Vector 槽折叠。下一轮从该版本复测、三端 ABI 与 SWA 回放开始；下列首轮查证表保留作接口索引。见[黄区实测记录](a6-result.md)和[接续测试](usage.zh-CN.md#黄区接续测试)。
+
 ## 1. 当前结论与证据范围
 
 **环境信息已收到，不再要求 A6 端从头填表。目标为 A6 单卡 percounter SWA，公共平台与共享生命周期按其依赖适配。** 已知编译目标；同 pin PTO-ISA 的 `include/pto/npu/a6/SyncAll.hpp` 明确采用 1C1V，删除了 A5 第二个 V 的信号等待。运行时启动和端到端正确性尚未验证。

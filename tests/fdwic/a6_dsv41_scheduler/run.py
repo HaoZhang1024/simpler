@@ -13,6 +13,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shlex
 import statistics
 import subprocess
@@ -64,30 +65,61 @@ def allocated_device(parser, requested):
     return int(device)
 
 
-def main():
+def parse_options():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--build-dir", type=Path, default=HERE / "build/a5")
-    parser.add_argument("--runtime-lib", type=Path, default=REPO / "build/lib/a5/onboard")
-    parser.add_argument("--runtime", choices=["host_build_graph", "percounter", "both"], default="both")
+    parser.add_argument("--platform", choices=["a5", "a6"], default="a5")
+    parser.add_argument("--a6-query", type=Path, help="Built tools/cann-examples/query executable")
+    parser.add_argument("--build-dir", type=Path)
+    parser.add_argument("--runtime-lib", type=Path)
+    parser.add_argument("--runtime", choices=["host_build_graph", "percounter", "both"])
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--rounds", type=int, default=10)
-    parser.add_argument("--device", type=int, help="Assigned by task-submit inside its allocation")
+    parser.add_argument("--device", type=int, help="Allocated device ID (required on A6 unless TASK_DEVICE is set)")
     args = parser.parse_args()
-    if args.device is not None and not os.environ.get("TASK_DEVICE"):
+    args.runtime = args.runtime or ("percounter" if args.platform == "a6" else "both")
+    if args.platform == "a6":
+        if args.runtime != "percounter" or not args.a6_query:
+            parser.error("A6 requires percounter and --a6-query")
+        if args.device is None and not os.environ.get("TASK_DEVICE"):
+            parser.error("Provide --device for the assigned A6 device")
+        if args.device is not None and args.device < 0:
+            parser.error("--device must be nonnegative")
+    elif args.device is not None and not os.environ.get("TASK_DEVICE"):
         parser.error("--device must come from task-submit, not a manual device selection")
-    build_dir, output, libraries = args.build_dir.resolve(), args.output.resolve(), args.runtime_lib.resolve()
+    return parser, args
+
+
+def check_device(parser, args, device):
+    if args.platform == "a6":
+        query = subprocess.check_output([str(args.a6_query.resolve()), "device", str(device)], text=True)
+        if not re.search(r"^\s*soc_name:\s+Ascend960DT_966B7(?:\s|$)", query, re.MULTILINE):
+            parser.error(f"Expected Ascend960DT_966B7 on device {device}; query returned:\n{query}")
+    else:
+        subprocess.run(["bash", str(REPO / ".claude/skills/onboard-arch-precheck/check.sh"), "a5"], check=True)
+
+
+def main():
+    parser, args = parse_options()
+    build_dir = (args.build_dir or HERE / "build" / args.platform).resolve()
+    libraries = (args.runtime_lib or REPO / "build/lib" / args.platform / "onboard").resolve()
+    output = args.output.resolve()
     if args.warmup < 1 or args.rounds < 1:
         parser.error("Require at least one warmup and one measured round")
     if output.exists():
         parser.error("Output already exists; select a new directory")
     build = json.loads((build_dir / "build.json").read_text())
-    if build["platform"] != "a5":
-        parser.error("This entry currently validates A5 only; A6 adaptation is pending")
+    if build["platform"] != args.platform:
+        parser.error("Build and requested platform differ")
     bundle, runner = build_dir / "bundle", build_dir / "host/native-runner"
     for path, expected in ((runner, build["runner_sha256"]), (bundle / "callable.bin", build["callable_sha256"])):
         if hashlib.sha256(path.read_bytes()).hexdigest() != expected:
             parser.error(f"Build artifact changed: {path.name}")
+    if (
+        args.platform == "a6"
+        and hashlib.sha256((bundle / "plan-rank0.bin").read_bytes()).hexdigest() != build["plan_sha256"]
+    ):
+        parser.error("A6 replay plan differs from the prepared plan")
     runtimes = ["host_build_graph", "percounter"] if args.runtime == "both" else [args.runtime]
     runtime_files = [libraries / "../dispatcher/libsimpler_aicpu_dispatcher.so"]
     for runtime in runtimes:
@@ -95,10 +127,10 @@ def main():
             libraries / runtime / name for name in ("libhost_runtime.so", "libaicpu_kernel.so", "aicore_kernel.o")
         ]
     if any(not path.is_file() for path in runtime_files):
-        parser.error("Build the selected A5 runtimes and dispatcher first")
+        parser.error("Build the selected runtimes and dispatcher first")
     if not os.environ.get("ASCEND_HOME_PATH"):
         parser.error("Source the CANN environment first")
-    if not os.environ.get("TASK_DEVICE"):
+    if args.platform == "a5" and not os.environ.get("TASK_DEVICE"):
         command = [
             sys.executable,
             "-I",
@@ -121,13 +153,18 @@ def main():
             check=True,
         )
         return
-    device = allocated_device(parser, args.device)
-    subprocess.run(["bash", str(REPO / ".claude/skills/onboard-arch-precheck/check.sh"), "a5"], check=True)
+    device = allocated_device(parser, args.device) if os.environ.get("TASK_DEVICE") else args.device
+    check_device(parser, args, device)
     output.mkdir(parents=True)
-    environment = {**os.environ, "DSV41_RUNNER": str(runner), "DSV41_PYTHON": sys.executable}
+    environment = {
+        **os.environ,
+        "TASK_DEVICE": str(device),
+        "DSV41_RUNNER": str(runner),
+        "DSV41_PYTHON": sys.executable,
+    }
     record = {
         "case": "swa",
-        "platform": "a5",
+        "platform": args.platform,
         "device": device,
         "start_time": datetime.now(timezone.utc).isoformat(),
         "build": build,
