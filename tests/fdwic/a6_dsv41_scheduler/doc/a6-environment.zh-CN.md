@@ -54,13 +54,13 @@
 
 ## 4. 给 A6 端 agent 的补充查证任务
 
-**目标：查清 A6 percounter 与硬件对接所需的规则，返回有出处的答案；本轮只查询资料，不要求实现运行时或跑通 SWA。** 目标型号为 `Ascend960DT_966B7`，编译目标为 `dav-920r1-*`。已有 54 AIC／54 AIV、1C1V 的依据，不必再重复证明核数和配对数量。
+**目标：查清 A6 percounter 与硬件对接所需的规则，返回有出处的答案；按文末计划逐步完成资料核对、离线复现与可执行的上板测试。** 目标型号为 `Ascend960DT_966B7`，编译目标为 `dav-920r1-*`。已知设备报告 54 AIC／54 AIV；本轮采集单次启动中的实际配对数量和来源。
 
 两个 MIX 核已经改写，本地 19／19 个 A6 核通过编译、链接和机器码提取，见 [本地验证记录](a6-migration.zh-CN.md#6-2026-11-17-本地验证记录)。当前需要补齐下面的接口规则；核能编译不等于运行时能正确启动和协调这些核。
 
 ### 黄区查证顺序与交接
 
-同事负责公共平台与 HBG，我们负责 percounter。先复用同事已经查到的答案和平台代码，再补下列缺项；公共接口结论由双方共用。
+先复用已有 A6 平台代码和实测记录，再补齐下列接口。
 
 | 顺序 | 本次重点 | 返回内容 | 对应工作 |
 | ---- | -------- | -------- | -------- |
@@ -127,39 +127,81 @@ rg -n -L -i -C 3 \
 
 分享时将机器专属路径替换为 `${ASCEND_HOME_PATH}`、`${ASCEND_DRIVER_PATH}` 或仓库相对路径，保留文件内部路径与行号。若部分规则只能从平台维护者获得，指出具体缺哪一项即可；返回与目标平台有关的接口片段及来源。
 
-### 给黄区 agent 的执行说明
+## 5. 黄区 agent 测试与反馈计划
 
-```text
-目标：为 A6 percounter SWA 适配收集平台接口依据。
-分工：同事维护公共平台和 HBG；蓝区另一侧维护 percounter。
+从 Simpler 根目录执行。首次反馈优先回答两个问题：现场是否有可运行的 A6 Cube + Vector 联合启动入口；一次启动能证实多少对可同时工作的 Cube 和 Vector。各阶段单独记录结果，先反馈已取得的证据。
 
-1. 阅读本文件的查证顺序。先汇总同事已有的 A6 平台代码和验证结果，
-   标明可交付的公共部分、HBG 专有部分和待完成项。
-2. 在实际使用的 CANN、驱动资料和现有 A6 样例中按 Q1–Q7 查找依据。
-   优先确认实际可用 C/V 配对数和编号：SWA t22 需要 48 组同时参与。
-   再确认 SSBUF 区间与屏障、任务数据布局、GM 原子和缓存可见性。
-3. 每个答案附原文或代码片段、相对路径和行号、适用型号与版本。
-   状态填写“已确认／部分确认／未找到”；未找到项列出已查范围。
-4. 单独核对本机 Host 编译器、AICPU 交叉编译器和 AICore 编译器。
-   使用文档中的现有离线入口检查 plan 和 kernel，按各自 summary 返回结果。
-5. 返回 a6-interface-answers.md、查询文本和离线检查 summary。
-   先返回已确认项，剩余项列在同一份文档中继续补充。
+| 步骤 | 执行条件 | 测试与反馈 |
+| ---- | -------- | ---------- |
+| 1. 离线复现 | Simpler、匹配的 PTO-ISA、Host 编译器和现场 CANN | 记录版本，返回 fixture、plan、资源检查和 kernel 编译结果 |
+| 2. 实测核映射 | 已分配 A6 单卡，现场已有适用于该型号的 C/V 联合启动样例 | 返回同一次启动的 worker 明细、完整配对数、配对依据和退出状态 |
+| 3. 核对设备接口 | 可访问对应 SDK、平台源码或已验证样例 | 填写 Q1–Q7，优先处理影响启动、参数读取和完成计数的缺项 |
+| 4. 验证 percounter | 已交付 A6 percounter 构建与运行入口，平台握手可用 | 先验证单个 MIX block，再单卡回放 SWA，返回执行集合和输出差异 |
 
-本轮工作为资料查询和离线检查。设备启动验证由平台交付阶段统一安排。
+### 步骤 1：复现离线输入与构建
+
+首次下载使用空目录，在其中运行以下命令。已有 checkout 先用 `git status --short --branch` 确认版本及本地改动；已有 PTO-ISA 可直接核对版本。只需 Simpler 和 PTO-ISA 两个源码仓。
+
+```bash
+git clone --branch a6-swa-port --single-branch https://github.com/HaoZhang1024/simpler.git
+cd simpler
+git clone https://github.com/hw-native-sys/pto-isa.git build/pto-isa
+git -C build/pto-isa checkout --detach "$(cat pto_isa.pin)"
 ```
 
-[使用方法](usage.zh-CN.md) 中的 `compile_kernels.py`／`prepare_plan.py` 是另外两项离线适配检查，可独立执行；它们的 `summary.json` 不能替代这里的硬件接口答案。
+加载现场 CANN 环境并激活项目 Python venv。在同一 Bash 会话执行以下命令。每次创建新的结果目录；任一步失败时保留日志，其他独立项仍可执行。
 
-## 5. 协作方式
-
-同事负责公共平台和 HBG，我们负责 percounter 与用例集成；蓝区 CANN 已接受 `dav-920r1-*`，可以先编译计算核。A6 端仍需用现场 SDK 复核编译并运行；本地目标编译通过不等于设备通过。
-
-```text
-同步同一份源码、SWA fixture 和版本清单
-  → A6 端返回 Q1–Q7 的资料与答案
-  → 同事交付公共平台与共享生命周期；我们接入 percounter 调度与任务映像
-  → A6 端编译、单卡执行 SWA 并返回校验结果
-  → 先完成跑通，性能另行安排
+```bash
+SWA=tests/fdwic/a6_dsv41_scheduler
+mkdir -p "$SWA/build"
+OUT=$(mktemp -d "$SWA/build/yellow-XXXXXX")
+git rev-parse HEAD > "$OUT/simpler-version.txt"
+git -C build/pto-isa rev-parse HEAD > "$OUT/pto-version.txt"
+diff -u pto_isa.pin "$OUT/pto-version.txt"
+git -C build/pto-isa status --porcelain
+python "$SWA/test_fixture.py" -v > "$OUT/fixture.log" 2>&1
+python "$SWA/prepare_plan.py" --output "$OUT/plan" > "$OUT/plan.log" 2>&1
+python "$SWA/test_resources.py" -v > "$OUT/resources.log" 2>&1
+python "$SWA/compile_kernels.py" --pto-isa build/pto-isa \
+  --output "$OUT/kernels" > "$OUT/kernels.log" 2>&1
 ```
 
-本地统一维护提交与 fork，A6 端负责同步代码、编译和单卡验证，不承担提交工作；设备使用由 A6 端安排。若当地仍不能 pull，可传带提交号与校验和的离线包。首个本地提交固化 A5 用例，后续 A6 修改分成多个中文提交，见 [迁移分析](a6-migration.zh-CN.md)。
+逐条记录退出码。PTO-ISA 应与 pin 一致且工作区干净。预期 plan 解码 2735 条原始记录，转换后 16 个计算任务、570 个子任务；资源测试验证 47 对时 t22 拒绝、48 对时通过；19 个核逐个完成编译、链接和机器码提取。返回 `plan/summary.json`、`kernels/summary.json`、两项测试结果。失败时附第一条报错、对应命令和出错阶段。若现场缺 CANN，先完成 fixture、plan 和资源测试。
+
+### 步骤 2：采集一次启动的 worker 映射（Q1、Q4）
+
+1. 查现场已运行过的 A6 C/V 联合启动样例或平台测试。记录代码版本、入口函数、实际构建和启动命令、申请的设备及 blockDim。先在本次分配中确认设备型号为 Ascend960DT_966B7。入口只有单核启动能力时，记录它能证明的字段，列出缺少的联合启动入口。
+2. 按样例支持的资源参数，选能覆盖至少 48 对的配置启动一次，记录请求值和实际握手值。优先使用样例已有的启动日志。需要补打印时，在现场样例握手完成后一次性导出 worker 记录；保存临时 diff 和命令。源码参考 `scheduler_cluster_coordinate_from_worker()` 和 `percounter_post_handshake_init()`。前者按 worker 顺序计算逻辑坐标，后者检查上报的 C/V 数量。
+3. 一行对应一个已握手 worker，整张表使用同一次启动的数据。列为 `run_id, worker_id, core_type, physical_core_id, block_idx, sub_block_id, cluster, lane, mapping_source`。硬件上报、驱动映射、软件计算分别标明来源；未提供的字段填“未暴露”。额外记录保留或屏蔽核以及正常退出标记。
+4. 按 cluster 检查重复 worker、重复 lane、缺 C 或缺 V。分别给出已握手 C/V 数、逻辑完整组数、由平台映射规则或同组通信验证支持的配对数。若只有软件计算坐标，填写“物理配对待证”，保留原表。若样例最多申请少量核，按本次覆盖数量反馈，另记样例上限。
+5. 得到实际可用对数后，按[资源预检命令](usage.zh-CN.md#swa-逻辑资源预检)构建 check-resources，plan 路径使用本轮 `$OUT/plan/plan-a6-rank0.bin`，将示例参数 54 换成本轮已证实的对数，保存 stdout、stderr 和退出码。少于 48 对时先反馈资源限制以及 t22 的诊断，保留原始 sync_start。
+
+### 步骤 3：核对启动、数据布局和可见性
+
+按第 4 节命令查询适用型号与 SDK 版本，填写 Q1–Q7 表。Q2/Q3 记录受支持的寄存器映射接口、SSBUF 所有者、核间共享范围、可用偏移与屏障；采用现场 SDK 或已验证样例给出的区间。Q6 用现场 Host、AICPU、AICore 三套编译目标分别检查 `host/image/image_pack.h` 与 `runtime/task_image_layout.h` 中的布局断言，记录各目标、类型、sizeof、alignof、关键 offsetof、kernel 槽数以及编译结果。缺少某个编译入口时标出该端。
+
+Q7 对照 `runtime/scheduler/gm.h` 记录一个具体的发布与观察顺序：哪端写参数、更新哪一个计数、另一端经什么原子或屏障观察计数后读取数据。区分 SDK 文档规定与设备执行结果。Q5 单列计数器来源、单位和频率；Cube 主频单独保留。
+
+### 步骤 4：percounter 功能验收
+
+使用已交付的 **A6 percounter** 构建和运行入口；本目录现有 `run.py` 提供的是 A5 入口。若现场尚无 A6 入口，反馈缺少的平台库、启动接口或 runner，步骤 1–3 的结果可先交付。
+
+1. 构建对应版本的 runtime、runner、replay adapter 和 A6 核，记录工具版本、实际命令与加载的库。用最小 1C1V MIX 用例跑一个 block，记录两个参与者的 worker/lane、发布和完成计数、输出校验与退出状态。
+2. 最小用例通过且本次资源满足 t22 后，用冻结输入执行一轮 SWA。依据 plan 逐任务核对 task ID、block 和参与 lane；预期 16 个计算任务、570 个子任务。重点核对 t22 的 48 个同步 MIX block，以及 t9/t25/t35 的 80/64/64 个普通 Vector block。执行集合证据缺失的项单独标记。
+3. 用 fixture 的参考输出和既有校验范围逐项比较，保留比较器结果、首个不匹配的 tensor 和位置，以及正常退出记录。若启动超时，使用现场样例或作业系统的超时与回收机制，保留最后一次握手、最后完成的 task/block/lane 和设备退出状态。
+
+### 首轮反馈模板
+
+原始日志留在黄区。将以下摘要交给用户，附可分享的关键输出片段、仓库相对路径和行号。每个结果注明“设备实测／离线测试／源码依据／待验证”。
+
+```text
+轮次、设备型号、Simpler 与 PTO-ISA 版本、实际使用的 CANN：
+已执行步骤、命令与退出码：
+离线：fixture / plan / 资源预检 / kernel 编译分别结果：
+启动：样例版本、入口、请求资源、握手 C/V 数、完整组数、配对证据：
+本次可证实的可用对数；是否满足 t22 的 48 对要求：
+Q1–Q7：已确认项与来源；部分确认或缺少的接口：
+设备：单 MIX / SWA 执行集合 / 输出校验 / 退出状态分别结果：
+首个失败位置、关键原文、已查范围、下一步需要的具体接口：
+黄区保留材料：worker 明细表、summary、构建与运行日志的相对路径：
+```
