@@ -4,9 +4,9 @@
 
 蓝区待修改总表、实施顺序和逐步验收统一见 [A6 percounter SWA 分步实施任务](a6-adaptation-tasks.zh-CN.md)。percounter 复用 HBG 的部分 Host orchestration 和 AICPU 生命周期，同时使用独立任务映像与 AICore lane loop。本次按这些实际依赖适配共享代码，直接在 percounter 路径完成基础测试和 SWA 验收。
 
-## 1. 目标、已有基础与阻塞点
+## 1. 移植起点（2026-11-17）
 
-**目标为 A6 单卡生产 percounter SWA。复用已有设备 C++、fixture 和 HBG/common 共享代码，完成构建、功能校验与正常退场。** A5 基线已单独提交；A6 的核编译入口、两个 MIX 核及任务描述转换已实现，本地 19／19 个核通过编译、链接和机器码提取。**尚未上板：A6 percounter 所需平台启动接口仍缺依据。**
+**目标为 A6 单卡生产 percounter SWA。复用已有设备 C++、fixture 和 HBG/common 共享代码，完成构建、功能校验与正常退场。** A5 基线已单独提交；A6 的核编译入口、两个 MIX 核及任务描述转换已实现，本地 19／19 个核通过编译、链接和机器码提取。下表记录首次移植时的条件。11 月 19 日更新的[硬件对照表](a6-result.md#21-拓扑与参数)与[SWA 实测对照](swa-l4-comparison.zh-CN.md)包含后续上板结果。
 
 | 项目 | 当前状态 | 对工作的影响 |
 | ---- | -------- | ------------ |

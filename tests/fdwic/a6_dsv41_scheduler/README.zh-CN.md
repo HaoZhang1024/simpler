@@ -1,6 +1,6 @@
 # SWA 独立用例
 
-**A5 的独立 SWA 已跑通；已有 C++ 和输入足以完成构建、执行与校验，全流程不调用 PyPTO／PTOAS。黄区已跑通 A6 单卡 percounter SWA；下一步固定源码并复测同版 A5/A6。**
+**A5 的独立 SWA 已跑通；已有 C++ 和输入足以完成构建、执行与校验，全流程不调用 PyPTO／PTOAS。黄区已跑通 A6 单卡 percounter SWA；当前按两端 L4 对齐 t22、t25、t35，并在黄区测量 CntNotify 时延。**
 
 | 问题 | 当前结论 |
 | ---- | -------- |
@@ -20,7 +20,8 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | 怎么构建、运行和复测 | [使用方法](doc/usage.zh-CN.md) | 命令、参数、输出位置、修改后需要重编什么 |
 | 为什么不依赖 PyPTO／PTOAS | [执行原理](doc/execution.zh-CN.md) | 已有材料、真实执行路径、依赖边界、全新算子的生成流程 |
 | A6 要改哪里、如何验证 | [迁移分析](doc/a6-migration.zh-CN.md) | percounter 范围、共享依赖、MIX 核与 ABI、实施顺序、已确认范围、待查问题、验收要求 |
-| 当前时延差异分析 | [A5 实测与 A6 L4 反馈表](doc/swa-l4-comparison.zh-CN.md) | t22、t25、t35 的时间边界、提取命令及事件反馈 |
+| A5 / A6 硬件和环境 | [硬件对照表](doc/a6-result.md#21-拓扑与参数) | 型号、平台配置上限、本轮实际核数、SSBUF、计时器及工具链 |
+| A5 / A6 SWA 时延 | [时延对照表](doc/swa-l4-comparison.zh-CN.md) | L0 AICore / Device，整图 L4 与 t22、t25、t35 的同口径差值 |
 | 黄区如何测同址寄存器访问 | [GM 与 CntNotify 并发测试](doc/a6-register-benchmark.zh-CN.md) | 96 核完成名次、统计脚本、t22 到达计数与 SWA 配对验证 |
 | 后续适配如何推进 | [具体任务](doc/a6-adaptation-tasks.zh-CN.md) | 两份 diff 的集成范围、三端 ABI、启退回归、同版 L0 与任务耗时分析 |
 | 交给 A6 端查什么 | [环境核对与补充查证任务](doc/a6-environment.zh-CN.md#5-黄区-agent-测试与反馈计划) | 离线复现、worker 映射实测、Q1–Q7、单 MIX 与 SWA 验收、反馈模板 |
