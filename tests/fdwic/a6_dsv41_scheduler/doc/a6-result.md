@@ -249,3 +249,75 @@ Graph 系 4 类实测未触发 3.11 预警的 graph_template mask6/7 body 任务
 1. **A5 零回归**：所有平台化改动在 A5 编译目标下常量/行为不变（3.2/3.3/3.4/3.7 均以编译期常量分支实现，保持该模式）。
 2. 双 AIV kernel 任务在 A6 的最终态是**明确报错**（3.7 report_fatal），不做静默降级。
 3. A5 语义里 AIC+AIV1 MIX 保留 AIV 身份（硬件通道选择），不可在 else 分支改变原行为。
+
+## 7. 2026-11-19 增量（泳道采集 / 蓝区同步 / manifest / 干净目录验收 / 环境清理）
+
+### 7.1 芯片泳道首次采集（A6，L3+L4，填补 a5-results 只采 L0 的空白）
+
+- L3：`production/run.sh … 3 1 1 --runtime=percounter`（run0/run1 均 0 截断）。570 次执行，窗口 434.89µs（dispatch→finish），平均 Exec 14.18µs，Exec/Latency 91%；最重 func_23_x（30.6µs×32）、func_25_z（27.1µs×4）。
+- L4：窗口 453.94µs（观察者开销 ~4%），平均 Exec 14.10µs，Exec/Latency 90%；新增 host 阶段记录（submit_task/alloc_tensors/graph_commit/image_stage，`host_phase_records.jsonl`）；dispatch→kernel start 合计 899.41µs、单次最大 6.64µs。
+- 归档：原始 records 已 gzip（L3 2.0M / L4 3.2M）+ deps.json 留存 `/npu/z00880344/swa-a6-swimlane{,-l4}`；Chrome trace 副本在黄区本地 `swimlane/`（perfetto 可视化；服务器端大 trace 已删，可由 records 经 `simpler_setup.tools.swimlane_converter` 重生成）。
+
+### 7.2 蓝区推送同步（e8fad256d → 432a637ad，7 commits，纯文档）
+
+- 蓝区入库：`doc/a6-diff1`（=我们 28 文件补丁）、`doc/a6va5-diff`（=4 拆分合集，542 行/20 文件）；改写 `doc/a6-adaptation-tasks.zh-CN.md` 为下一轮计划（§1 源码对齐 / §2 正确性 5.3+5.4 / §3 同版 A5/A6 样本 / §4 差值解释）；README 状态行更新。
+- 同步方式：备份 → checkout a6-result.md → ff-merge → 还原本地 a6-result.md（md5 8393211d 保持）。工作树：29 个已跟踪改动 + 未跟踪 `src/a6/`、`doc/src-a6-manifest.md`、`doc/src-a6.sha256`。
+
+### 7.3 src/a6 manifest 交付（蓝区计划 §1 的黄区物料）
+
+- `/npu/z00880344/src-a6-manifest.md` + `src-a6.sha256`（sha256sum -c 格式）：44 文件（36 SAME / 8 MOD / 0 NEW）+ 1 symlink（a6/runtime→../a5/runtime）+ 12 省略清单，与 a6va5-diff 完全对齐；生成工具黄区本地 `tools/gen_src_a6_manifest.py`。NFS 源树复核 0 FAILED。
+
+### 7.4 干净目录验收（蓝区计划 §1）——达成
+
+- 流程：本地克隆 432a637ad → `git apply doc/a6-diff1`（排除 a6-result.md）→ cp src/a6（sha256 -c 0 FAILED）→ `build_runtimes.py --platforms a6 --runtime percounter` → `prepare.py build --platform a6`（pto-isa 83b1b2b5…，与 r001 一致）→ `run.py` SWA 1 warmup + 10 rounds。
+- 结果：output check PASS；AICore 0.267034 ms / Device 0.362065 ms，vs r001 基线 0.265768/0.357712 ms（+0.5%/+1.2%，轮间噪声内）。
+- 指纹（r001 build.json vs cleanroom summary.json，43 vs 47 个 sha256）：41 项一致——fixture、19/19 kernel 源与 .bin、plan、runner、pto_isa；不一致仅 callable.bin、libreplay.so 及 runtime 4 件（host 侧二进制嵌入构建路径，跨目录重建字节级不同属预期；设备侧产物字节级复现）。a6local 当前 runtime == r001 运行时（4/4），基线未漂移。
+- 证据：`/npu/z00880344/cleanroom/`（3 个构建/运行 log + verify.log + runtime-libs.sha256 + swa-out-perf10r/summary.json 等，共 312K）+ 黄区本地 `cleanroom-evidence/`；664M 构建树取证后已删。结果待写入 a6-result.md（随 5.3/5.4 一并更新）。
+
+### 7.5 /npu 环境清理（2026-11-19）
+
+- 删除：cleanroom 构建树 644M、1118 旧备份 ~324K、/tmp 黄区散件（a6build*/a6probe/a6test/a6port-*/iterate.sh/gen_manifest.py 等 ~5.2M）、泳道服务器端大 trace 35M（本地有副本）、NFS 仓库 CTest `Testing/`。
+- 保留：a6local 625M（5.4 迭代构建树，收尾后可再删）、venv 502M、swa-a6-build-r001 20M（基线 + native-runner + query）、泳道 records 5.6M、补丁/manifest/1119 备份 ~2.1M、cleanroom 证据 312K。合计 ~1.16G（清理前 ~1.83G）。
+
+### 7.6 NFS v4.2 COPY 挂死与绕行（2026-11-19，运维要点）
+
+- 现象：`build_runtimes.py`（及一切走 `shutil.copy2` → `copy_file_range` 的 staging）在 NFS 仓库 `build/cache → build/lib` 拷贝阶段挂死：线程 `wchan=nfs42_proc_copy`，tmp 文件 0 字节不增长；NFS 导出（100.102.180.181，91% 用量）读写本身正常（dd 实测 47.8 MB/s），仅 v4.2 服务端 COPY 卸载通道挂起。
+- 绕行：cache 三端产物已编好时，用 `dd if=… of=…`（read/write 路径）+ `mv` 原子替换手工补拷 6 件产物（percounter 5 件 + dispatcher 1 件，md5 与 cache 一一核对），之后 `RuntimeBuilder.get_binaries(build=False)`（ST/pytest 的默认路径）只读 `build/lib` 不再拷贝，pytest 正常。
+- 长任务一律 `setsid nohup … &` 脱离会话执行（ssh_run 超时断连会孤儿化前台脚本：13:33 首次构建即如此，进程纯 sleeping 无子进程，需 kill -9 后重跑）。
+- ST 调用备忘：`python -m pytest tests/st/a5/percounter/acquire/test_acquire.py::TestPercounterMix --platform a6 --device 0 --runtime percounter`（venv + `$ASCEND_HOME_PATH/set_env.sh` + `TORCH_DEVICE_BACKEND_AUTOLOAD=0`；类级单节点 `test_run` 内跑全部命中 case，`chip.run.validate` 计数 = case 数）。
+
+### 7.7 L3 调度记录分析（2026-11-19，§4 差值解释）
+
+数据：`swa-a6-swimlane/percounter/rank0/run1/chip_swimlane_records.json.gz`（L3 权威 records，570 exec，1GHz 时钟；本地 `swimlane/` + 分析脚本 `analyze_l3_records2.py`）。记录语义：`[worker(0..53=AIC/54..107=AIV), pc任务号, 序号, start, end, …]`；pc 任务号与 `source-task-map.txt` 对齐（src t9/t22/t25/t28/t35 = pc1/pc14/pc17/pc20/pc27）。
+
+**窗口结构**（仪器化窗口 434.31µs；对照生产 AICore wall 均值 265.77µs，泳道开销系数 ≈1.63×）：
+
+- 16 个 pc 任务组按依赖排成 ~10 个串行阶段：**阶段跨度合计 335.9µs + 阶段间空隙 98.4µs（占窗口 22.7%）**。最大空隙在 pc14 前 38.7µs，其余 pc10 前 14.8µs、pc20 前 15.2µs、pc17 前 9.4µs。
+- 关键组（span/busy/单块均值）：pc14(src22, 48blk MIX 96 exec) 34.6µs/2168.9µs/22.6µs；pc20(src28, 32blk MIX) 44.4µs/1494.7µs/23.4µs；pc21(32blk AIC GEMM) 41.8µs/980.4µs/30.6µs；pc17(src25, 64blk AIV) 42.5µs/703.8µs/11.0µs；pc27(src35, 64blk AIV) 32.8µs/578.5µs/9.0µs；pc10(32blk MIX) 38.1µs/939.9µs/14.7µs；pc1(src9, 80blk AIV 微元) 80×0.59µs；pc25(4blk AIC 大 GEMM) 4×27.1µs 窗口首段。
+- **利用率极低**：AIC 均值 16.1%、AIV 均值 18.4%（最忙单 worker 24%/28%）——瓶颈是依赖链而非核数；每阶段并行度由该任务 block_num 决定（多数 ≤64），108 worker 大部分时间空闲。
+
+**A5→A6 差值归因**（生产 wall 0.1852→0.2658ms，+80µs）：
+
+1. **向量波次退化（量化，约 +32µs 生产折算）**：>54 块的 AIV 任务在 A6 54 AIV 上翻倍波次——pc17/pc27 各 64 块（A6 1.19 波→2 波，span 42.5/32.8µs；A5 72 AIV 0.89 波→1 波，预计 ~11-13µs/块单波）各 +~20µs 仪器化；pc1 80 块（1.48 波 vs 1.11 波）单块 0.59µs 影响可忽略。合计仪器化 +~53µs × 0.61 ≈ **+32µs 生产折算**。此即计划中 "t9/t25/t35 80/64/64 vector blocks" 项。
+2. **MIX 阶段反向受益（约 −12µs 折算）**：A6 54 簇 ≥ 各 MIX 任务块数（pc14 48 块 A6 单波 vs A5 36 簇 1.33 波双波，省 ~20µs 仪器化）；pc10/pc20 同理小幅受益。MIX 单块 AIC+AIV 子任务在两平台等量（kernel_ids 第 3 槽 -1，A5 也不用 AIV1）。
+3. **AIC GEMM 中性**：pc21 32 块在 36/54 AIC 上均单波；单块 30.6µs（fp32 M80×K8192×N5120，32 块合计 ~109 TFLOPS）。
+4. **残差 ~+60µs 生产折算未闭合**（1+2 净 +20µs 不足以解释 +80µs）：候选为 (a) dav-920r1 vs dav-3510 单块向量/立方效率差（无同版 A5 records 无法对比）；(b) 阶段间空隙 98.4µs 仪器化 / ~60µs 折算中 GM claim/observe 轮询开销的平台差；(c) A6 SSBUF 区域缩至 256B（3.4）的换入换出增多。**建议**：蓝区在同版 bundle 下补采 A5 L3 records 即可精确闭合（A5 设备在同事环境，黄区无权限）。
+
+**给蓝区的优化线索**（非本 port 范围）：窗口为链式非核式——最大杠杆是压缩阶段间空隙（98.4µs 仪器化，pc14 前单点 38.7µs：fanin 计数 + claim 轮询粒度/退避可调）；次为向量任务 block_num 对 54 AIV 取整（pc17/pc27 恰 64>54 触发双波）。
+
+### 7.8 交付文档 + 交付归档刷新（2026-11-19 收尾）
+
+- **a6-result.md**（蓝区交付文档）：5.3/5.4 改已完成态（含方法与结果数字）；§4 增 5.4 回归注记 + 干净目录验收注记；新增 §7（7.1 干净目录验收 / 7.2 ABI+探针清理 / 7.3 泳道 L3 分析 / 7.4 遗留与建议——AICPU 设备链折叠、PMU 占位、A5 L3 采样建议）。已回写 NFS 仓库。
+- **全部交付归档再生成**（脚本 `/npu/z00880344/regen_archives.sh` + `split_a6va5.py`，工具 `tools/gen_src_a6_manifest.py` 同步到服务器）：
+  - `a6-port-tracked.patch`：29 文件（28 port + a6-result.md），md5 `1295923ec72bf38bd271f5f7b3b6ba7b`；本地已拉回 `D:\A6-PORT\`。
+  - `a6-new-files.patch`：45（44 文件 + runtime symlink），md5 `6aacdb561e420ca4f0e0aa279db49aab`；`a6-full-changeset.patch` = 两者拼接。
+  - `a6-vs-a5-platform.patch`：20 段（= `git diff --no-index a5/platform a6/platform`），md5 `79a87cfa419ae6ff486d9d1c0b0daa03`；分片 `a6-a5-1-config`(2)/`-2-regs`(4)/`-3-build`(2)/`-4-sim-drop`(12 桩版)+`.full`(12 全量) 再生成。
+  - `src-a6-layer.tar.gz`：59 条目，md5 `5017bd03375fcee581b7ac7f2bf58e27`；`src-a6-manifest.md`+`src-a6.sha256`：44 文件（36 SAME/8 MOD/0 NEW）+1 symlink+12 省略，`sha256sum -c` 44/44 OK。
+  - doc 副本同步：`doc/a6-diff1`（=tracked patch）、`doc/a6va5-diff`（配对全量+sim 桩）、`doc/src-a6-manifest.md`、`doc/src-a6.sha256`。
+- 最终工作树：31 个已跟踪改动（28 port + a6-result.md + a6-diff1 + a6va5-diff）+ 未跟踪 `src/a6/`、doc manifest/sha256——待下次蓝区同步提交。`a6local/`（625M 构建树）保留未删（如需回收可删）。
+
+### 7.9 黄区本地目录精简（2026-11-19）
+
+- D:\A6-PORT 清理：删除根目录 10 个过期归档（a6-a5-1..4/full-changeset/new-files/vs-a5/tar/manifest/sha256，均为 09:2x 过期版本，服务器有 14:5x 现行版）、doc_* 副本与 run.py、gitrepo（117M 旧克隆）、downloads（154M 早期传输包）、src-a6-layer（过期解包）、a6port/cann-examples/scripts/probe（早期工作副本）；remote\ 仅留 a5-results 两份并入 colleague\。
+- 本地保留：A6-PORT-LOG.md、a6-port-tracked.patch（现行 md5 1295923e…）、RUNBOOK/PITFALLS/ENV_INFO/interface-answers/PROGRESS 参考、tools\（ssh_run + 生成工具源）、swimlane\（L3/L4 数据+分析）、cleanroom-evidence\、abi-check\（5.3/5.4 工具+证据）、colleague\。
+- 蓝区同步不依赖本地任何文件：仓库工作树即全部交付（见 §7.8）
