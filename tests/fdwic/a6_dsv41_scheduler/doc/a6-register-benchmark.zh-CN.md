@@ -64,6 +64,8 @@ python "$SWA/register_ranks.py" "$RAW" --workers 96 --rounds 192 \
 
 ## 3. 用 SWA 判断值不值得改
 
+黄区 §7.10 已补采同级 L4。t22 的 AIC kernel 均值从 A5 的 13.46 增到 A6 的 22.27 µs，AIV 从 13.00 增到 23.02 µs；另报 t22 前的阶段间隙增加约 11.1 µs。先将后者的起止事件与任务表中的“最晚可见计算前驱结束 → 首 dispatch”对齐。寄存器方案首先解释启动前的等待；kernel 内的增量应逐 func 核对开始/结束事件、实际入参和 kernel 工作量。此次 A5 L4 有 32C+64V 实际执行，A6 为 54C+54V。两端整图 kernel 跨度为 321.00 和 453.49 µs，L0 的改善量取配对实测。[黄区新增的 L4 结果 §7.10](a6-result.md)
+
 **优先看 t22 的 48 次到达。** 当前 `lane_loop.h` 中，MIX 各 lane 经 SSBUF 发布 `enter_ready`，`percounter_tokens_ready` 检查同组。组内指定 lane 调 `percounter_gm_fetch_add_issue(sync_arrivals[sync_index].next, 1)` 标记本 block 到达；参与者再用 `percounter_gm_read` 观察计数等于 block 数。48 对核有 **48 次逻辑加一**，轮询次数取实测。单独做“48 个指定写者累加 + 各参与者等阈值”的小实验，用通过验证的 INC/read 与原 GM 对照，保持 SSBUF 会合与数据可见性屏障一致。重复 SET(1) 无法表示 48 次到达。[当前调度代码](../../../../src/a5/runtime/percounter/aicore/lane_loop.h) · [陈鹏的 percounter 同步路径实验](https://github.com/hw-native-sys/simpler/pull/3180)
 
 - **L4 定位。** 先复用已有正式轮，沿 t22 给出最后前驱结束、最后 block 到达、首次观察到阈值、首 dispatch、首 kernel start、末 kernel end。每一对端点标注对应 lane；缺少内部事件就写“未观测”。需要补点时单独跑诊断轮。t25/t35 均有 64 个普通 Vector block，分别给出最后结束核的复用顺序和前后 block 间隙，再看 `percounter_claim_block` 取票是否出现在这一段。A6 头尾另按 `aicpu_ready` 发布→核观察及 `exit_request` 发布→核退出测量，两者均有自己的发布者、地址分布和观测端点。[三项任务的 A5 实测与 A6 提取命令](swa-l4-comparison.zh-CN.md)
