@@ -353,3 +353,75 @@ index 04f9655c2..b99e36f52 100644
      OUT_OF_ORDER_STORE_BARRIER();
      acknowledge_aicore_cond_nonce_and_wait(&runtime->dev.teardown_gates[block_idx]);
  }
+
+ 公共 orchestrator 同 §3.7 折叠逻辑（host 链）
+
+```diff
+diff --git a/src/common/host_build_graph/host/orchestrator.cpp b/src/common/host_build_graph/host/orchestrator.cpp
+index 50af19407..1cc35c036 100644
+--- a/src/common/host_build_graph/host/orchestrator.cpp
++++ b/src/common/host_build_graph/host/orchestrator.cpp
+@@ -38,6 +38,7 @@
+ 
+ #include "assert_compat.h"
+ #include "common/host_phase_kind.h"
++#include "common/platform_config.h"
+ #include "common/unified_log.h"
+ #include "host_build_graph/host/dep_gen_host_graph.h"
+ #include "host_build_graph/host/dep_compute.h"
+@@ -807,7 +808,23 @@ TaskOutputTensors OrchestratorState::submit_task(const MixedKernels &mixed_kerne
+     bool has_aic = active_mask.has_aic();
+     bool has_aiv0 = active_mask.has_aiv0();
+     bool has_aiv1 = active_mask.has_aiv1();
+-    if (!has_aic && has_aiv1 && !has_aiv0) {
++    if (PLATFORM_AIV_CORES_PER_BLOCKDIM < 2) {
++        // A6 1C1V: one AIV slot per cluster. Fold AIV1-only shapes onto AIV0 so
++        // dispatch always uses SubtaskSlot::AIV0, and refuse two AIV kernels at
++        // once, which a single AIV slot cannot run.
++        if (has_aiv1 && has_aiv0) {
++            report_fatal(
++                SIMPLER_ERROR_INVALID_ARGS, __FUNCTION__,
++                "single-AIV platform: a task cannot enable two AIV kernels at once (aiv0+aiv1)"
++            );
++            return TaskOutputTensors{};
++        }
++        if (has_aiv1 && !has_aiv0) {
++            normalized.aiv0_kernel_id = normalized.aiv1_kernel_id;
++            normalized.aiv1_kernel_id = INVALID_KERNEL_ID;
++            active_mask = normalized.to_lanes();
++        }
++    } else if (!has_aic && has_aiv1 && !has_aiv0) {
+         normalized.aiv0_kernel_id = normalized.aiv1_kernel_id;
+         normalized.aiv1_kernel_id = INVALID_KERNEL_ID;
+         active_mask = normalized.to_lanes();
+```
+
+### 8. `tests/st/a5/host_build_graph/single_block_mix/test_single_block_mix.py`
+
+mask5 case 修复（§3.8）：A5 3-slot 发布 vs A6 2-slot 重建的 order 矛盾——同步标志改为由 plan 决定
+
+```diff
+diff --git a/tests/st/a5/host_build_graph/single_block_mix/test_single_block_mix.py b/tests/st/a5/host_build_graph/single_block_mix/test_single_block_mix.py
+index 1a12f6b16..680394afa 100644
+--- a/tests/st/a5/host_build_graph/single_block_mix/test_single_block_mix.py
++++ b/tests/st/a5/host_build_graph/single_block_mix/test_single_block_mix.py
+@@ -61,8 +61,15 @@ class TestSingleBlockMixHostBuildGraphA5(SceneTestCase):
+         ],
+     }
+ 
++    # A6 is 1C1V (single AIV slot): masks enabling two AIV kernels (6, 7) and the
++    # interleaved case (even tasks run mask 7) cannot run there. Mask 5 folds its
++    # AIV1 kernel onto the AIV0 slot at submit time (see orchestrator normalize).
+     CASES = [
+-        {"name": f"{kind}16_mask{mask}", "platforms": ["a5sim", "a5"], "params": {"graph_case": case, "mask": mask}}
++        {
++            "name": f"{kind}16_mask{mask}",
++            "platforms": ["a5sim", "a5"] + (["a6"] if mask in (3, 5) else []),
++            "params": {"graph_case": case, "mask": mask},
++        }
+         for kind, case in [("chain", 0), ("burst", 1)]
+         for mask in [3, 5, 6, 7]
+     ] + [{"name": "ordinary_mix_interleaved", "platforms": ["a5sim", "a5"], "params": {"graph_case": 2, "mask": 7}}]
+```
+
+
