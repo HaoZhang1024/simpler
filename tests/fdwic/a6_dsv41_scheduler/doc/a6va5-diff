@@ -1,1 +1,183 @@
+diff --git a/a5/platform/include/common/platform_config.h b/a6/platform/include/common/platform_config.h
+index 5745e6099..898089662 100644
+--- a/a5/platform/include/common/platform_config.h
++++ b/a6/platform/include/common/platform_config.h
+@@ -34,22 +34,23 @@
+  * Maximum block dimension supported by platform
+  * This is the fundamental platform capacity constraint.
+  */
+-constexpr int PLATFORM_MAX_BLOCKDIM = 36;
++constexpr int PLATFORM_MAX_BLOCKDIM = 54;  // A6: 54 blocks (measured 54C/54V, onboard-001)
+ 
+ /**
+  * Core composition per block dimension
+  * Current architecture: 1 block = 1 AIC cube + 2 AIV cubes
+  */
+-constexpr int PLATFORM_CORES_PER_BLOCKDIM = 3;
++constexpr int PLATFORM_CORES_PER_BLOCKDIM = 2;  // A6 1C1V: 1 AIC + 1 AIV per block
+ constexpr int PLATFORM_AIC_CORES_PER_BLOCKDIM = 1;
+-constexpr int PLATFORM_AIV_CORES_PER_BLOCKDIM = 2;
+-constexpr uint32_t PLATFORM_SSBUF_SIZE = 3 * 1024;
++constexpr int PLATFORM_AIV_CORES_PER_BLOCKDIM = 1;  // A6 1C1V: single AIV
++constexpr uint32_t PLATFORM_SSBUF_SIZE = 2 * 1024;  // A6 measured: 2048 B per MIX pair (colleague probe,
++// offset>=2048 faults with errcode 271); KFC occupies 0..~1748, scheduler region at [1792, 2048)
+ 
+ /**
+  * Maximum AICPU scheduling threads
+  * Determines parallelism level of the AICPU task scheduler.
+  */
+-constexpr int PLATFORM_MAX_AICPU_THREADS = 5;
++constexpr int PLATFORM_MAX_AICPU_THREADS = 5;  // software choice; A6 has 8 user AICPU cores (measured OCCUPY=0x7f8)
+ 
+ /**
+  * Default active AICPU thread count when aicpu_thread_num is left at 0 (auto):
+@@ -256,7 +257,7 @@ constexpr int PLATFORM_PROF_READYQUEUE_SIZE =
+  * System counter frequency (get_sys_cnt)
+  * Used to convert timestamps to microseconds.
+  */
+-constexpr uint64_t PLATFORM_PROF_SYS_CNT_FREQ = 1000000000;  // 1000 MHz
++constexpr uint64_t PLATFORM_PROF_SYS_CNT_FREQ = 1000000000;  // A6 measured: 999.994 MHz (colleague probe, 2026-11-18)
+ 
+ // aclrtEventGetTimestamp capability, verified on a5 silicon: the raw value
+ // is device-uptime microseconds and covers the same epoch as profiling syscnt
+@@ -482,18 +483,46 @@ constexpr int PLATFORM_SCOPE_STATS_TIMEOUT_SECONDS = 30;
+ // Register Communication Configuration
+ // =============================================================================
+ 
+-// Register offsets for AICore SPR access
+-constexpr uint32_t REG_SPR_DATA_MAIN_BASE_OFFSET = 0xD0;  // Task dispatch (AICPU→AICore)
+-constexpr uint32_t REG_SPR_COND_OFFSET = 0x5108;          // Status (AICore→AICPU): 0=IDLE, 1=BUSY
+-constexpr uint32_t REG_SPR_CTRL_OFFSET = 0x0;             // AICore internal CTRL SPR (bit0 = PMU enable)
++// Register offsets for AICore SPR access (A6).
++//
++// COND = 0x5108 is MEASURED-CLOSED on A6 (2026-11-18, 50 rounds x2 replays:
++// AICore set_cond writes 0x80000000|seq, AICPU MMIO reads it back at
++// base+0x5108; negative controls 0x4C8/0x5500/0x5520/0xD0/0x5508..28 exclude
++// aliasing; values persist across launches — init must clear/verify, never
++// assume 0). PyPTO DAV_9201 (aicore_constants.h) carries the same 0xD0/0x5108.
++//
++// DATA_MAIN_BASE = 0xD0 and CTRL = 0x0 follow PyPTO DAV_9201 (same values as
++// A5); the AICPU-write -> AICore-read direction is not separately closed on
++// silicon yet — gate the first live task-dispatch on the single-MIX probe.
++//
++// A6 COND read latency: AICPU MMIO LDR ~4.3 us/attempt (GM ~12 ns) — factor
++// into completion-polling design.
++//
++// NOTE: PyPTO/colleague production HBG uses a SECOND, parallel register
++// protocol (IPC regs, REG_IPC_REG_0=0x5500 task / REG_IPC_REG_4=0x5520
++// FIN/ACK, 64-bit, different hardware from 0x5108). Do not mix the two in one
++// protocol chain. percounter keeps the A5-style SPR protocol (0xD0/0x5108).
++constexpr uint32_t REG_SPR_DATA_MAIN_BASE_OFFSET = 0xD0;  // PyPTO DAV_9201 value; AICPU->AICore direction pending single-MIX probe
++constexpr uint32_t REG_SPR_COND_OFFSET = 0x5108;          // MEASURED-CLOSED on A6 (set_cond <-> MMIO, 2026-11-18)
++constexpr uint32_t REG_SPR_CTRL_OFFSET = 0x0;             // PyPTO DAV_9201 value (A5 same)
+ 
+ // Exit signal for AICore shutdown
+ constexpr uint32_t AICORE_EXIT_SIGNAL = 0x7FFFFFF0;
+ 
+-// Physical core ID mask for get_coreid()
++// Physical core ID mask for get_coreid().
++// A6 coreid encoding (measured, blockDim=54 atomic tagging): die0 AIC 0..34,
++// die0 AIV 35..69, die1 AIC 70..104, die1 AIV 105..139 — C/V pair in one block
++// differ by +35, dies differ by +70; 27 of 35 local slots active per die
++// (defect-masked, sparse). The 140-slot host register table (host_regs.cpp,
++// PyPTO GetAicoreRegInfoForDAVID layout) is indexed by this coreid.
++// AIC-side get_coreid() reads 0 through the ACL/rt launch path (register
++// readout issue) — worker discovery relies on launch topology, not on AIC
++// get_coreid().
+ constexpr uint32_t AICORE_COREID_MASK = 0x0FFF;
+ 
+-// PMU MMIO register offsets (DAV_3510 / a5). Values ported from pypto
++// PMU MMIO register offsets. TODO(A6-VERIFY): A5 values carried over as
++// placeholders; A6 PMU layout unverified. Profiling PMU must stay disabled
++// until verified. (A5 source: pypto
+ // aicore_prof_dav3510_pmu.h. Accessed by AICPU through the per-core PMU
+ // register block (separate from the AICore SPR block used for DATA_MAIN_BASE
+ // and COND). AICore does not touch these — it only toggles its internal
+@@ -675,7 +704,7 @@ constexpr RegId reg_index(RegId base, int i) { return static_cast<RegId>(static_
+ // =============================================================================
+ 
+ /**
+- * DAV_3510 register layout is sparse with three non-contiguous regions:
++ * DAV_A6 register layout is sparse with three non-contiguous regions:
+  * - Page 0: 0x0000-0x0FFF  (AICore SPR low: CTRL at 0x0, DATA_MAIN_BASE at 0xD0)
+  * - Page 2: 0x2400-0x43FF  (PMU MMIO: CNT*_IDX 0x2500-0x2524, CTRL_1 0x2400,
+  *                            CTRL_0 0x4200, CNT0-9 0x4210-0x4254, TOTAL 0x4260-64,
+@@ -728,17 +757,20 @@ inline volatile uint8_t *sparse_reg_ptr(volatile uint8_t *reg_base, uint32_t off
+ constexpr uint32_t PLATFORM_SUB_CORES_PER_AICORE = PLATFORM_CORES_PER_BLOCKDIM;
+ 
+ /**
+- * DAV 3510 chip architecture
+- * - 2 dies, each with 18 AICores
+- * - Each AICore has 3 sub-cores (1 AIC + 2 AIV)
++ * A6 (Ascend960DT_966B7) chip architecture
++ * - 2 dies, 54 AICore blocks total (27 per die, measured aicore_dies=2)
++ * - Each block is 1C1V: 1 AIC + 1 AIV sub-core
++ * - halResMap(RES_AICORE, PROCESS_CP1, res_id) maps one independent 2 MiB
++ *   window per res_id (measured onboard-001); AIC at +0x0, AIV at +0x100000
++ *   (inferred, pending on-device verification)
+  */
+ constexpr uint32_t PLATFORM_NUM_DIES = 2;
+-constexpr uint32_t PLATFORM_AICORE_PER_DIE = 18;
++constexpr uint32_t PLATFORM_AICORE_PER_DIE = 35;  // A6 (PyPTO DAV_9201): 35 slots/die, 70 physical slots total (res_id 0..69 map rc=0, 70+ rc=17); 54 active blocks
+ 
+ /**
+  * Maximum physical AICore count for DAV 3510 chip
+  */
+-namespace DAV_3510 {
++namespace DAV_A6 {
+ constexpr uint32_t PLATFORM_MAX_PHYSICAL_CORES = PLATFORM_NUM_DIES * PLATFORM_AICORE_PER_DIE;
+ }
+ 
+diff --git a/a5/platform/include/common/pmu_profiling.h b/a6/platform/include/common/pmu_profiling.h
+index 76c21172b..29b2699ae 100644
+--- a/a5/platform/include/common/pmu_profiling.h
++++ b/a6/platform/include/common/pmu_profiling.h
+@@ -11,9 +11,9 @@
+ 
+ /**
+  * @file pmu_profiling.h
+- * @brief DAV_3510 (a5) AICore Performance Monitoring Unit configuration
++ * @brief DAV_A6 (a5) AICore Performance Monitoring Unit configuration
+  *
+- * PMU event ID tables (values from pypto's aicore_prof.h DAV_3510 config,
++ * PMU event ID tables (values from pypto's aicore_prof.h DAV_A6 config,
+  * CANN Open Software License 2.0). Register offsets live in platform_config.h
+  * and are accessed via RegId / reg_index().
+  *
+@@ -23,7 +23,7 @@
+  *   PmuDataHeader      — Fixed shared-memory header: per-thread ready queues.
+  *   PmuBuffer          — Fixed-capacity record buffer (PLATFORM_PMU_RECORDS_PER_BUFFER).
+  *
+- * a5 has no halHostRegister (DAV_3510), so host↔device SPSC fields are
++ * a5 has no halHostRegister (DAV_A6), so host↔device SPSC fields are
+  * read/written via rtMemcpy (onboard) or memcpy (sim), using host shadow
+  * buffers — same pattern as a5 chip_swimlane_collector and args_dump_collector.
+  */
+@@ -45,7 +45,7 @@
+ /**
+  * PMU event type selector. Values match pypto's PROF_PMU_EVENT_TYPE (see
+  * pmu_common.cpp::SetPmuEventTypeDAV3510 for the per-counter event IDs
+- * used on DAV_3510).
++ * used on DAV_A6).
+  */
+ enum class PmuEventType : uint32_t {
+     ARITHMETIC_UTILIZATION = 1,
+@@ -125,7 +125,7 @@ struct PmuEventConfig {
+     const char *counter_names[PMU_COUNTER_COUNT_A5];
+ };
+ 
+-// DAV_3510 event tables. Event IDs come from pypto's
++// DAV_A6 event tables. Event IDs come from pypto's
+ // pmu_common.cpp::SetPmuEventTypeDAV3510; counter names come from pypto's
+ // tilefwk_pmu_to_csv.py table_pmu_header_3510. Empty string "" marks an
+ // unused counter slot.
+@@ -166,7 +166,7 @@ constexpr PmuEventConfig PMU_EVENTS_A5_L2_CACHE = {
+ };
+ 
+ /**
+- * Resolve an event type to the DAV_3510 event table. Returns nullptr for
++ * Resolve an event type to the DAV_A6 event table. Returns nullptr for
+  * unknown values (caller falls back to PIPE_UTILIZATION).
+  */
+ inline const PmuEventConfig *pmu_resolve_event_config_a5(PmuEventType event_type) {
 
