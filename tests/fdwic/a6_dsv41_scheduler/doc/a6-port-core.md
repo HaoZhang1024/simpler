@@ -207,6 +207,147 @@ index 5d37d1e4b..f581e80f9 100644
 +    // supervisor has its own progress watchdog, so this wait needs none.
 +    // A6: the legacy 0xD0 EXIT wait is dropped; the nonce wait below observes
 +    // the GM exit_request the AICPU publishes on every shutdown path before
+
+### 4. `src/a5/runtime/percounter/host/region_plan.h`
+
+host 侧 plan 构建校验：块数/拓扑断言与错误返回路径（诊断探针已清理，fail 路径保留）
+
+```diff
+diff --git a/src/a5/runtime/percounter/host/region_plan.h b/src/a5/runtime/percounter/host/region_plan.h
+index b88806412..22a30c7f8 100644
+--- a/src/a5/runtime/percounter/host/region_plan.h
++++ b/src/a5/runtime/percounter/host/region_plan.h
+@@ -590,8 +590,9 @@ inline bool build_tables(
+             return fail(BuildStatus::ORDER_COUNT_MISMATCH, static_cast<int64_t>(id), -1);
+     }
+     if (boundary_tasks != layout.boundary_task_count || sync_cohorts != layout.sync_cohort_count ||
+-        mix_tasks != layout.mix_task_count)
++        mix_tasks != layout.mix_task_count) {
+         return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++    }
+     for (size_t k = 0; k < graph.invocation_count; ++k) {
+         if (!invocation_seen[k]) return fail(BuildStatus::INVALID_ARGUMENT, graph.invocations[k].shell_task_id, -1);
+     }
+@@ -647,10 +648,14 @@ inline bool build_tables(
+             };
+         }
+     }
+-    if (sync_index != layout.sync_cohort_count) return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++    if (sync_index != layout.sync_cohort_count) {
++        return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++    }
+     for (uint32_t l = 0; l < PERCOUNTER_LIST_COUNT; ++l) {
+         std::stable_sort(eligible[l].begin(), eligible[l].end(), by_schedule);
+-        if (entries[l] != list_count[l]) return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++        if (entries[l] != list_count[l]) {
++            return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++        }
+         uint64_t cursor = 0;
+         for (int64_t id : eligible[l]) {
+             const TaskInput &placed_task = tasks[static_cast<size_t>(id)];
+@@ -671,7 +676,9 @@ inline bool build_tables(
+             }
+             orders[l][cursor++] = percounter_order_entry(id, 0, 1);
+         }
+-        if (cursor != list_count[l]) return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++        if (cursor != list_count[l]) {
++            return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++        }
+     }
+     if (edge_cursor != layout.edge_count) return fail(BuildStatus::EDGE_COUNT_MISMATCH, -1, -1);
+ 
+@@ -722,8 +729,9 @@ inline bool build_tables(
+         control->segment_count[l] = segment_cursor - control->segment_begin[l];
+     }
+     if (segment_cursor != layout.boundary_task_count + PERCOUNTER_LIST_COUNT ||
+-        ticket_interval > layout.ticket_interval_count)
++        ticket_interval > layout.ticket_interval_count) {
+         return fail(BuildStatus::ORDER_COUNT_MISMATCH, -1, -1);
++    }
+ 
+     // Templates, back to back, then one record per invocation pointing at its own.
+     std::vector<uint64_t> template_offset(graph.template_count, 0);
+```
+
+### 5. `src/a5/runtime/percounter/runtime/scheduler/ssbuf.h`
+
+SSBUF 调度区域（§3.4）：A5 按 3KiB 布局在 A6 越界（offset≥2048 报 errcode 271）→ 重定位到 [1792, 2048)，PMU 区域跟随
+
+```diff
+diff --git a/src/a5/runtime/percounter/runtime/scheduler/ssbuf.h b/src/a5/runtime/percounter/runtime/scheduler/ssbuf.h
+index b194c6659..92d57f610 100644
+--- a/src/a5/runtime/percounter/runtime/scheduler/ssbuf.h
++++ b/src/a5/runtime/percounter/runtime/scheduler/ssbuf.h
+@@ -45,9 +45,20 @@
+ #define PERCOUNTER_SSBUF
+ #endif
+ 
+-constexpr uint32_t PERCOUNTER_SSBUF_REGION_OFFSET = 2 * 1024;
+-constexpr uint32_t PERCOUNTER_SSBUF_REGION_SIZE = 1024;
++// Region placement is platform-dependent (hardware-and-convention fact):
++// - A5: 3 KiB SSBUF per 1AIC+2AIV cluster; scheduler takes the last KiB so
++//   user kernels keep the low 2 KiB: [2048, 3072).
++// - A6: 2 KiB SSBUF per 1C1V MIX pair (measured; offset >= 2048 faults with
++//   errcode 271); KFC occupies [0, ~1748); the 136-byte region (PENDING
++//   _CAPACITY=1) fits at [1792, 2048), 64B-aligned clear of the KFC tail.
++constexpr uint32_t PERCOUNTER_SSBUF_REGION_OFFSET =
++    (PLATFORM_SSBUF_SIZE == 3 * 1024) ? 2 * 1024 : 1792;
++constexpr uint32_t PERCOUNTER_SSBUF_REGION_SIZE = PLATFORM_SSBUF_SIZE - PERCOUNTER_SSBUF_REGION_OFFSET;
+ static_assert(PERCOUNTER_SSBUF_REGION_OFFSET + PERCOUNTER_SSBUF_REGION_SIZE == PLATFORM_SSBUF_SIZE);
++// Minimum floor for PENDING_CAPACITY=1 (1x128B signal + 8B tail). Larger
++// capacities are caught by wire_types.h's negative-reserved-array compile
++// error, so the exact bound lives with the region struct there.
++static_assert(PERCOUNTER_SSBUF_REGION_SIZE >= 136, "scheduler region must fit at least one pending signal");
+ 
+ // A CPU reader can overlap record reuse even when it discards the snapshot.
+ // Acquiring a newer field also orders its opening generation before the
+```
+
+### 6. `src/a5/runtime/tensormap_and_ringbuffer/runtime/orchestrator.cpp`
+
+orchestrator aiv1→aiv0 折叠（§3.7）：A6 无第二 AIV，双 AIV kernel 任务在 A6 明确报错（不做静默降级），AIC+AIV1 MIX 折到 AIV0
+
+```diff
+diff --git a/src/a5/runtime/tensormap_and_ringbuffer/runtime/orchestrator.cpp b/src/a5/runtime/tensormap_and_ringbuffer/runtime/orchestrator.cpp
+index 04f9655c2..b99e36f52 100644
+--- a/src/a5/runtime/tensormap_and_ringbuffer/runtime/orchestrator.cpp
++++ b/src/a5/runtime/tensormap_and_ringbuffer/runtime/orchestrator.cpp
+@@ -28,6 +28,7 @@
+ 
+ #include "aicpu/dep_gen_collector_aicpu.h"
+ #include "common/dep_gen.h"
++#include "common/platform_config.h"
+ #include "common/unified_log.h"
+ #include "dep_compute.h"
+ #include "runtime_types.h"
+@@ -1345,7 +1346,23 @@ TaskOutputTensors OrchestratorState::submit_task(const MixedKernels &mixed_kerne
+     bool has_aic = active_mask.has_aic();
+     bool has_aiv0 = active_mask.has_aiv0();
+     bool has_aiv1 = active_mask.has_aiv1();
+-    if (!has_aic && has_aiv1 && !has_aiv0) {
++    if (PLATFORM_AIV_CORES_PER_BLOCKDIM < 2) {
++        // A6 1C1V: one AIV slot per cluster. Fold AIV1-only shapes onto AIV0 so
++        // dispatch always uses SubtaskSlot::AIV0, and refuse two AIV kernels at
++        // once, which a single AIV slot cannot run.
++        if (has_aiv1 && has_aiv0) {
++            report_fatal(
++                SIMPLER_ERROR_INVALID_ARGS, __FUNCTION__,
++                "single-AIV platform: a task cannot enable two AIV kernels at once (aiv0+av1)"
++            );
++            return TaskOutputTensors{};
++        }
++        if (has_aiv1 && !has_aiv0) {
++            normalized.aiv0_kernel_id = normalized.aiv1_kernel_id;
++            normalized.aiv1_kernel_id = INVALID_KERNEL_ID;
++            active_mask = normalized.to_lanes();
++        }
++    } else if (!has_aic && has_aiv1 && !has_aiv0) {
+         normalized.aiv0_kernel_id = normalized.aiv1_kernel_id;
+         normalized.aiv1_kernel_id = INVALID_KERNEL_ID;
+         active_mask = normalized.to_lanes();
+```
+
+### 7. `src/common/host_build_graph/host/orchestrator.cpp`
 +    // that EXIT, so it subsumes this gate. Complete the preceding GM writes
 +    // first.
      OUT_OF_ORDER_STORE_BARRIER();
