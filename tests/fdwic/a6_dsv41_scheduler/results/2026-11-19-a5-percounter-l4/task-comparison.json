@@ -1,0 +1,88 @@
+{
+  "executions": 578,
+  "kernel_window_us": 320.997,
+  "tasks": [
+    {
+      "source_task": 22,
+      "intervals": 72,
+      "active_cores": 72,
+      "executions_per_core_histogram": {
+        "1": 72
+      },
+      "reuse_gap_median_us": null,
+      "first_kernel_us": 168.486,
+      "last_kernel_end_us": 190.409,
+      "span_us": 21.923,
+      "start_spread_us": 10.625,
+      "latest_compute_pred": 18,
+      "other_preds_without_kernel": [
+        21
+      ],
+      "pred_end_to_first_dispatch_us": 27.813,
+      "first_dispatch_to_first_kernel_us": 1.193,
+      "kernel_us_by_func": {
+        "18": {
+          "n": 24,
+          "median": 12.803,
+          "max": 19.053
+        },
+        "19": {
+          "n": 48,
+          "median": 12.696,
+          "max": 17.092
+        }
+      }
+    },
+    {
+      "source_task": 25,
+      "intervals": 64,
+      "active_cores": 64,
+      "executions_per_core_histogram": {
+        "1": 64
+      },
+      "reuse_gap_median_us": null,
+      "first_kernel_us": 196.058,
+      "last_kernel_end_us": 215.161,
+      "span_us": 19.103,
+      "start_spread_us": 12.703,
+      "latest_compute_pred": 22,
+      "other_preds_without_kernel": [
+        23,
+        24
+      ],
+      "pred_end_to_first_dispatch_us": 4.324,
+      "first_dispatch_to_first_kernel_us": 1.325,
+      "kernel_us_by_func": {
+        "20": {
+          "n": 64,
+          "median": 6.511,
+          "max": 7.76
+        }
+      }
+    },
+    {
+      "source_task": 35,
+      "intervals": 64,
+      "active_cores": 64,
+      "executions_per_core_histogram": {
+        "1": 64
+      },
+      "reuse_gap_median_us": null,
+      "first_kernel_us": 308.153,
+      "last_kernel_end_us": 320.997,
+      "span_us": 12.844,
+      "start_spread_us": 6.721,
+      "latest_compute_pred": 29,
+      "other_preds_without_kernel": [],
+      "pred_end_to_first_dispatch_us": 3.276,
+      "first_dispatch_to_first_kernel_us": 1.292,
+      "kernel_us_by_func": {
+        "27": {
+          "n": 64,
+          "median": 7.33,
+          "max": 9.185
+        }
+      }
+    }
+  ]
+}
