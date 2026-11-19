@@ -323,3 +323,21 @@ Graph 系 4 类实测未触发 3.11 预警的 graph_template mask6/7 body 任务
 - D:\A6-PORT 清理：删除根目录 10 个过期归档（a6-a5-1..4/full-changeset/new-files/vs-a5/tar/manifest/sha256，均为 09:2x 过期版本，服务器有 14:5x 现行版）、doc_* 副本与 run.py、gitrepo（117M 旧克隆）、downloads（154M 早期传输包）、src-a6-layer（过期解包）、a6port/cann-examples/scripts/probe（早期工作副本）；remote\ 仅留 a5-results 两份并入 colleague\。
 - 本地保留：A6-PORT-LOG.md、a6-port-tracked.patch（现行 md5 1295923e…）、RUNBOOK/PITFALLS/ENV_INFO/interface-answers/PROGRESS 参考、tools\（ssh_run + 生成工具源）、swimlane\（L3/L4 数据+分析）、cleanroom-evidence\、abi-check\（5.3/5.4 工具+证据）、colleague\。
 - 蓝区同步不依赖本地任何文件：仓库工作树即全部交付（见 §7.8）
+### 7.10 A5 L4 对照分析（2026-11-19，§4 差值解释收口）
+
+- 数据来源：蓝区入库 5 commits（432a637ad → 564902a2b，fetch 未合并），A5 L4 归档 `tests/fdwic/a6_dsv41_scheduler/results/2026-11-19-a5-percounter-l4/`（records 1.7MB + kernel-intervals.csv 578 行 + README + source-task-map）；服务器导出 `/npu/z00880344/a5-l4/`，CSV 拉回本地 `swimlane\`。A6 侧为同级公平对比补采 L4 records（`swa-a6-swimlane-l4`，本地 `swimlane\chip_swimlane_records-L4.json.gz`）。分析脚本 `swimlane/compare_a5_a6.py` + `compare_a5_a6_detail.py`。
+- A5 采集条件（归档 README）：同事环境 A5 dev card 1，runtime 26b0511f3，SWA a9046d203，PTO-ISA 83b1b2b5（**与 A6 同版**），DFX+ORCH+SCHED，L4，0 warmup + 1 round，output check PASS。CSV 语义：`core_id, source_task_id, start_us, end_us`（原始 SWA 任务号，零点 = 首 kernel 起始）。
+- **A5 拓扑修正**：本次 A5 运行实际 **96 核 = 32 AIC + 64 AIV（32 簇 × 1C2V）**，非旧记录的 36 簇/108 核。证据：core 推断（AIC 任务 t16/t19/t29/t33 恰落 32 个不同核，与 64 个 AIV 核零重叠）+ 归档 README "96 个实际执行 kernel 的 core ID" + 用户确认（"是32+64"）。§7.7 第 1 条的波次前提随之修正（A5 AIV 为 64 非 72），结论方向不变。
+
+**窗口对比（L4 同级，仪器化）**：A5 321.00µs vs A6 453.49µs → **+132.5µs**。仪器化/生产比 A5 1.734 / A6 1.707，折算系数 ~0.577；+132.5 × 0.577 ≈ +76.5µs ≈ 生产差 +80µs（AICore 0.1852→0.2658ms）→ **仪器化窗口解释生产差的 ~96%，归因闭合**。阶段结构两边完全一致（16 任务同序）。
+
+**分项**：
+
+1. **单 kernel 慢化（主因，仪器化 ~+75-85µs）**：中等多块任务单次执行普遍 1.2-1.7× 慢——AIV：t22 1.77、t18 1.73、t25 1.67、t17 1.68、t20 1.40、t35 1.26、t8/t31 1.20；AIC：t22 1.65、t18 1.53、t16 1.49、t28 1.44、t33 1.42、t19 1.15。**大 GEMM t29 0.96×、微元 t9 0.96×、t12 1.03× 不变**。模式 = kernel 越大越不受影响 → 指向 A6 每块/每 kernel 固定成本（GM claim/observe 信号路径轮询、SSBUF 256B 区域换入换出 3.4），大 kernel 摊薄固定开销。
+2. **波次退化（+~20µs）**：仅 t25/t35 翻转（64 块：A5 64 AIV=1 波 → A6 54 AIV=2 波，波内单块时长两边相同：t25 10.98/11.02µs、t35 9.06µs）；t9 80 块两边均 2 波。A6 双波批间空隙中位 ~13.7-13.9µs（A5 t9 为 11.2µs）。
+3. **阶段间空隙（+17.5µs）**：A5 85.8µs（26.7%）vs A6 103.3µs（22.8%）；最大增量在 t22 前（+11.1µs）。
+4. **散布/拖尾（~+15µs）**：t29 单块不变但 span 34.7→44.1µs（max 33.96→38.41、尾 4.3→14.7µs）；t9 span +6.3µs 同类。
+
+**MIX 分型时长**（均值 µs，AIC/AIV 分列）：t18 AIC 13.45→20.58、AIV 5.00→8.66；t22 AIC 13.46→22.27（块 24→48：1C2V→1C1V 折叠致 AIC 数翻倍）、AIV 13.00→23.02；t28 AIC 14.20→20.48、AIV 20.04→26.06（AIV 数 64→32，单 AIV 负担 2×）。busy 总量：A5 6.12ms/96 核 vs A6 8.04ms/108 核（+31%）。
+
+**给蓝区的优化方向（按杠杆排序）**：① 单 kernel 固定开销（GM 信号 claim/observe 轮询粒度/退避、SSBUF 256B 换入换出）——覆盖全部中等任务，最大杠杆；② t25/t35 的 block_num 对 54 AIV 取整（消除双波各 +~20µs 仪器化）；③ t22 前空隙（fanin 计数 + 轮询粒度）。t29 GEMM 计算本身无退化，拖尾属调度散布
