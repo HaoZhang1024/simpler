@@ -40,10 +40,26 @@ from tests.st.a5.host_build_graph.spmd_sync_start_mix_aiv.test_spmd_sync_start_m
 )
 
 
+def single_vector_cases(cases, *, single_block_mix=False, graph_spmd=False):
+    """Keep A5 coverage and add the supported A6 iterations to the percounter suite."""
+    result = deepcopy(cases)
+    for original in cases:
+        if single_block_mix and original["params"]["mask"] not in (3, 5):
+            continue
+        case = deepcopy(original)
+        case["platforms"] = ["a6"]
+        if isinstance(case.get("manual"), list):
+            case["manual"] = "a5" in case["manual"]
+        if graph_spmd:
+            case["params"]["slots_per_block"] = 2
+        result.append(case)
+    return result
+
+
 @scene_test(level=2, runtime="percounter")
 class TestPercounterMix(SceneTestCase):
     CALLABLE = deepcopy(_Mix.CALLABLE)
-    CASES = deepcopy(_Mix.CASES)
+    CASES = single_vector_cases(_Mix.CASES, single_block_mix=True)
     RTOL = _Mix.RTOL
     ATOL = _Mix.ATOL
     generate_args = _Mix.generate_args
@@ -53,7 +69,7 @@ class TestPercounterMix(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterSpmdAic(SceneTestCase):
     CALLABLE = deepcopy(_SpmdAic.CALLABLE)
-    CASES = deepcopy(_SpmdAic.CASES)
+    CASES = single_vector_cases(_SpmdAic.CASES)
     RTOL = _SpmdAic.RTOL
     ATOL = _SpmdAic.ATOL
     generate_args = _SpmdAic.generate_args
@@ -63,7 +79,7 @@ class TestPercounterSpmdAic(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterMixedWaves(SceneTestCase):
     CALLABLE = deepcopy(_MixedWaves.CALLABLE)
-    CASES = deepcopy(_MixedWaves.CASES)
+    CASES = single_vector_cases(_MixedWaves.CASES)
     RTOL = _MixedWaves.RTOL
     ATOL = _MixedWaves.ATOL
     generate_args = _MixedWaves.generate_args
@@ -73,7 +89,7 @@ class TestPercounterMixedWaves(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterReleasesSpmd(SceneTestCase):
     CALLABLE = deepcopy(_ReleasesSpmd.CALLABLE)
-    CASES = deepcopy(_ReleasesSpmd.CASES)
+    CASES = single_vector_cases(_ReleasesSpmd.CASES)
     RTOL = _ReleasesSpmd.RTOL
     ATOL = _ReleasesSpmd.ATOL
     generate_args = _ReleasesSpmd.generate_args
@@ -93,7 +109,7 @@ class TestPercounterTwoVectorSync(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterGraph(SceneTestCase):
     CALLABLE = deepcopy(_Graph.CALLABLE)
-    CASES = deepcopy(_Graph.CASES)
+    CASES = single_vector_cases(_Graph.CASES)
     RTOL = _Graph.RTOL
     ATOL = _Graph.ATOL
     generate_args = _Graph.generate_args
@@ -103,7 +119,7 @@ class TestPercounterGraph(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterGraphPure(SceneTestCase):
     CALLABLE = deepcopy(_GraphPure.CALLABLE)
-    CASES = deepcopy(_GraphPure.CASES)
+    CASES = single_vector_cases(_GraphPure.CASES)
     RTOL = _GraphPure.RTOL
     ATOL = _GraphPure.ATOL
     generate_args = _GraphPure.generate_args
@@ -113,7 +129,7 @@ class TestPercounterGraphPure(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterGraphSpmd(SceneTestCase):
     CALLABLE = deepcopy(_GraphSpmd.CALLABLE)
-    CASES = deepcopy(_GraphSpmd.CASES)
+    CASES = single_vector_cases(_GraphSpmd.CASES, graph_spmd=True)
     RTOL = _GraphSpmd.RTOL
     ATOL = _GraphSpmd.ATOL
     generate_args = _GraphSpmd.generate_args
@@ -124,7 +140,7 @@ class TestPercounterGraphSpmd(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterPredicate(SceneTestCase):
     CALLABLE = deepcopy(_Predicate.CALLABLE)
-    CASES = deepcopy(_Predicate.CASES)
+    CASES = single_vector_cases(_Predicate.CASES)
     for _case in CASES:
         _case.get("config", {}).pop("aicpu_thread_num", None)
     RTOL = _Predicate.RTOL
@@ -136,7 +152,7 @@ class TestPercounterPredicate(SceneTestCase):
 @scene_test(level=2, runtime="percounter")
 class TestPercounterGraphPredicate(SceneTestCase):
     CALLABLE = deepcopy(_GraphPredicate.CALLABLE)
-    CASES = deepcopy(_GraphPredicate.CASES)
+    CASES = single_vector_cases(_GraphPredicate.CASES)
     RTOL = _GraphPredicate.RTOL
     ATOL = _GraphPredicate.ATOL
     generate_args = _GraphPredicate.generate_args

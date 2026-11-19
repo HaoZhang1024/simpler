@@ -10,7 +10,7 @@
 
 ## 1. 先确认测的是哪条指令
 
-用现场通过的 MIX 1C1V 启动入口，增加独立的 probe kernel 和 Host 结果缓冲区。由黄区接入 A6 的 SDK、计时器和同步接口。蓝区交付的是采样约定和可直接运行的统计脚本。目标、实际设备号、CANN/编译器、优化选项、启动 block 数、每个参与者的 die/core type/worker、设备时钟来源和频率写入同一份运行记录。
+黄区继续当前已启动的 probe 作业。后续 probe、打点和结果提取脚本由蓝区实现；黄区运行交付版本并回传结果。目标、实际设备号、CANN/编译器、优化选项、启动 block 数、每个参与者的 die/core type/worker、设备时钟来源和频率写入同一份运行记录。
 
 - **GM。** 分配一个自然对齐、独占 cache line 的 32-bit 字。结果区、同步标志和测试字分别分配。确认 AIC 和 AIV 二进制中的访存宽度、返回值依赖和 DSB 指令。保存相应反汇编片段。
 - **CntNotify。** 参照传瑜的 Host 实现，在当前设备 context 调用 `aclrtCntNotifyCreate`、`aclrtCntNotifyGetId`、`rtGetDevResAddress`。A5 使用 STARS CNT_NOTIFY_RECORD / CP1；按 A6 SDK 核对资源类型、访问主体、32-bit SET/read 映射和同步语义。资源保持到最后一次读回，再释放映射和 handle。先由 C 写入本轮标记、V 读回，再交换 C/V 角色，并验证下一轮复位。反馈申请数、有效映射数、实走硬件路径的次数或 SDK 返回码。若只取得 GM 路径，先交 GM 两组。INC 另需 A6 SDK 或平台实现确认别名与累加语义；A5 的 SET+8 属于 A5 实现。[SET/read 参考实现](https://github.com/hw-native-sys/simpler/pull/3145) · [资源复用与 INC 验证](https://github.com/hw-native-sys/simpler/pull/3152)

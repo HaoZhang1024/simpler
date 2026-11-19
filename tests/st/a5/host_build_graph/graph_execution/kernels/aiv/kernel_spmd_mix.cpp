@@ -13,8 +13,10 @@
  * SPMD Multi-Block MIX Kernel (AIV version)
  *
  * AIV writes float(block_idx) at cache line
- *   (base_cl + block_idx * 3 + 1 + sub_block_id)
- * where sub_block_id is 0 for AIV0 and 1 for AIV1.
+ *   (base_cl + block_idx * SLOTS_PER_BLOCK + 1 + sub_block_id)
+ * where SLOTS_PER_BLOCK follows the platform's per-block core layout
+ * (A5: 3, A6: 2) and sub_block_id is 0 for AIV0 and 1 for AIV1
+ * (single-AIV platforms run AIV0 only, whose sub_block_id is 0).
  *
  * Args:
  *   args[0] = output Tensor* (INOUT)
@@ -36,8 +38,10 @@
 
 #include "intrinsic.h"
 
+#include "common/platform_config.h"
+
 static constexpr int32_t FLOATS_PER_CACHE_LINE = 16;
-static constexpr int32_t SLOTS_PER_BLOCK = 3;
+static constexpr int32_t SLOTS_PER_BLOCK = PLATFORM_CORES_PER_BLOCKDIM;  // A5: AIC + 2 AIV, A6: AIC + 1 AIV
 
 #ifdef PTO_CPUSTUB_HPP
 #define dcci(...) \

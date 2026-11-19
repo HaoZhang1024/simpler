@@ -94,3 +94,12 @@ D. 独立运行：run.sh／用例目录 run.py
 B 的代码见 [build_sources.py](../../dsv41_scheduler/production/build_sources.py)；C 见 [production/prepare.py](../../dsv41_scheduler/production/prepare.py)、[export_cases.py](../../dsv41_scheduler/production/export_cases.py)、[materialize.py](../../dsv41_scheduler/production/materialize.py)。**用例目录的 `prepare.py build` 是 SWA 构建入口，与 C 的整网准备脚本不同。**
 
 这些通用脚本仍按 DSV4.1 清单工作，接入全新算子需补入口、manifest、输入、参考和选择范围。如果算子本来独立，直接准备自身任务图和输入即可，不必为测试它跑 40 层 forward。外部 DSL 核走自身的代码生成链，不统一归为 PTOAS。
+
+## A6 的两个 MIX 任务
+
+| 任务 | A5 | A6 的执行方式 |
+| ---- | -- | ------------- |
+| t22 稀疏 Attention | 24 个 1C2V block | 原 block b 拆为 2b 和 2b+1，各由 1C1V 处理 32 个 head，各自 gather 完整 KV。共 48 个 block、96 个执行实例。 |
+| t28 输出投影 | 32 个 1C2V block | 每个 block 的单 V 分两次处理原来分给两个 V 的列。仍为 32 个 block，共 64 个执行实例。 |
+
+[plan 转换工具](../prepare_plan.py)在目标 Host 核对 2735 条原始记录的语义指纹，再转换这两个任务。输入、参考和原始 plan 保存在 [fixtures](../fixtures/)；目标机器码和 callable 在本地构建。

@@ -37,6 +37,8 @@
 
 #include "orchestration_api.h"  // NOLINT(build/include_subdir)
 
+#include "common/platform_config.h"
+
 namespace {
 
 constexpr int32_t kAicFuncId = 0;
@@ -105,7 +107,11 @@ TaskId submit_one(
         MixedKernels mixed;
         mixed.aic_kernel_id = kAicFuncId;
         mixed.aiv0_kernel_id = kAivFuncId;
-        mixed.aiv1_kernel_id = kAivFuncId;
+        if (PLATFORM_AIV_CORES_PER_BLOCKDIM >= 2) {
+            // 3-slot platforms run the same AIV kernel on both AIV lanes;
+            // single-AIV platforms keep the Mix shape as AIC + AIV0.
+            mixed.aiv1_kernel_id = kAivFuncId;
+        }
         return rt_submit_task(mixed, task).task_id();
     }
     default:

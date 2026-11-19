@@ -47,16 +47,6 @@ python -I tests/fdwic/a6_dsv41_scheduler/run.py \
 
 典型调优顺序：**同一用例测基线 → 修改调度器 → 重编 runtime → 同一包复测 → 比较耗时并检查输出。** 切换 Git 分支不会自动更新磁盘上的运行库。详细泳道应另采，不混入 L0 性能样本。
 
-## A6 复现前的构建环境
-
-**本页前面的运行命令目前仅适用于 A5；A6 使用文末的现场平台工作树和单卡入口。** A6 交付目标为 percounter，构建包含其需要的 HBG/common 共享源码。
-
-远端报告的系统 CMake 为 3.16.3。原生工具的 [CMakeLists.txt](../../dsv41_scheduler/production/CMakeLists.txt) 声明最低 3.20；现有 [AICore 运行时构建](../../../../src/a5/platform/onboard/aicore/CMakeLists.txt) 还实际使用了 Makefile 生成器的 `DEPFILE` 支持，要求 CMake 3.20。因此沿用这条构建路径时，不能只调低版本声明。
-
-建议在项目 `.venv` 提供 `cmake>=3.20` 和当前入口使用的 Ninja，不升级系统 CMake，也不改用户全局环境；复现时记录 `command -v cmake ninja` 和各自版本。3.20 是当前构建链要求，不是 A6 芯片本身的硬要求。若选择其他生成器或兼容旧版本，需要验证依赖追踪和重编行为。
-
-Host 的 x86_64 C++ 工具、AICPU 的 aarch64 交叉编译器、AICore 的 `dav-920r1-*` ccec 目标分别配置。没有 task-submit 的 A6 机器按实际设备占用方式提供执行入口，不能直接复用本页的 A5 队列命令。环境依据与剩余资料见 [环境核对](a6-environment.zh-CN.md)。
-
 ## A6 计算核编译检查
 
 在仓库根目录、已加载 CANN 环境的项目 venv 中执行：
@@ -72,9 +62,6 @@ python tests/fdwic/a6_dsv41_scheduler/compile_kernels.py \
 `summary.json` 保存逐核阶段、工具版本、目标参数及源码／机器码指纹；逐核 `.log` 和 `.commands.json` 保留详细诊断。
 输出目录必须是新目录，防止旧二进制混入。
 
-**这里复用的是现有核参数 ABI 头文件，不是 A5 运行时。A6 percounter 的平台启动、ABI 与上板正确性仍需单独验证。**
-黄区已验证生产 percounter 的 MIX 场景；完整 SWA 回放按文末执行。
-
 ## A6 任务描述转换
 
 以下命令在 A6 的 x86_64 Host 上用本机 `g++` 执行；不使用 AICPU 交叉编译器，不需要 CANN 或设备：
@@ -87,10 +74,6 @@ python tests/fdwic/a6_dsv41_scheduler/prepare_plan.py \
 脚本先编译两个 Host 小工具，解包原始 fixture，核对 2735 条记录的语义指纹；通过后生成 `plan-a6-rank0.bin`。
 仅 t22 改为 48 个 1C1V block，t28 改为 32 个 1C1V block；保留全部输入、标量和依赖，原始 plan 留在 `bundle/`。
 任何非预期变化都会报错。转换后的计划必须配合同分支 A6 核使用，不能交给 A5 运行时。
-
-**A6 端现在可以先执行这两条离线命令。** 返回两个 `summary.json`；失败时加上相应 `.log`。
-核编译成功和 Host 解码成功之后，仍需接入 A6 公共平台与 percounter 才能生成可执行运行包。
-所缺平台资料列在 [运行时还缺什么](a6-migration.zh-CN.md#运行时还缺什么)，不需要对方先跑通模型。
 
 ## SWA 逻辑资源预检
 
@@ -128,35 +111,14 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
-在已经跑通 MIX 4/4 的黄区工作树中保留现场平台修改，并接入本次 SWA 入口改动。以最后通过的 MIX 构建作为对照。记录 Simpler 版本、未提交 diff 和新增 src/a6 文件清单；若交接两份归档，核对解包后 runtime 链接指向和实际加载库。本分支已附[已有文件 diff](a6-diff)，包含 16 个文件的改动；新增 src/a6 目录另行交付。已通过 4/4 的工作树保留原修改，只引入本轮 SWA 入口提交。新 checkout 可先用 git apply --check 核对补丁，并配套恢复同版 src/a6 目录（含符号链接）。
+在 A6 的 Linux 环境使用本分支 Simpler、仓库 pin 对应的 build/pto-isa、现场 CANN 和项目 venv。Host 构建需要 CMake 3.20 以上及 Ninja。使用现场分配的一个设备；若当前 CntNotify 作业正在占用该设备，等它结束后执行。蓝区维护源码、构建脚本和诊断点。黄区执行以下命令并回传结果。
 
-### 1. 构建与回放
-
-使用该工作树已通过 MIX 的 CANN、项目 venv 和 percounter runtime。以下命令从 Simpler 根目录执行。DEVICE 填现场分配的设备号，QUERY 指向现场已构建的 tools/cann-examples/query 可执行文件，LIB 指向包含 percounter 子目录的 onboard 库目录。
+从 Simpler 根目录执行下面一条命令，DEVICE 填现场分配的设备号。使用 Linux Git checkout，保留 src/a6/runtime 符号链接。
 
 ```bash
-SWA=tests/fdwic/a6_dsv41_scheduler
-BUILD=$(mktemp -d "$SWA/build-r001-XXXXXX")
-python -I "$SWA/prepare.py" build --platform a6 --pto-isa build/pto-isa --build-dir "$BUILD" --jobs 4
-python -I "$SWA/run.py" --platform a6 --device "${DEVICE:?assigned A6 device}" \
-  --a6-query "${QUERY:?path to query executable}" --runtime-lib "${LIB:?A6 onboard library directory}" \
-  --build-dir "$BUILD" --output "$BUILD/function" --warmup 1 --rounds 1
+bash tests/fdwic/a6_dsv41_scheduler/test_a6_swa.sh "${DEVICE:?assigned A6 device}"
 ```
 
-prepare 先验证原始记录，再把已转换的 plan 写到 runner 实际读取的 bundle/plan-rank0.bin。核、replay adapter 与 callable 使用该工作树的平台和工具链重建。检查 build.json 的 platform=a6、tasks=16、executions=570，plan-conversion/summary.json 中 t22 为 48 个 1C1V block。run 先在指定设备执行 query device 并核对型号，再用 percounter 运行。反馈 build.json、每轮 console、result.json、总 summary 与退出状态。存在超时时沿用现场 ST 作业的限时与回收方式。
+[测试入口](../test_a6_swa.sh)构建本版本的 percounter、设备查询工具和 SWA 运行包，核对芯片型号后执行 1 次预热和 10 次正式回放。终端第一行给出本次输出目录，test.log 保留完整构建与运行日志。
 
-### 2. 回归与待证接口
-
-- 场景测试沿用 4 个 MIX 通过时的 pytest 平台和设备参数。先对 tests/st/a5/percounter/acquire/test_acquire.py 做 --collect-only，逐类记录 collected、selected、passed、skipped 及原因。SpmdAic 先行，再测 MixedWaves、ReleasesSpmd、Predicate；按每个 case 的实际 task mask 登记支持范围。
-- Graph、GraphPure、GraphSpmd、GraphPredicate 分开跑。若普通 submit 的 mask5 通过而 Graph body 失败，对照 graph_template.h 中 body 解码的 kernel_id、active_mask 与发布到设备的函数槽。TwoVectorSync 的原用例要求同一 block 上两个 AIV 同时驻留，列为硬件语义不适用；补验 mask6/7 经提交接口返回 INVALID_ARGS。区分平台列表遗漏、真实失败、预期排除。
-- Q6 用现场三套编译器和实际平台 include 检查同一份布局断言。逐端记录 SchedulerTaskMetadata.kernel_ids、ChipTaskStorage 的 payload、PercounterControl、AicoreTeardownControl.exit_request 的大小、对齐与偏移。A6 有两个执行 lane；序列化槽位按实际结构取值。黄区报告中的 AIV 窗口 +0x100000 仍标为推断。
-- 观察 t22 是否有 48 个完整 1C1V block 同时获准执行。用单独诊断轮核对 16 个任务、570 个参与实例，记录 30 个可写 buffer 的比较结果；现有 fixture 的零权重覆盖另用两个改写 MIX 核的非零输入核对分片与写回。先确认退出和重复调用，再用新输出目录采 10 轮 L0 并保留样本。
-- release 改读 GM 后，用 A5 回归正常运行、提前退出和重复启动，核对 publish/release、metadata_ready、exit_request 与轮次。去除 A6-VERIFY 后重跑原 MIX 4 项和 SWA；记录探针清理前后构建版本。设备链 orchestrator 单独标注编译或上板覆盖。
-
-首轮反馈填写“工作树版本及现场补丁 / 命令与退出码 / 首个失败函数、task、block、lane / 预期和实际值 / 证据片段”。若设备回放已经完成而 timing 汇总失败，分别记录 golden、退出和计时结果。
-
-
-### 与现场 diff 核对的两项差异
-
-1. 探测工具 aicore_reg_mapping.h 的 InitA6() 只建立 54 个表项，按 res_id 0..53 映射，注释写明 AIV 的 +0x100000 为推断。报告描述的是每 die 35 个候选窗口、缺陷跳号。请分别返回实际平台映射函数与该工具的版本、物理 ID 到 res_id 的换算及已观测的表项。先用已有握手和映射日志核对。当前工具不能作为 70 窗口或所有物理 ID 的验证依据。
-2. lane_loop.h 的第一段等待已观察 aicpu_ready，diff 中第二段 release-wait 再检查同一个值，正常发布后会直接通过。实际放行点由 release_partition 提前到 publish_partition，且两段等待仍读 DATA_MAIN_BASE 的 EXIT。请在发布前取消、发布后首任务前取消、正常完成后复用三种时序下记录各 lane 的 ready、metadata_ready、exit_request、退出和回收状态，区分主动退出与 watchdog 超时。A5 也执行这段代码，应复验原 release 顺序依赖。清理探针时保留 GM 功能修改，按 hunk 审阅。
+交回运行版本、case/build.json、result/summary.json、逐轮输出和退出状态。预期为 16 个计算任务、570 个执行实例，正式 10 轮输出校验通过且正常退场。发生构建或执行错误时，附失败命令、首条具体报错及相应日志，由蓝区修复。寄存器和 L4 的采集项见[黄区测试清单](a6-l4-feedback.md)。

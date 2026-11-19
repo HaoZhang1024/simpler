@@ -23,6 +23,7 @@
 #include <cinttypes>
 #include <cstring>
 
+#include "aicpu/abort_aicore_startup.h"
 #include "aicpu/args_dump_aicpu.h"
 #include "aicpu/aicpu_device_config.h"
 #include "aicpu/device_run_result_base_aicpu.h"
@@ -271,8 +272,8 @@ int32_t AicoreLifecycle::post_handshake_init(Runtime *runtime) {
         }
         cluster_workers[cluster][lane] = worker;
     }
-    static_assert(PLATFORM_CORES_PER_BLOCKDIM == 3, "Scheduler selection assumes one AIC and two AIV lanes");
-    static_assert(PLATFORM_AIV_CORES_PER_BLOCKDIM == 2, "Scheduler selection assumes two AIV lanes per cluster");
+    static_assert(PLATFORM_AIC_CORES_PER_BLOCKDIM == 1);
+    static_assert(PLATFORM_CORES_PER_BLOCKDIM == PLATFORM_AIC_CORES_PER_BLOCKDIM + PLATFORM_AIV_CORES_PER_BLOCKDIM);
     for (int32_t cluster = 0; cluster < aic_count; ++cluster) {
         for (int32_t lane = 0; lane < PLATFORM_CORES_PER_BLOCKDIM; ++lane) {
             if (cluster_workers[cluster][lane] < 0) {
@@ -405,9 +406,17 @@ int32_t AicoreLifecycle::wait_bootstrap_complete(Runtime *runtime) {
 
 int32_t AicoreLifecycle::release_partition(Runtime *runtime, int32_t thread_idx, bool start_execution) {
     if (core_count_ <= 0 || aicpu_thread_num_ <= 0) return -SIMPLER_ERROR_INVALID_ARGS;
-    if (!start_execution) return finish_shutdown_partition(thread_idx, runtime);
     const int32_t lo = static_cast<int32_t>((static_cast<int64_t>(thread_idx) * core_count_) / aicpu_thread_num_);
     const int32_t hi = static_cast<int32_t>((static_cast<int64_t>(thread_idx + 1) * core_count_) / aicpu_thread_num_);
+    if (!start_execution) {
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+        for (int32_t i = lo; i < hi; ++i) {
+            if (cores_[i].reg_addr != 0) publish_aicore_startup_abort(&runtime->dev.workers[i]);
+        }
+        wmb();
+#endif
+        return finish_shutdown_partition(thread_idx, runtime);
+    }
     AicpuThreadLifecycleTrace *trace = thread_lifecycle_trace(thread_idx);
     if (trace != nullptr && lifecycle_timing_enabled()) trace->register_release_start_cycles = get_sys_cnt_aicpu();
     wmb();

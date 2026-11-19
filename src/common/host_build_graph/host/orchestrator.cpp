@@ -38,6 +38,7 @@
 
 #include "assert_compat.h"
 #include "common/host_phase_kind.h"
+#include "common/platform_config.h"
 #include "common/unified_log.h"
 #include "host_build_graph/host/dep_gen_host_graph.h"
 #include "host_build_graph/host/dep_compute.h"
@@ -798,16 +799,14 @@ TaskOutputTensors OrchestratorState::submit_task(const MixedKernels &mixed_kerne
 
     int16_t block_num = args.launch_spec.block_num();
 
-    // Normalize single-AIV tasks: if only aiv1 is set (no aic, no aiv0), move
-    // it to the aiv0 slot.  This guarantees the dispatch path can always use
-    // SubtaskSlot::AIV0 for single-AIV shapes without inspecting active_mask.
-    // Mixed tasks (AIC+AIV) keep their original AIV identity so the correct
-    // hardware channel (AIV0→AIC vs AIV1→AIC) is used at dispatch time.
+    // Preserve the physical AIV channel of a MIX task on a two-Vector cluster.
     MixedKernels normalized = mixed_kernels;
-    bool has_aic = active_mask.has_aic();
-    bool has_aiv0 = active_mask.has_aiv0();
-    bool has_aiv1 = active_mask.has_aiv1();
-    if (!has_aic && has_aiv1 && !has_aiv0) {
+    if (PLATFORM_AIV_CORES_PER_BLOCKDIM == 1 && active_mask.has_aiv0() && active_mask.has_aiv1()) {
+        report_fatal(SIMPLER_ERROR_INVALID_ARGS, __FUNCTION__, "two Vector kernels require two AIV lanes per cluster");
+        return TaskOutputTensors{};
+    }
+    if (active_mask.has_aiv1() && !active_mask.has_aiv0() &&
+        (PLATFORM_AIV_CORES_PER_BLOCKDIM == 1 || !active_mask.has_aic())) {
         normalized.aiv0_kernel_id = normalized.aiv1_kernel_id;
         normalized.aiv1_kernel_id = INVALID_KERNEL_ID;
         active_mask = normalized.to_lanes();

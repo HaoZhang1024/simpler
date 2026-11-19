@@ -1,17 +1,6 @@
 # A5 / A6 单卡 percounter SWA 时延对照
 
-更新于 2026-11-19。硬件、工具链和本轮用核数见[平台对照表](a6-result.md#21-拓扑与参数)。后续收到新样本时，按其 runtime、用例、采集级别和轮次更新对应行，并保留样本链接。
-
-## 整图
-
-| 测量项 | A5 | A6 | A6 − A5 |
-| ------ | -- | -- | ------- |
-| L0 AICore wall（µs） | 185.173 | 265.768 | +80.595 |
-| L0 Device（µs） | 296.698 | 357.712 | +61.014 |
-| L4 首 kernel 开始 → 末 kernel 结束（µs） | 320.997 | 453.489 | +132.492 |
-| L4 计算任务 / kernel 区间数 | 16 / 578 | 16 / 570 | 相同任务图，MIX 的执行实例数有变化 |
-
-L0 各预热 1 轮、正式 10 轮，表中取均值。A5 runtime 为 26b0511f3，A6 为 b921a01b 加 SWA 入口和黄区平台补丁。L4 各取一个通过输出校验的正式轮，A5 无预热，A6 取预热后的 run1；两端均以本轮首 kernel 开始为零点。[A5 L0 样本](../results/2026-11-17-a5/samples.csv) · [A6 L0 记录](a6-result.md) · [A5 L4 汇总](../results/2026-11-19-a5-percounter-l4/task-comparison.json) · [A6 L4 汇总](a6-l4-task-comparison.json)
+硬件、软件版本和 L0 实测见[A6 / A5 对比](a6-a5-comparison.zh-CN.md)。以下取两端同级 L4 的各一个正式轮，A5 无预热，A6 取预热后的 run1。[A5 逐任务数据](../results/2026-11-19-a5-percounter-l4/task-comparison.json) · [A6 逐任务数据](a6-l4-task-comparison.json)
 
 ## t22、t25、t35 的时间差
 

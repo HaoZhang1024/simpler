@@ -15,6 +15,8 @@
 
 #include "orchestration_api.h"  // NOLINT(build/include_subdir)
 
+#include "common/platform_config.h"
+
 #define FUNC_SPMD_MIX_AIC 0
 #define FUNC_SPMD_MIX_AIV0 1
 #define FUNC_SPMD_MIX_AIV1 2
@@ -33,7 +35,11 @@ void mix_spmd_layer(const GraphTaskArgs &args, const CohortConfig &config) {
     MixedKernels kernels;
     kernels.aic_kernel_id = FUNC_SPMD_MIX_AIC;
     kernels.aiv0_kernel_id = FUNC_SPMD_MIX_AIV0;
-    kernels.aiv1_kernel_id = FUNC_SPMD_MIX_AIV1;
+    if (PLATFORM_AIV_CORES_PER_BLOCKDIM >= 2) {
+        // 3-slot platforms run the same AIV kernel on both AIV lanes;
+        // single-AIV platforms keep the Mix shape as AIC + AIV0.
+        kernels.aiv1_kernel_id = FUNC_SPMD_MIX_AIV1;
+    }
 
     CoreTaskArgs task_args;
     task_args.add_inout(args.tensor(0).ref());

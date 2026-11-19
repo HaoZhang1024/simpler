@@ -94,14 +94,15 @@ class TestGraphExecutionMixSpmdHostBuildGraphA5(SceneTestCase):
         nonzero = torch.nonzero(cache_line_heads, as_tuple=False)
         assert nonzero.numel() > 0, "SPMD Graph did not execute any non-zero block"
         cluster_count = int(cache_line_heads.max().item()) + 1
-        assert 1 < cluster_count <= MAX_CLUSTERS
+        slots_per_block = params.get("slots_per_block", SLOTS_PER_BLOCK)
+        assert 1 < cluster_count <= (TOTAL_FLOATS // FLOATS_PER_CACHE_LINE) // slots_per_block
         if params.get("blocks"):
             assert cluster_count == params["blocks"], "partial cohort did not execute its requested block count"
 
         expected = torch.zeros_like(cache_line_heads)
         for block_idx in range(cluster_count):
-            begin = block_idx * SLOTS_PER_BLOCK
-            expected[begin : begin + SLOTS_PER_BLOCK] = float(block_idx)
+            begin = block_idx * slots_per_block
+            expected[begin : begin + slots_per_block] = float(block_idx)
         assert torch.equal(cache_line_heads, expected)
 
     def _run_and_validate_l2(self, worker, callable_obj, case, **kwargs):

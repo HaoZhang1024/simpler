@@ -1,6 +1,6 @@
 # A6 percounter 移植任务书
 
-硬件与 SWA 对照表更新于 2026-11-19。黄区移植起点：`a6-swa-port` 分支 pin `b921a01b`。
+更新：2026-11-18 22:10。代码基线：`a6-swa-port` 分支 pin `b921a01b`。
 本文件自包含：硬件实测事实、已完成全部代码改动（意图+机制+仓库内相对路径）、验证状态、下一步任务（含验收标准）。
 精确 diff 见配套归档 `a6-port-tracked.patch`（已跟踪文件）与 `src-a6-layer.tar.gz`（新增 `src/a6/` 平台层目录）。
 
@@ -8,37 +8,31 @@
 
 ## 1. 任务背景
 
-把 simpler 的 percounter 调度运行时移植到 A6（Ascend960DT_966B7，dav-920r1）。A6 平台层（`src/a6/`）已落地，构建链已通，**单-MIX 冒烟已全绿**（`TestPercounterMix` 4 个 case 上板真执行 + golden 校验通过）。后续完整 SWA 已通过单卡回放与输出校验。当前分析 t22 的计数等待与 t25/t35 的核复用时间。见[SWA 时延对照](swa-l4-comparison.zh-CN.md)。
+把 simpler 的 percounter 调度运行时移植到 A6（Ascend960DT_966B7，dav-920r1）。A6 平台层（`src/a6/`）已落地，构建链已通，**单-MIX 冒烟已全绿**（`TestPercounterMix` 4 个 case 上板真执行 + golden 校验通过）。剩余：run-entry CLI 适配、其余 9 个测试类验证、SWA 端到端回放、诊断探针清理。
 
 ## 2. 硬件实测事实（A6，设备实测，决策依据）
 
 ### 2.1 拓扑与参数
 
-| 项目 | A5 | A6 |
-| ---- | -- | -- |
-| 设备 / Host | Ascend950DT_9581 / aarch64 | Ascend960DT_966B7 / x86_64 |
-| MIX 每组 | 1 AIC + 2 AIV | 1 AIC + 1 AIV |
-| 平台配置上限（MAX_BLOCKDIM） | 36 组，36 AIC + 72 AIV | 54 组，54 AIC + 54 AIV，每 die 27 个有效组 |
-| 本次 SWA L4 实际执行 kernel 的核 | **32 AIC + 64 AIV，共 96** | **54 AIC + 54 AIV，共 108** |
-| SSBUF / 簇 | 3 KiB；运行时预留 1024 B | 2 KiB；运行时预留 256 B，写偏移 ≥2048 触发 errcode 271 |
-| profiling 计时器 | 平台配置 1 GHz | L4 metadata 为 1 GHz；query 另报 Cube 主频 1800 MHz、8 个 AICPU |
-| CANN / ccec | 安装标签 9.3.0，compiler/version.info 报 9.2.0；clang 15.0.5 | 现场 CANN 9.3.0；clang 15.0.5 |
-| PTO-ISA | 83b1b2b5 | 同一 pin |
+| 项           | A5                              | A6                                                           |
+| ------------ | ------------------------------- | ------------------------------------------------------------ |
+| 每 block 核  | 1 AIC + 2 AIV（3 slot）         | **1 AIC + 1 AIV（2 slot）**                                  |
+| MAX_BLOCKDIM | 36                              | **54**（每 die 27 有效，缺陷跳号）                           |
+| worker 池    | 108                             | 108（形状不同）                                              |
+| cluster 容量 | 36                              | **54**                                                       |
+| SSBUF/簇     | 3 KiB                           | **2 KiB**（偏移 ≥2048 写即 errcode 271）                     |
 | AICore 映射  | 每 AIC 3 MiB 窗（AIV 子窗在内） | **每 res_id 独立 2 MiB 窗**（70 窗，每 die 35，die 交错；AIV 推断在 +0x100000，同 A5 首偏移） |
 | coreid       | —                               | die0: AIC 0..34/AIV 35..69；die1: AIC 70..104/AIV 105..139   |
 | MIX 编译     | —                               | `dav-920r1`（cube+vec 双子核，`__DAV_CUBE__`/`__DAV_VEC__`），ELF `e_flags=0xa60000`，`ld -m aicorelinux`；一次 launch 同拉 AIC+AIV |
-
-资源上限来自平台配置；本轮核数取实际执行过 kernel 的 worker。来源见 [A5 平台配置](../../../../src/a5/platform/include/common/platform_config.h)、[A5 实测环境](a5-results-2026-11-17.zh-CN.md)、[A6 query 与 SDK](a6-env-reprot.md)、[两侧 L4 对照](swa-l4-comparison.zh-CN.md)。
 
 平台常量同名定义于 `src/a5` / `src/a6` 的 `platform/include/common/platform_config.h`（`PLATFORM_CORES_PER_BLOCKDIM`、`PLATFORM_AIV_CORES_PER_BLOCKDIM`、`PLATFORM_SSBUF_SIZE`、`PLATFORM_MAX_BLOCKDIM` 等），按编译目标 -I 切换。**任何 A5 语义的 3-slot/2-AIV 假设在 A6 都要用这些常量参数化。**
 
 ### 2.2 寄存器实测
 
-| 寄存器或资源 | A6 现场结论 |
-| ------------ | ----------- |
-| DATA_MAIN_BASE（0xD0） | A5 release/exit 使用 AICPU MMIO → AICore SPR。A6 现场 MMIO 回读一致，AIC 侧未观察到写入值；移植版通过 GM 发布 aicpu_ready 和 exit_request。 |
-| COND（0x5108） | A6 现场 AIC set_cond 与 AICPU MMIO 握手未通，探针采用 GM-only 配置。 |
-| CntNotify 与 GM 同址访问 | A5 参考图采用 32C+64V；A6 黄区正在实测。收到带读写指令、返回值、屏障、实际核数和计时频率的排名表后更新两侧时延。[测试方法与 A5 参考值](a6-register-benchmark.zh-CN.md) |
+| 寄存器                                                       | 结论                                                         |
+| ------------------------------------------------------------ | ------------------------------------------------------------ |
+| `DATA_MAIN_BASE`（0xD0，AIC SPR；MMIO 落点 dmb_offset=0xD0） | **MMIO→SPR 链死**：AICPU 写 + MMIO 回读全窗口一致（IDLE=0x7ffffffd），但 AIC `read_reg(RegId::DATA_MAIN_BASE)` 永远观察不到 → percounter lane 信号已改 GM（见 3.5） |
+| COND（0x5108）                                               | 实测关闭（AIC `set_cond` ↔ AICPU MMIO 不通）。探测工具用 `cond_offset=0xFFFFFFFF` GM-only 哨兵跳过 |
 | IPC（0x5500/0x5520）                                         | HBG 通路使用，percounter 未用，未验证                        |
 | `PROCESS_CP2` / `RES_L2BUFF` / `RES_C2C`                     | halResMap 拒绝（rc=65534/17）；`RES_DBG_ADDR` 4KiB、`RES_HSCB_AICORE` 0x4096B 可映射 |
 
@@ -335,13 +329,15 @@ Graph 系 4 类实测未触发 3.11 预警的 graph_template mask6/7 body 任务
 - A5 采集条件（归档 README）：同事环境 A5 dev card 1，runtime 26b0511f3，SWA a9046d203，PTO-ISA 83b1b2b5（**与 A6 同版**），DFX+ORCH+SCHED，L4，0 warmup + 1 round，output check PASS。CSV 语义：`core_id, source_task_id, start_us, end_us`（原始 SWA 任务号，零点 = 首 kernel 起始）。
 - **A5 拓扑修正**：本次 A5 运行实际 **96 核 = 32 AIC + 64 AIV（32 簇 × 1C2V）**，非旧记录的 36 簇/108 核。证据：core 推断（AIC 任务 t16/t19/t29/t33 恰落 32 个不同核，与 64 个 AIV 核零重叠）+ 归档 README "96 个实际执行 kernel 的 core ID" + 用户确认（"是32+64"）。§7.7 第 1 条的波次前提随之修正（A5 AIV 为 64 非 72），结论方向不变。
 
-两侧首 kernel 开始到末 kernel 结束的 L4 窗口分别为 320.997 和 453.489 µs。L0 的同口径历史均值和三任务实测差值统一见[时延对照表](swa-l4-comparison.zh-CN.md)。t22 的前驱间隙、t25/t35 的复用间隔均来自 L4；各段对生产时延的影响用同卡 L0 配对实验衡量。
+**窗口对比（L4 同级，仪器化）**：A5 321.00µs vs A6 453.49µs → **+132.5µs**。仪器化/生产比 A5 1.734 / A6 1.707，折算系数 ~0.577；+132.5 × 0.577 ≈ +76.5µs ≈ 生产差 +80µs（AICore 0.1852→0.2658ms）→ **仪器化窗口解释生产差的 ~96%，归因闭合**。阶段结构两边完全一致（16 任务同序）。
 
-现场同轮汇总还记录到以下差异：
+**分项**：
 
-- t29 单块均值比为 0.96，任务跨度由 34.7 增到 44.1 µs，最长单块由 33.96 增到 38.41 µs；t9 跨度增加约 6.3 µs。两项均需结合各核启动时间分析拖尾。
-- 阶段间隙合计从 85.8 增到 103.3 µs（+17.5 µs）。其中 t22 的“最晚可见计算前驱结束 → 首 dispatch”按两份 JSON 重算为 +11.173 µs。
+1. **单 kernel 慢化（主因，仪器化 ~+75-85µs）**：中等多块任务单次执行普遍 1.2-1.7× 慢——AIV：t22 1.77、t18 1.73、t25 1.67、t17 1.68、t20 1.40、t35 1.26、t8/t31 1.20；AIC：t22 1.65、t18 1.53、t16 1.49、t28 1.44、t33 1.42、t19 1.15。**大 GEMM t29 0.96×、微元 t9 0.96×、t12 1.03× 不变**。模式 = kernel 越大越不受影响 → 指向 A6 每块/每 kernel 固定成本（GM claim/observe 信号路径轮询、SSBUF 256B 区域换入换出 3.4），大 kernel 摊薄固定开销。
+2. **波次退化（+~20µs）**：仅 t25/t35 翻转（64 块：A5 64 AIV=1 波 → A6 54 AIV=2 波，波内单块时长两边相同：t25 10.98/11.02µs、t35 9.06µs）；t9 80 块两边均 2 波。A6 双波批间空隙中位 ~13.7-13.9µs（A5 t9 为 11.2µs）。
+3. **阶段间空隙（+17.5µs）**：A5 85.8µs（26.7%）vs A6 103.3µs（22.8%）；最大增量在 t22 前（+11.1µs）。
+4. **散布/拖尾（~+15µs）**：t29 单块不变但 span 34.7→44.1µs（max 33.96→38.41、尾 4.3→14.7µs）；t9 span +6.3µs 同类。
 
 **MIX 分型时长**（均值 µs，AIC/AIV 分列）：t18 AIC 13.45→20.58、AIV 5.00→8.66；t22 AIC 13.46→22.27（块 24→48：1C2V→1C1V 折叠致 AIC 数翻倍）、AIV 13.00→23.02；t28 AIC 14.20→20.48、AIV 20.04→26.06（AIV 数 64→32，单 AIV 负担 2×）。busy 总量：A5 6.12ms/96 核 vs A6 8.04ms/108 核（+31%）。
 
-当前待验证的两处是 t22 到达计数的可见时间和 t35 最后一块复用同核的间隔。见[同轮事件与黄区待办](a6-l4-feedback.md)。
+**给蓝区的优化方向（按杠杆排序）**：① 单 kernel 固定开销（GM 信号 claim/observe 轮询粒度/退避、SSBUF 256B 换入换出）——覆盖全部中等任务，最大杠杆；② t25/t35 的 block_num 对 54 AIV 取整（消除双波各 +~20µs 仪器化）；③ t22 前空隙（fanin 计数 + 轮询粒度）。t29 GEMM 计算本身无退化，拖尾属调度散布

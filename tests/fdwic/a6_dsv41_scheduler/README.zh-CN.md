@@ -1,31 +1,15 @@
 # SWA 独立用例
 
-**A5 的独立 SWA 已跑通；已有 C++ 和输入足以完成构建、执行与校验，全流程不调用 PyPTO／PTOAS。黄区已跑通 A6 单卡 percounter SWA；当前按两端 L4 对齐 t22、t25、t35，并在黄区测量 CntNotify 时延。**
+独立运行 DSV4.1 的 SWA 子层。蓝区维护 Simpler 平台、percounter 和测试代码；黄区在分配到的 A6 上构建、执行并反馈结果。
 
-| 问题 | 当前结论 |
-| ---- | -------- |
-| 测什么 | DSV4.1 的 SWA 注意力子层，含 mHC、量化、Q/KV 投影、缓存更新、Attention 和输出投影 |
-| 规模 | 19 个核、16 个计算任务；A5 为 578 个执行实例，A6 转换为 570 个；独立切片单卡运行 |
-| A5 结果 | HBG／percounter 均逐轮校验通过；L0 AICore 均值分别为 0.267843／0.185173 ms |
-| 已完成的提取 | 只编 SWA 所需核，随目录保存固定输入和参考，复用生产 runner 与原 PR 统计器 |
-| A6 状态 | 两个 MIX 核已改为 1C1V，19／19 通过本地编译／链接／机器码提取；plan 转换通过离线检查。黄区报告完整 SWA 正式 10 轮通过，AICore L0 均值 265.768 µs、Device 均值 357.712 µs，见[现场结果](doc/a6-result.md)与[下一轮命令](doc/usage.zh-CN.md#黄区接续测试) |
-| 依赖边界 | 仍需 CANN、PTO-ISA 和匹配的 Simpler；解除的是 PyPTO／PTOAS 的代码生成依赖 |
-
-SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 等待。因此它适合验证计算与调度，双卡 MoE／defer_wait 需要后续独立验证。
-
-## 文档索引
-
-| 要看什么 | 文档 | 内容 |
-| -------- | ---- | ---- |
-| 怎么构建、运行和复测 | [使用方法](doc/usage.zh-CN.md) | 命令、参数、输出位置、修改后需要重编什么 |
-| 为什么不依赖 PyPTO／PTOAS | [执行原理](doc/execution.zh-CN.md) | 已有材料、真实执行路径、依赖边界、全新算子的生成流程 |
-| A6 要改哪里、如何验证 | [迁移分析](doc/a6-migration.zh-CN.md) | percounter 范围、共享依赖、MIX 核与 ABI、实施顺序、已确认范围、待查问题、验收要求 |
-| A5 / A6 硬件和环境 | [硬件对照表](doc/a6-result.md#21-拓扑与参数) | 型号、平台配置上限、本轮实际核数、SSBUF、计时器及工具链 |
-| A5 / A6 SWA 时延 | [时延对照表](doc/swa-l4-comparison.zh-CN.md) | L0 AICore / Device，整图 L4 与 t22、t25、t35 的同口径差值 |
-| 黄区如何测同址寄存器访问 | [GM 与 CntNotify 并发测试](doc/a6-register-benchmark.zh-CN.md) | 96 核完成名次、统计脚本、t22 到达计数与 SWA 配对验证 |
-| 后续适配如何推进 | [具体任务](doc/a6-adaptation-tasks.zh-CN.md) | 两份 diff 的集成范围、三端 ABI、启退回归、同版 L0 与任务耗时分析 |
-| 交给 A6 端查什么 | [环境核对与补充查证任务](doc/a6-environment.zh-CN.md#5-黄区-agent-测试与反馈计划) | 离线复现、worker 映射实测、Q1–Q7、单 MIX 与 SWA 验收、反馈模板 |
-| A5 跑出了什么结果 | [2026-11-17 复测报告](doc/a5-results-2026-11-17.zh-CN.md) | 性能与波动、校验范围、版本、失败记录、复现与证据 |
+| 入口 | 用途 |
+| ---- | ---- |
+| [A6 / A5 对比](doc/a6-a5-comparison.zh-CN.md) | 硬件、工具链、SWA 实测时延 |
+| [黄区构建与测试](doc/usage.zh-CN.md#黄区接续测试) | 从分支源码构建 percounter 和 SWA，用单卡校验输出 |
+| [执行原理](doc/execution.zh-CN.md) | 19 个已有 kernel、任务图和固定输入；A6 的两处 MIX 变更 |
+| [三任务 L4 对照](doc/swa-l4-comparison.zh-CN.md) · [黄区测试清单](doc/a6-l4-feedback.md) | t22 的计数等待、t25/t35 的核复用 |
+| [GM 与 CntNotify 测量](doc/a6-register-benchmark.zh-CN.md) | 当前实验的计时和结果格式 |
+| [A6 现场原始报告](doc/a6-result.md) · [A5 实测记录](doc/a5-results-2026-11-17.zh-CN.md) | 两侧原始测量；A6 报告中的历史补丁可在[当时的目录](https://github.com/HaoZhang1024/simpler/tree/b36fdcca5/tests/fdwic/a6_dsv41_scheduler/doc)查阅 |
 
 ## 代码与数据
 

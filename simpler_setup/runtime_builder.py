@@ -18,7 +18,7 @@ from pathlib import Path
 from typing import Optional
 
 from .environment import PROJECT_ROOT
-from .platform_info import TARGETS, load_build_config, parse_platform
+from .platform_info import TARGETS, discover_runtimes, load_build_config, parse_platform
 from .runtime_compiler import RuntimeCompiler
 
 logger = logging.getLogger(__name__)
@@ -41,7 +41,7 @@ def platform_embeds_pto_isa(platform: str) -> bool:
     arch, variant = parse_platform(platform)
     if variant != "onboard":
         return False
-    return arch in {"a2a3", "a5"}
+    return arch in {"a2a3", "a5", "a6"}
 
 
 def _runtime_source_inputs(repo_root: Path) -> dict:
@@ -257,7 +257,7 @@ class RuntimeBuilder:
         Initialize RuntimeBuilder with platform selection.
 
         Args:
-            platform: Target platform ("a2a3", "a2a3sim", "a5", or "a5sim")
+            platform: Target platform registered in platform_info.PLATFORM_MAP
         """
         self.platform = platform
         self._arch, self._variant = parse_platform(platform)
@@ -268,12 +268,10 @@ class RuntimeBuilder:
         self.runtime_dir = runtime_root / "src" / self._arch / "runtime"
 
         # Discover available runtime implementations
-        self._runtimes = {}
-        if self.runtime_dir.is_dir():
-            for entry in sorted(self.runtime_dir.iterdir()):
-                config_path = entry / "build_config.py"
-                if entry.is_dir() and config_path.is_file():
-                    self._runtimes[entry.name] = config_path
+        self._runtimes = {
+            name: self.runtime_dir / name / "build_config.py"
+            for name in discover_runtimes(self._arch, runtime_base=self.runtime_dir)
+        }
 
         # Create platform-configured compiler
         self._runtime_compiler = RuntimeCompiler.get_instance(platform=platform)

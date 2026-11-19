@@ -18,6 +18,15 @@
 #include "common/unified_log.h"
 #include "runtime.h"
 
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+// Publish only after this run's report has been accepted. Before READY the lane
+// may still see a previous launch's nonce in the device-owned teardown tail.
+inline void publish_aicore_startup_abort(Handshake *report) {
+    report->aicpu_ready = AICORE_EXIT_SIGNAL;
+    cache_flush_range(report, sizeof(*report));
+}
+#endif
+
 // Called once by callback 0 after the whole entry cohort rejected execution.
 // No executor has initialized, and affinity TLS may be unavailable. Discover
 // only this launch's reports and retire without publishing tasks or READY.
@@ -59,6 +68,9 @@ inline int32_t abort_aicore_startup(Runtime *runtime, uint64_t regs_base, uint64
             // index being the same, as the normal retirement path does.
             targets[count] = {regs[physical], &gates[i]};
             ids[count++] = i;
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+            publish_aicore_startup_abort(report);
+#endif
         }
     } while (remaining != 0 && get_sys_cnt_aicpu() <= discovery_deadline);
 
