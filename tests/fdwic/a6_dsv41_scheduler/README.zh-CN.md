@@ -5,7 +5,7 @@
 | 入口 | 用途 |
 | ---- | ---- |
 | [A6 / A5 对比](doc/a6-a5-comparison.zh-CN.md) | 硬件、工具链、SWA 实测时延 |
-| [黄区构建与测试](doc/usage.zh-CN.md#黄区接续测试) | 从分支源码构建 percounter 和 SWA，用单卡校验输出 |
+| [本轮黄区交接单](doc/usage.zh-CN.md#黄区接续测试) | 交付版本、已验证的代码、正在跑的 CntNotify 实验、SWA 单卡命令及回传文件 |
 | [执行原理](doc/execution.zh-CN.md) | 19 个已有 kernel、任务图和固定输入；A6 的两处 MIX 变更 |
 | [三任务 L4 对照](doc/swa-l4-comparison.zh-CN.md) · [黄区测试清单](doc/a6-l4-feedback.md) | t22 的计数等待、t25/t35 的核复用 |
 | [GM 与 CntNotify 测量](doc/a6-register-benchmark.zh-CN.md) | 当前实验的计时和结果格式 |

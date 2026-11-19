@@ -111,14 +111,45 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
-在 A6 的 Linux 环境使用本分支 Simpler、仓库 pin 对应的 build/pto-isa、现场 CANN 和项目 venv。Host 构建需要 CMake 3.20 以上及 Ninja。使用现场分配的一个设备；若当前 CntNotify 作业正在占用该设备，等它结束后执行。蓝区维护源码、构建脚本和诊断点。黄区执行以下命令并回传结果。
+**2026-11-19 交接。** 本轮有两件事：收回正在跑的 CntNotify 原始测量；使用已提交的源码，在 A6 上从构建跑到 SWA 输出校验。黄区执行并回传，蓝区负责改码、算时延分布和对比 A5。SWA 固定使用 `a6-swa-port` 分支上的[代码提交 cf78bd31a](https://github.com/HaoZhang1024/simpler/commit/cf78bd31a28aedeed4a43592c43f9203b6ce4348)。
 
-从 Simpler 根目录执行下面一条命令，DEVICE 填现场分配的设备号。使用 Linux Git checkout，保留 src/a6/runtime 符号链接。
+### 本轮已交付和验证的代码
+
+| 代码 | 蓝区已经验证 | 本次黄区覆盖 |
+| ---- | ------------ | ------------ |
+| [A6 平台](../../../../src/a6/platform/)和 [percounter 启停握手](../../../../src/a5/runtime/percounter/aicore/lane_loop.h)：接入 1 AIC + 1 AIV 的资源组，经 GM 发布启动、退出信号 | A6 runtime 与 dispatcher 已预编译；2 项 CPU 握手测试通过，覆盖前次启动信号残留、启动中止及超时 | SWA 在实际分配的 966B7 上启动，连续回放并正常退出 |
+| [plan 转换](../prepare_plan.py)、[资源检查](../test_resources.py)和[固定输入检查](../test_fixture.py)：把 t22、t28 转成 1C1V，沿用原输入和参考输出 | 6 项资源测试、2 项输入测试通过。A6 plan 有 16 个计算任务、570 个执行实例；t22 至少需要 48 对核 | 由脚本转换同一份 plan，回放后对照参考输出 |
+| [SWA 组包](../prepare.py)、[单卡入口](../test_a6_swa.sh)和[结果汇总](../run.py) | 预构建已生成 19 个 kernel、native-runner、replay、plan 和 callable。预构建目录缺少 Git 提交信息，最后一步写入 `build.json` 未完成 | 从固定 Git 提交生成 `case/build.json`，完成 1 轮预热和 10 轮 L0 正式测量 |
+
+此前黄区现场版本的实测结果保存在[A6 原始报告](a6-result.md)。本轮验收以上述提交的新输出为准。
+
+### 1. 收回当前 CntNotify 作业
+
+让正在运行的作业按原配置结束。回传**现有的逐轮逐核原始数据和运行日志**；一并带上已有的运行命令或配置、核数、计时频率及各组对应的操作（GM ld/st、GM atomic、CntNotify）。若作业只跑完部分组合，回传已生成的数据和报错日志即可。蓝区用[统计脚本](../register_ranks.py)计算完成名次、分位数和相邻间隔。本轮沿用现场正在跑的 probe。
+
+### 2. 在分配到的 A6 上执行 SWA
+
+使用已加载现场 CANN 9.3.0 的 Linux shell，从用于 SWA 的 Simpler 仓库根目录执行。沿用现场的项目 `.venv`、CMake、Ninja，以及 `build/pto-isa` 下的 PTO-ISA checkout。同一块卡由 CntNotify 释放后再开始。
 
 ```bash
-bash tests/fdwic/a6_dsv41_scheduler/test_a6_swa.sh "${DEVICE:?assigned A6 device}"
+(
+  set -e
+  git fetch https://github.com/HaoZhang1024/simpler.git refs/heads/a6-swa-port
+  git switch --detach cf78bd31a28aedeed4a43592c43f9203b6ce4348
+  source .venv/bin/activate
+  test "$(git -C build/pto-isa rev-parse HEAD)" = "$(cat pto_isa.pin)" || {
+    echo "PTO-ISA 版本与 pto_isa.pin 不一致"; exit 1
+  }
+  read -rp '本次分配的 A6 设备号: ' DEVICE
+  bash tests/fdwic/a6_dsv41_scheduler/test_a6_swa.sh "$DEVICE"
+)
 ```
 
-[测试入口](../test_a6_swa.sh)构建本版本的 percounter、设备查询工具和 SWA 运行包，核对芯片型号后执行 1 次预热和 10 次正式回放。终端第一行给出本次输出目录，test.log 保留完整构建与运行日志。
+脚本依次构建 A6 percounter、设备查询工具和 SWA 包，核对芯片型号后运行。开头的 `SWA output:` 给出本次目录。成功时终端最后的 `percounter` 行显示 `PASS`；`result/summary.json` 中 `status` 为 `passed`，该 runtime 的 `rounds` 为 10、`numerical_validation` 为 `true`。
 
-交回运行版本、case/build.json、result/summary.json、逐轮输出和退出状态。预期为 16 个计算任务、570 个执行实例，正式 10 轮输出校验通过且正常退场。发生构建或执行错误时，附失败命令、首条具体报错及相应日志，由蓝区修复。寄存器和 L4 的采集项见[黄区测试清单](a6-l4-feedback.md)。
+| 执行结果 | 黄区回传 |
+| -------- | -------- |
+| SWA 成功 | 本次目录的 `test.log`、`case/build.json` 和整个 `result/`。其中 `result/summary.json` 已含逐轮 AICore、Device 时延（ms）和校验状态 |
+| SWA 构建或运行失败 | 回传 `test.log` 及已生成的 `case/build.json`、`result/`。若还没打印 `SWA output:`，直接回传终端报错 |
+
+收到这两份结果后，蓝区更新[A6 / A5 对比](a6-a5-comparison.zh-CN.md)。已有 t22、t25、t35 的 [L4 反馈](a6-l4-feedback.md)继续用于分析；本轮黄区执行到上表即完成。
