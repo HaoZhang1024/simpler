@@ -181,3 +181,310 @@ index 76c21172b..29b2699ae 100644
   */
  inline const PmuEventConfig *pmu_resolve_event_config_a5(PmuEventType event_type) {
 
+diff --git a/a5/platform/include/aicpu/platform_regs.h b/a6/platform/include/aicpu/platform_regs.h
+index f1a796480..5dbac87d5 100644
+--- a/a5/platform/include/aicpu/platform_regs.h
++++ b/a6/platform/include/aicpu/platform_regs.h
+@@ -51,7 +51,7 @@ void set_platform_regs(uint64_t regs);
+  * Get the platform register base address array.
+  * Called by runtime AICPU executor code that needs register access.
+  *
+- * On DAV_3510 the per-core halResMap(RES_AICORE) mapping covers both the
++ * On DAV_A6 the per-core halResMap(RES_AICORE) mapping covers both the
+  * AICore SPR page (DATA_MAIN_BASE, COND, CTRL) and the PMU MMIO page, so
+  * PMU helpers also read counters through this same register-base array.
+  *
+diff --git a/a5/platform/include/host/host_regs.h b/a6/platform/include/host/host_regs.h
+index acbfccb13..fc7bcf0e7 100644
+--- a/a5/platform/include/host/host_regs.h
++++ b/a6/platform/include/host/host_regs.h
+@@ -4,16 +4,19 @@
+  * CANN Open Software License Agreement Version 2.0 (the "License").
+  * Please refer to the License for details. You may not use this file except in compliance with the License.
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
++ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+  * See LICENSE in the root of the software repository for the full text of the License.
+  * -----------------------------------------------------------------------------------------------------------
+  */
+ /**
+  * @file host_regs.h
+- * @brief AICore register address retrieval via CANN HAL APIs
++ * @brief A6 (Ascend960DT_966B7) AICore register address retrieval via CANN HAL
+  *
+- * Provides register base addresses for AICPU to perform MMIO-based
+- * task dispatch to AICore cores.
++ * A6 measured layout (onboard-001): halResMap(RES_AICORE, PROCESS_CP1, res_id)
++ * returns one independent 2 MiB MMIO window per res_id, res_id 0..53 valid.
++ * Each window holds one 1C1V block: AIC sub-core at +0x0 and AIV sub-core at
++ * +0x100000 (stride inferred from the 2 MiB window size; pending on-device
++ * verification).
+  */
+ 
+ #ifndef PLATFORM_HOST_HOST_REGS_H_
+@@ -27,26 +30,26 @@
+ class MemoryAllocator;
+ 
+ // =============================================================================
+-// DAV_3510 Register Mapping Parameters
++// A6 Register Mapping Parameters (measured onboard-001)
+ // =============================================================================
+ 
+ /**
+- * Register address stride for sub-cores within an AICore
+- * Each sub-core (AIC, AIV_0, AIV_1) has a 1M register space
++ * Register address stride for sub-cores within an AICore block
++ * Each sub-core (AIC, AIV) has a 1M register space
+  */
+ constexpr uint64_t REG_SUB_CORE_STRIDE = 0x100000ULL;
+ 
+ /**
+- * Mapping region size per AICore
+- * Covers all 3 sub-cores (1 AIC + 2 AIV) = 3M total
++ * Mapping region size per AICore block (halResMap len, measured)
++ * Covers both sub-cores (1 AIC + 1 AIV) = 2M total
+  */
+-constexpr uint32_t REG_AICORE_MAP_SIZE = 0x300000;
++constexpr uint32_t REG_AICORE_MAP_SIZE = 0x200000;
+ 
+ /**
+- * Register offsets for AIV sub-cores relative to AICore base
++ * Register offset for the AIV sub-core relative to the AICore block base
++ * A6 is 1C1V: there is no second AIV.
+  */
+-constexpr uint64_t REG_AIV_FIRST_OFFSET = REG_SUB_CORE_STRIDE;       // 1M
+-constexpr uint64_t REG_AIV_SECOND_OFFSET = 2 * REG_SUB_CORE_STRIDE;  // 2M
++constexpr uint64_t REG_AIV_FIRST_OFFSET = REG_SUB_CORE_STRIDE;  // 1M (inferred)
+ 
+ /**
+  * Initialize AICore register addresses for runtime
+diff --git a/a5/platform/onboard/host/host_regs.cpp b/a6/platform/onboard/host/host_regs.cpp
+index 593091f41..dfbd5f433 100644
+--- a/a5/platform/onboard/host/host_regs.cpp
++++ b/a6/platform/onboard/host/host_regs.cpp
+@@ -4,13 +4,21 @@
+  * CANN Open Software License Agreement Version 2.0 (the "License").
+  * Please refer to the License for details. You may not use this file except in compliance with the License.
+  * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+- * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
++ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+  * See LICENSE in the root of the software repository for the full text of the License.
+  * -----------------------------------------------------------------------------------------------------------
+  */
+ /**
+  * @file host_regs.cpp
+- * @brief Host-side AICore register address retrieval implementation
++ * @brief Host-side A6 AICore register address retrieval implementation
++ *
++ * A6 layout is identity (measured onboard-001): halResMap maps one
++ * independent 2 MiB window per res_id, res_id 0..53, each holding one 1C1V
++ * block. The published register table is indexed
++ *   regs[2*res_id + 0] = window base            (AIC sub-core)
++ *   regs[2*res_id + 1] = window base + 0x100000 (AIV sub-core, inferred)
++ * so a block's AIC/AIV pair are adjacent table slots — unlike A5's die-
++ * interleaved compact layout, no index reshuffling is needed.
+  */
+ 
+ #include "host/host_regs.h"
+@@ -23,15 +31,8 @@
+ #include "ascend_hal.h"  // CANN HAL API definitions
+ #include <dlfcn.h>
+ 
+-/**
+- * Retrieve AICore register base addresses via HAL API
+- *
+- * DAV_3510 uses halResMap (per-core mapping) for resource management.
+- * Each AICore has 3 sub-cores (1 AIC + 2 AIV), and the chip has 2 dies with
+- * 18 AICores per die.
+- */
+ static int get_aicore_reg_info(std::vector<int64_t> &regs, int64_t device_id) {
+-    // halResMap: Maps individual AICore resources (DAV_3510-specific)
++    // halResMap: maps one independent 2 MiB window per AICore block (A6)
+     auto halFunc = reinterpret_cast<decltype(&halResMap)>(dlsym(RTLD_DEFAULT, "halResMap"));
+ 
+     if (halFunc == nullptr) {
+@@ -41,10 +42,10 @@ static int get_aicore_reg_info(std::vector<int64_t> &regs, int64_t device_id) {
+ 
+     const int64_t phys_device_id = pto::acl_to_hal_device_id(device_id);
+ 
+-    // Calculate layout parameters from platform config
+-    constexpr uint32_t SUB_CORE_PER_DIE = PLATFORM_AICORE_PER_DIE * PLATFORM_CORES_PER_BLOCKDIM;
+-    constexpr uint32_t AIV_BASE_OFFSET = PLATFORM_AICORE_PER_DIE;
+-    constexpr size_t MAX_INDEX = DAV_3510::PLATFORM_MAX_PHYSICAL_CORES * PLATFORM_CORES_PER_BLOCKDIM;
++    // A6 (PyPTO GetAicoreRegInfoForDAVID, DAV_9201): the table has
++    // 70 res_id slots x 2 sub-cores = 140 entries, indexed by coreid —
++    // die0 AIC 0..34 / die0 AIV 35..69 / die1 AIC 70..104 / die1 AIV 105..139.
++    constexpr size_t MAX_INDEX = DAV_A6::PLATFORM_MAX_PHYSICAL_CORES * PLATFORM_CORES_PER_BLOCKDIM;
+ 
+     struct res_map_info map_info;
+     map_info.target_proc_type = PROCESS_CP1;
+@@ -52,62 +53,53 @@ static int get_aicore_reg_info(std::vector<int64_t> &regs, int64_t device_id) {
+     map_info.flag = 0;
+     map_info.rsv[0] = 0;
+ 
+-    // Pre-allocate output vector
+     regs.resize(MAX_INDEX);
+ 
+-    // Map each AICore individually
++    // Map each AICore block individually.
+     //
+-    // One mapping per AICore carries all three sub-cores' register blocks, and
+-    // on this architecture the same table is the PMU table — `KernelArgs`
+-    // publishes `pmu_reg_addrs = regs`. So the extent a sub-core's address
++    // One mapping per res_id carries both sub-cores' register blocks, and on
++    // this architecture the same table is the PMU table — `KernelArgs`
++    // publishes `pmu_reg_addrs = regs`. The extent a sub-core's address
+     // addresses is its stride plus the furthest register either accessor
+-    // reaches, which `reg_offset` puts at the a5 PMU stop-cycle pair.
+-    // `halResMap` documents `len` as an `[out]` "resource addr len", so what it
+-    // counts is the driver's to define: it is compared against this layout and
+-    // reported, and nothing is gated on it.
++    // reaches, which `reg_offset` puts at the PMU stop-cycle pair (A5 values
++    // carried over; TODO(A6-VERIFY) for the real A6 PMU layout).
+     constexpr uint64_t kBlockSpan = REG_MMIO_PMU_STOP_CYC1_OFFSET + sizeof(uint32_t);
+-    constexpr uint64_t kAddressed = REG_AIV_SECOND_OFFSET + kBlockSpan;
+-    static_assert(kAddressed <= REG_AICORE_MAP_SIZE, "the requested AICore mapping cannot hold three sub-core blocks");
++    constexpr uint64_t kAddressed = REG_AIV_FIRST_OFFSET + kBlockSpan;
++    static_assert(kAddressed <= REG_AICORE_MAP_SIZE, "the requested AICore mapping cannot hold both sub-core blocks");
+     uint32_t cores_below_addressed = 0;
+     uint32_t smallest_len = 0;
+-    for (uint32_t core_idx = 0; core_idx < DAV_3510::PLATFORM_MAX_PHYSICAL_CORES; core_idx++) {
+-        map_info.res_id = core_idx;
++    for (uint32_t res_id = 0; res_id < DAV_A6::PLATFORM_MAX_PHYSICAL_CORES; res_id++) {
++        map_info.res_id = res_id;
+         uint64_t map_addr = 0;
+         uint32_t len = REG_AICORE_MAP_SIZE;
+ 
+         auto ret = halFunc(static_cast<uint32_t>(phys_device_id), &map_info, &map_addr, &len);
+         if (ret != 0) {
+-            LOG_ERROR("halResMap failed for core %u (rc=%d)", core_idx, ret);
++            LOG_ERROR("halResMap failed for res_id %u (rc=%d)", res_id, ret);
+             return ret;
+         }
+-        if (core_idx == 0 || len < smallest_len) smallest_len = len;
++        if (res_id == 0 || len < smallest_len) smallest_len = len;
+         if (len < kAddressed) cores_below_addressed++;
+ 
+-        // Calculate die-based indices
+-        // DAV_3510 has 2 dies, each with 18 AICores
+-        // Within each die: [AIC0...AIC17][AIV0_0, AIV0_1, AIV1_0, AIV1_1, ...]
+-        uint32_t die_idx = core_idx / PLATFORM_AICORE_PER_DIE;
+-        uint32_t local_idx = core_idx % PLATFORM_AICORE_PER_DIE;
+-        uint32_t die_base = die_idx * SUB_CORE_PER_DIE;
+-
+-        uint32_t aicore_index = die_base + local_idx;
+-        uint32_t aiv_first_index = die_base + AIV_BASE_OFFSET + local_idx * 2;
+-        uint32_t aiv_second_index = aiv_first_index + 1;
+-
+-        // Store register addresses
+-        regs[aicore_index] = map_addr;
+-        regs[aiv_first_index] = map_addr + REG_AIV_FIRST_OFFSET;
+-        regs[aiv_second_index] = map_addr + REG_AIV_SECOND_OFFSET;
++        // PyPTO DAV_9201 layout: die-interleaved coreid table.
++        // dieBase = die*70; AIC at dieBase+local, AIV at dieBase+35+local.
++        const uint32_t die_idx = res_id / PLATFORM_AICORE_PER_DIE;
++        const uint32_t local_idx = res_id % PLATFORM_AICORE_PER_DIE;
++        const uint32_t die_base = die_idx * (PLATFORM_AICORE_PER_DIE * PLATFORM_CORES_PER_BLOCKDIM);
++        const uint32_t aic_index = die_base + local_idx;
++        const uint32_t aiv_index = die_base + PLATFORM_AICORE_PER_DIE + local_idx * (PLATFORM_CORES_PER_BLOCKDIM - 1);
++        regs[aic_index] = static_cast<int64_t>(map_addr);
++        regs[aiv_index] = static_cast<int64_t>(map_addr + REG_AIV_FIRST_OFFSET);
+     }
+ 
+     // One line per table build, which is once per device.
+     if (cores_below_addressed > 0) {
+         LOG_WARN(
+             "halResMap reports as little as 0x%x bytes per AICore where this layout addresses up to 0x%llx "
+-            "(sub-core stride 0x%llx, block 0x%llx) on %u of %u cores; the reported length is the driver's to "
++            "(AIV offset 0x%llx, block 0x%llx) on %u of %u res_ids; the reported length is the driver's to "
+             "define, so every address is published as before",
+             smallest_len, (unsigned long long)kAddressed, (unsigned long long)REG_AIV_FIRST_OFFSET,
+-            (unsigned long long)kBlockSpan, cores_below_addressed, DAV_3510::PLATFORM_MAX_PHYSICAL_CORES
++            (unsigned long long)kBlockSpan, cores_below_addressed, DAV_A6::PLATFORM_MAX_PHYSICAL_CORES
+         );
+     } else {
+         LOG_INFO(
+diff --git a/a5/platform/shared/aicpu/platform_regs.cpp b/a6/platform/shared/aicpu/platform_regs.cpp
+index 33bd60b68..0f5a34c88 100644
+--- a/a5/platform/shared/aicpu/platform_regs.cpp
++++ b/a6/platform/shared/aicpu/platform_regs.cpp
+@@ -24,6 +24,7 @@
+ #include "common/memory_barrier.h"
+ #include "common/platform_config.h"
+ #include "spin_hint.h"
++#include "common/unified_log.h"
+ 
+ static uint64_t g_platform_regs = 0;
+ 
+@@ -31,9 +32,28 @@ void set_platform_regs(uint64_t regs) { g_platform_regs = regs; }
+ 
+ uint64_t get_platform_regs() { return g_platform_regs; }
+ 
++namespace {
++// A6-VERIFY(0xD0 closure probe): count readback logs to keep the device log small.
++static int g_d0_probe_logged = 0;
++}
++
+ void platform_init_aicore_regs(uint64_t reg_addr) {
+     // Initialize task dispatch register to idle state
+     write_reg(reg_addr, RegId::DATA_MAIN_BASE, AICPU_IDLE_TASK_ID);
++    // A6-VERIFY(0xD0 closure probe): read back the posted MMIO write. On A5 this
++    // returns IDLE; if A6 returns something else, the window base (host_regs
++    // table) is wrong or the write did not land -- and the lane release wait
++    // that reads the same register will time out exactly as observed.
++    const uint64_t readback = read_reg(reg_addr, RegId::DATA_MAIN_BASE);
++    if (g_d0_probe_logged < 8) {
++        ++g_d0_probe_logged;
++        LOG_ERROR(
++            "A6-VERIFY d0 probe: window=0x%llx wrote IDLE(0x%llx) read back 0x%llx%s",
++            (unsigned long long)reg_addr, (unsigned long long)(uint64_t)AICPU_IDLE_TASK_ID,
++            (unsigned long long)readback,
++            readback == (uint64_t)AICPU_IDLE_TASK_ID ? " (match)" : " (MISMATCH -> window base wrong or write lost)"
++        );
++    }
+ }
+ 
+ void platform_open_aicore_exit_window(uint64_t) {
+@@ -146,5 +166,5 @@ int32_t platform_retire_aicore_group(const AicoreExitTarget *targets, size_t cou
+ }
+ 
+ uint32_t platform_get_physical_cores_count() {
+-    return DAV_3510::PLATFORM_MAX_PHYSICAL_CORES * PLATFORM_CORES_PER_BLOCKDIM;
++    return DAV_A6::PLATFORM_MAX_PHYSICAL_CORES * PLATFORM_CORES_PER_BLOCKDIM;
+ }
+
+diff --git a/a5/platform/onboard/aicore/CMakeLists.txt b/a6/platform/onboard/aicore/CMakeLists.txt
+index 027c7e8a0..a203fec91 100644
+--- a/a5/platform/onboard/aicore/CMakeLists.txt
++++ b/a6/platform/onboard/aicore/CMakeLists.txt
+@@ -89,7 +89,7 @@ foreach(SRC_FILE ${ALL_SOURCES})
+     # would run one binary in both arms.
+     add_custom_command(
+         OUTPUT ${OBJ_AIC}
+-        COMMAND ${BISHENG_CC} ${AICORE_FLAGS} ${CMAKE_CUSTOM_INCLUDE_DIR_FLAGS} --cce-aicore-arch=dav-c310-cube
++        COMMAND ${BISHENG_CC} ${AICORE_FLAGS} ${CMAKE_CUSTOM_INCLUDE_DIR_FLAGS} --cce-aicore-arch=dav-920r1-cube
+                 -MD -MF ${OBJ_AIC}.d -MT ${OBJ_AIC}
+                 -o ${OBJ_AIC} ${SRC_FILE}
+         DEPENDS ${SRC_FILE}
+@@ -100,7 +100,7 @@ foreach(SRC_FILE ${ALL_SOURCES})
+     # Compile for AIV architecture
+     add_custom_command(
+         OUTPUT ${OBJ_AIV}
+-        COMMAND ${BISHENG_CC} ${AICORE_FLAGS} ${CMAKE_CUSTOM_INCLUDE_DIR_FLAGS} --cce-aicore-arch=dav-c310-vec
++        COMMAND ${BISHENG_CC} ${AICORE_FLAGS} ${CMAKE_CUSTOM_INCLUDE_DIR_FLAGS} --cce-aicore-arch=dav-920r1-vec
+                 -MD -MF ${OBJ_AIV}.d -MT ${OBJ_AIV}
+                 -o ${OBJ_AIV} ${SRC_FILE}
+         DEPENDS ${SRC_FILE}
+diff --git a/a5/platform/onboard/host/ccu_event_trigger.cmake b/a6/platform/onboard/host/ccu_event_trigger.cmake
+index ea8484434..0a136da47 100644
+--- a/a5/platform/onboard/host/ccu_event_trigger.cmake
++++ b/a6/platform/onboard/host/ccu_event_trigger.cmake
+@@ -16,7 +16,7 @@ set(CCU_EVENT_TRIGGER_ELF "${CMAKE_CURRENT_BINARY_DIR}/ccu_event_trigger.o")
+ 
+ add_custom_command(OUTPUT "${CCU_EVENT_TRIGGER_PART}"
+     COMMAND "${CCU_EVENT_TRIGGER_CCEC}" -c -O2 -std=c++17 -x cce --cce-aicore-only
+-        --cce-aicore-arch=dav-c310-vec -mllvm -cce-aicore-dcci-insert-for-scalar=false
++        --cce-aicore-arch=dav-920r1 -mllvm -cce-aicore-dcci-insert-for-scalar=false
+         -MD -MF "${CCU_EVENT_TRIGGER_PART}.d" -o "${CCU_EVENT_TRIGGER_PART}" "${CCU_EVENT_TRIGGER_SOURCE}"
+     DEPENDS "${CCU_EVENT_TRIGGER_SOURCE}" DEPFILE "${CCU_EVENT_TRIGGER_PART}.d" VERBATIM)
+ add_custom_command(OUTPUT "${CCU_EVENT_TRIGGER_ELF}"
