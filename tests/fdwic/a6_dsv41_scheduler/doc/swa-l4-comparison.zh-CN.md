@@ -24,6 +24,8 @@
 
 ## 黄区提取与反馈
 
+若 t22 的最后到达与首 dispatch 之间存在明显间隔，按[GM 与 CntNotify 并发测试](a6-register-benchmark.zh-CN.md)对照 A6 同址访问、48 个 block 的到达计数和实际放行时间。
+
 1. 选择已有 A6 L4 的同一正式 invocation，确认原始 records 中 chip_swimlane_level=4，输出校验通过。记录 run 编号、runtime 版本或现场补丁身份、计数器频率、总区间数（预期 570）、truncated/dropped 状态。使用这个 run 的 `deps.json`、`source-task-map.txt` 和已转换的 Perfetto JSON；仅有原始 records 时，先用现场版本的 swimlane_converter 带上同轮依赖转换。保留 A5 单轮无预热与 A6 有预热的差别。
 2. 从 Simpler 根目录执行以下命令。`TRACE` 是 Worker View 完整 trace（JSON 或 JSON.gz），`MAP` 是同轮的编号表（第一列原任务，第二列回放任务）。脚本只用 Python 标准库，按原任务编号聚合。返回生成的 JSON，保留三位小数，填下表。
 
