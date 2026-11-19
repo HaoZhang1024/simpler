@@ -488,3 +488,55 @@ index ea8484434..0a136da47 100644
          -MD -MF "${CCU_EVENT_TRIGGER_PART}.d" -o "${CCU_EVENT_TRIGGER_PART}" "${CCU_EVENT_TRIGGER_SOURCE}"
      DEPENDS "${CCU_EVENT_TRIGGER_SOURCE}" DEPFILE "${CCU_EVENT_TRIGGER_PART}.d" VERBATIM)
  add_custom_command(OUTPUT "${CCU_EVENT_TRIGGER_ELF}"
+
+# a6 vs a5/platform: drop of the sim-host layer (11 sim files + 1 sim doc) - pure removals, no logic change.
+# Manifest only: each block = file path / deleted-file mode / index / hunk header (deleted line count).
+# Full diff for actual removal: a6-a5-4-sim-drop.full.patch
+diff --git a/a5/platform/sim/CMakeLists.txt b/a5/platform/sim/CMakeLists.txt
+deleted file mode 100644
+index e860649a1..000000000
+@@ -1,23 +0,0 @@
+diff --git a/a5/platform/sim/host/CMakeLists.txt b/a5/platform/sim/host/CMakeLists.txt
+deleted file mode 100644
+index f7794260c..000000000
+@@ -1,158 +0,0 @@
+diff --git a/a5/platform/sim/host/runtime_c_api.cpp b/a5/platform/sim/host/runtime_c_api.cpp
+deleted file mode 100644
+index 13a07f8c5..000000000
+@@ -1,58 +0,0 @@
+diff --git a/a5/platform/sim/host/device_runner.h b/a5/platform/sim/host/device_runner.h
+deleted file mode 100644
+index f5ebccefd..000000000
+@@ -1,159 +0,0 @@
+diff --git a/a5/platform/sim/host/profiling_copy.cpp b/a5/platform/sim/host/profiling_copy.cpp
+deleted file mode 100644
+index 5c124e679..000000000
+@@ -1,33 +0,0 @@
+diff --git a/a5/platform/sim/host/device_runner.cpp b/a5/platform/sim/host/device_runner.cpp
+deleted file mode 100644
+index d19d0a107..000000000
+@@ -1,1388 +0,0 @@
+diff --git a/a5/platform/sim/aicpu/CMakeLists.txt b/a5/platform/sim/aicpu/CMakeLists.txt
+deleted file mode 100644
+index 1137e7402..000000000
+@@ -1,119 +0,0 @@
+diff --git a/a5/platform/sim/aicpu/inner_platform_regs.cpp b/a5/platform/sim/aicpu/inner_platform_regs.cpp
+deleted file mode 100644
+index 251609584..000000000
+@@ -1,56 +0,0 @@
+diff --git a/a5/platform/sim/aicore/kernel.cpp b/a5/platform/sim/aicore/kernel.cpp
+deleted file mode 100644
+index 684ab3557..000000000
+@@ -1,248 +0,0 @@
+diff --git a/a5/platform/sim/aicore/CMakeLists.txt b/a5/platform/sim/aicore/CMakeLists.txt
+deleted file mode 100644
+index b8c13c05d..000000000
+@@ -1,99 +0,0 @@
+diff --git a/a5/platform/sim/aicore/inner_kernel.h b/a5/platform/sim/aicore/inner_kernel.h
+deleted file mode 100644
+index 8b67ff92e..000000000
+@@ -1,250 +0,0 @@
+diff --git a/a5/platform/docs/tpush-tpop-sim.md b/a5/platform/docs/tpush-tpop-sim.md
+deleted file mode 100644
+index acb9a2ea6..000000000
+@@ -1,190 +0,0 @@
