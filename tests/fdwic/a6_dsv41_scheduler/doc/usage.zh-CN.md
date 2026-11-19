@@ -111,25 +111,30 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
-**2026-11-19 交接。** 本轮有两件事：收回正在跑的 CntNotify 原始测量；使用已提交的源码，在 A6 上从构建跑到 SWA 输出校验。黄区执行并回传，蓝区负责改码、算时延分布和对比 A5。SWA 固定使用 `a6-swa-port` 分支上的[代码提交 cf78bd31a](https://github.com/HaoZhang1024/simpler/commit/cf78bd31a28aedeed4a43592c43f9203b6ce4348)。
+**2026-11-19 当前优先项：完成 A6 CntNotify 时延实验。** 黄区先执行下面这一项，回传后由蓝区核对。SWA 单卡复测排在 CntNotify 结果确认之后。
 
-### 本轮已交付和验证的代码
+### 当前执行：完成 CntNotify 测量
 
-| 代码 | 蓝区已经验证 | 本次黄区覆盖 |
+| 顺序 | 黄区执行 | 回传内容 |
+| ---- | -------- | -------- |
+| 1 | 让已启动的 probe 按原配置跑完，保留该作业的输出目录 | 现有的逐轮逐核原始数据、运行日志、启动命令或配置。保留实际核数、时钟频率、操作名，以及 CntNotify 映射和读回记录 |
+| 2 | 作业结束即回传。若只跑完 GM、CntNotify 映射失败或某组中断，先交已生成的文件 | 附失败组名和原始报错或 SDK 返回码。蓝区定位原因、准备补测命令，黄区按命令补跑 |
+
+**完成标准。** 蓝区确认 A6 实际走通 CntNotify SET/read 并读回正确，再与同配置的 GM ld/st、GM atomic 对照。首组目标为 48 AIC + 48 AIV，每种读、写（含 DSB）组合各 192 个正式轮次。蓝区核对实际参与核、时钟和有效轮次，使用[统计脚本](../register_ranks.py)列出第 1、48、96 个完成者的时延和平均相邻间隔。若现场能力限制某条路径，蓝区记录具体接口、返回码及可测范围后再安排下一项。[测量口径](a6-register-benchmark.zh-CN.md)
+
+### 后续 SWA 复测已交付的代码
+
+| 代码 | 蓝区已经验证 | SWA 复测时覆盖 |
 | ---- | ------------ | ------------ |
 | [A6 平台](../../../../src/a6/platform/)和 [percounter 启停握手](../../../../src/a5/runtime/percounter/aicore/lane_loop.h)：接入 1 AIC + 1 AIV 的资源组，经 GM 发布启动、退出信号 | A6 runtime 与 dispatcher 已预编译；2 项 CPU 握手测试通过，覆盖前次启动信号残留、启动中止及超时 | SWA 在实际分配的 966B7 上启动，连续回放并正常退出 |
 | [plan 转换](../prepare_plan.py)、[资源检查](../test_resources.py)和[固定输入检查](../test_fixture.py)：把 t22、t28 转成 1C1V，沿用原输入和参考输出 | 6 项资源测试、2 项输入测试通过。A6 plan 有 16 个计算任务、570 个执行实例；t22 至少需要 48 对核 | 由脚本转换同一份 plan，回放后对照参考输出 |
 | [SWA 组包](../prepare.py)、[单卡入口](../test_a6_swa.sh)和[结果汇总](../run.py) | 预构建已生成 19 个 kernel、native-runner、replay、plan 和 callable。预构建目录缺少 Git 提交信息，最后一步写入 `build.json` 未完成 | 从固定 Git 提交生成 `case/build.json`，完成 1 轮预热和 10 轮 L0 正式测量 |
 
-此前黄区现场版本的实测结果保存在[A6 原始报告](a6-result.md)。本轮验收以上述提交的新输出为准。
+此前黄区现场版本的实测结果保存在[A6 原始报告](a6-result.md)。SWA 复测固定使用[代码提交 cf78bd31a](https://github.com/HaoZhang1024/simpler/commit/cf78bd31a28aedeed4a43592c43f9203b6ce4348)。
 
-### 1. 收回当前 CntNotify 作业
+### CntNotify 结果确认后执行 SWA
 
-让正在运行的作业按原配置结束。回传**现有的逐轮逐核原始数据和运行日志**；一并带上已有的运行命令或配置、核数、计时频率及各组对应的操作（GM ld/st、GM atomic、CntNotify）。若作业只跑完部分组合，回传已生成的数据和报错日志即可。蓝区用[统计脚本](../register_ranks.py)计算完成名次、分位数和相邻间隔。本轮沿用现场正在跑的 probe。
-
-### 2. 在分配到的 A6 上执行 SWA
-
-使用已加载现场 CANN 9.3.0 的 Linux shell，从用于 SWA 的 Simpler 仓库根目录执行。沿用现场的项目 `.venv`、CMake、Ninja，以及 `build/pto-isa` 下的 PTO-ISA checkout。同一块卡由 CntNotify 释放后再开始。
+使用已加载现场 CANN 9.3.0 的 Linux shell，从用于 SWA 的 Simpler 仓库根目录执行。沿用现场的项目 `.venv`、CMake、Ninja，以及 `build/pto-isa` 下的 PTO-ISA checkout。
 
 ```bash
 (
