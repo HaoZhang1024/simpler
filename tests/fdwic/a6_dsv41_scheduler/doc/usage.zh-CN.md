@@ -111,6 +111,8 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
+黄区 agent 将[A6 SWA 性能分析与每日进展](a6-swa-performance-progress.zh-CN.md)全文转存到内网，并在当天记录中追加实际作业状态和原始结果位置。
+
 **2026-11-19 当前优先项：完成 A6 CntNotify 时延实验。** 黄区先执行下面这一项，回传后由蓝区核对。SWA 单卡复测排在 CntNotify 结果确认之后。
 
 ### 当前执行：完成 CntNotify 测量

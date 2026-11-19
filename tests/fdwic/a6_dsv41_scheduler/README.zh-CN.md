@@ -4,6 +4,7 @@
 
 | 入口 | 用途 |
 | ---- | ---- |
+| [A6 SWA 性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md) | 供黄区内网转存，按日跟踪与 A5 的差距、测试结果和下一步 |
 | [A6 / A5 对比](doc/a6-a5-comparison.zh-CN.md) | 硬件、工具链、SWA 实测时延 |
 | [本轮黄区交接单](doc/usage.zh-CN.md#黄区接续测试) | 交付版本、已验证的代码、正在跑的 CntNotify 实验、SWA 单卡命令及回传文件 |
 | [执行原理](doc/execution.zh-CN.md) | 19 个已有 kernel、任务图和固定输入；A6 的两处 MIX 变更 |
