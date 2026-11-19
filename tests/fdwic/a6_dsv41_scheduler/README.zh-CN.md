@@ -36,6 +36,7 @@ SWA 包含 MIX／sync_start 协同，但本切片没有跨卡通信和 deferred 
 | [test_fixture.py](test_fixture.py) | 离线检查输入包与参考覆盖 |
 | [fixtures/](fixtures/) | 固定输入、plan、参考与来源清单 |
 | [results/2026-11-17-a5/](results/2026-11-17-a5/) | A5 逐轮数据、日志和校验和清单 |
+| [A5 percounter L4 泳道](results/2026-11-19-a5-percounter-l4/README.md) | 完整 Perfetto trace、逐核预览、578 个 kernel 区间及黄区任务编号对照 |
 | [results/2026-11-17-a6-offline/](results/2026-11-17-a6-offline/) | A6 编译前后、A5 机器码不变、plan 转换的离线证据；不含设备结果 |
 
 文档集中在 `doc/`；构建产物写入 `build/`，新的测试输出由 `--output` 指定。

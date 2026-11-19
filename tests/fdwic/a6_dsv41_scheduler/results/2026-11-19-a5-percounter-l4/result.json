@@ -1,0 +1,1 @@
+{"passed":true,"device":1,"rank":0,"runtime":"percounter","original_kernels":19,"isolated_case":true,"validated_against_fused_prefix":true,"warmup":0,"rounds":1,"snapshot_inputs":true,"ranks":1,"execution":"replay","numerical_validation":true}
