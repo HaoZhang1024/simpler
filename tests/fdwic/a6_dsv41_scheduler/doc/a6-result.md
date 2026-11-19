@@ -155,16 +155,56 @@ mask6/7（双 AIV）与 `ordinary_mix_interleaved`（偶任务 mask7）、`TestM
 - `state.h:315-321`：`functions[lane]` 取 `task_metadata.kernel_ids[lane]`；`SchedulerTaskMetadata.kernel_ids[3]` 硬编码 3 槽（scheduler_types.h:202）
 - `graph_template.h:104-166`：**Graph 模板 body 任务不走 orchestrator normalize**——从 SubTaskDefinition 解码 `active_mask` 直接分桶（MIX→eligible[1]）。若 Graph 系测试用 mask5/6/7 的模板 body 任务，3.7 的折叠不覆盖该路径（见 5.2）
 - AICPU 发布顺序（aicpu_executor.cpp）：`publish_partition`(GM :459) 先于 `release_partition`(0xD0 :485)
+### 3.12 Graph/SPMD 系测试平台适配（8 文件）
 
+- `spmd_mixed_waves/kernels/orchestration/spmd_mixed_waves_orch.cpp`：`aiv1_kernel_id` 赋值加 `PLATFORM_AIV_CORES_PER_BLOCKDIM >= 2` 编译期 guard（A6 保持 AIC+AIV0 的 Mix 形态，`MixedKernels` 未赋值字段默认 `INVALID_KERNEL_ID`；与 3.7 折叠互补——发布侧不再制造 aiv1 任务）
+- 7 个测试文件 CASES `platforms` 加 `"a6"`：`graph_execution/test_graph_execution.py`、`graph_execution_aic_aiv.py`、`graph_predicated_dispatch.py`、`predicated_dispatch.py`、`spmd_mixed_waves.py`、`spmd_multiblock_aic.py`、`spmd_releases_spmd.py`（后两者的 scale/manual case 同步把 `manual` 列表加 a6）
+- `spmd_sync_start_mix_aiv`（TwoVectorSync 的来源）**不加 a6**：其语义需要同一 block 两条 AIV lane 同时驻留（sync_start 协同），A6 1C1V 物理不可用；提交接口按 3.7 报 INVALID_ARGS。该类在 pytest 收集阶段即被平台过滤剔除（框架按 CASES 平台交集 deselect），预期排除。
+
+### 3.13 GraphSpmd 深度适配（4 文件，2026-11-18）
+
+`graph_execution` 的 mix_spmd 场景除 platforms 外还有三处 A5 假设：
+
+- `kernels/aic/kernel_spmd_mix.cpp` 与 `kernels/aiv/kernel_spmd_mix.cpp`：槽位步长硬编码 `SLOTS_PER_BLOCK = 3` 改为 `PLATFORM_CORES_PER_BLOCKDIM`（A5=3 不变，A6=2）。AIC 写 `base+b*S+0`；AIV 写 `base+b*S+1+sub_block_id`（A6 上 AIV0 的 sub_block_id=0，见 lane_loop.h 的 placement 语义）。两平台输出布局分别为 36 簇×3 槽 / 54 簇×2 槽，覆盖同样 108 条 cache line（tensor 尺寸不变）。
+- `kernels/orchestration/graph_execution_mix_spmd_orch.cpp`：同 3.12 的 aiv1 guard（AIV0/AIV1 本就共用同一内核源码，折叠不改变语义）
+- `test_graph_execution_mix_spmd.py`：`compare_outputs` 不再假设 3 槽/36 簇——槽位数从写入足迹推导（最高写入行 +1 除以簇数）。注意 block 0 的槽位值为 0，`nonzero` 计数会把"写了 0"误当"未写"，不可用作足迹（首版推导即踩此坑）。L4 校验的 `active_mask == 7` 与 lane 枚举同步参数化为 `(1 << slots) - 1`。
+
+### 3.14 run-entry CLI 适配（蓝区提交 `e8fad256d`，已合入基线）
+
+- `tests/fdwic/a6_dsv41_scheduler/prepare.py`：`--platform {a5,a6}`；a6 构建内联执行 plan 转换（t22→48×1C1V、t28→32×1C1V，16 任务/570 执行），转换后 plan 写入 `bundle/plan-rank0.bin`，`build.json` 记录 `plan_sha256`
+- `tests/fdwic/a6_dsv41_scheduler/run.py`：`--platform a6 --device <N> --a6-query <query 可执行文件>`；a6 强制 percounter + query 型号校验（`soc_name: Ascend960DT_966B7`）；设 `TASK_DEVICE` 直连设备（production/run.sh 已有路径，绕过 task-submit）；校验 build.json 与 plan 哈希
+- `tests/fdwic/dsv41_scheduler/production/CMakeLists.txt`：`DSV41_ARCH` 参数化平台头文件包含路径
 ## 4. 当前验证状态
 
-测试定义文件：`tests/st/a5/percounter/acquire/test_acquire.py`（下述全部测试类均在此，构建/上板/结果回填由黄区执行，蓝区只管代码）。
+测试定义文件：`tests/st/a5/percounter/acquire/test_acquire.py`（下述全部测试类均在此，构建/上板/结果回填由黄区执行，蓝区只管代码）。以下结果均为 2026-11-18 A6 设备 0 上板真执行（pytest passed + 设备日志增量佐证）。
 
-**通过（上板真执行+golden）**：`TestPercounterMix` 4/4——`chain16_mask3` / `chain16_mask5` / `burst16_mask3` / `burst16_mask5`。mask5 折叠语义（AIC+MUL@AIV0）结果与 golden 一致。
+**percounter ST 类（上板真执行+golden）**：
 
-**预期排除（非 bug）**：mask6/7、`ordinary_mix_interleaved`、`TestMixKernelRendezvous`（双 AIV，平台过滤）；绕过过滤直接提交会触发 3.7 的 `single-AIV platform...` 报错（SIMPLER_ERROR_INVALID_ARGS）。
+| 测试类                       | 结果     | 说明                                                       |
+| ---------------------------- | -------- | ---------------------------------------------------------- |
+| TestPercounterMix            | PASS     | 4/4：chain16/burst16 × mask3/mask5（mask5 折叠语义验证）   |
+| TestPercounterSpmdAic        | PASS     | 2 自动 case（`aic_block_num_8` / `aiv_block_num_16`）      |
+| TestPercounterMixedWaves     | PASS     | 2 自动 case（`waves_4x8` / `waves_4x8_shifted`）           |
+| TestPercounterReleasesSpmd   | PASS     |                                                            |
+| TestPercounterPredicate      | PASS     |                                                            |
+| TestPercounterGraph          | PASS     | `record_then_replay_1d` / `record_then_replay_2d`          |
+| TestPercounterGraphPure      | PASS     |                                                            |
+| TestPercounterGraphPredicate | PASS     |                                                            |
+| TestPercounterGraphSpmd      | PASS     | 全量 54 簇×2 槽 + `partial_sync_2`（适配见 3.13）          |
+| TestPercounterTwoVectorSync  | 预期排除 | 收集级平台过滤剔除（双 AIV 同 block，硬件不支持，见 3.12） |
 
-**未验证**：`test_acquire.py` 其余 9 类（SpmdAic/MixedWaves/ReleasesSpmd/TwoVectorSync/Graph/GraphPure/GraphSpmd/Predicate/GraphPredicate）；AICPU 设备链 orchestrator 折叠（当前 ST 全走 host 链）。
+Graph 系 4 类实测未触发 3.11 预警的 graph_template mask6/7 body 任务问题（其 body 任务为 A6 可运行的形态）。
+
+**SWA 端到端回放（DSV4.1，16 任务/570 执行）**：prepare（19 内核编译、plan 转换、宿主解码校验）→ run 链路全通：
+
+- 功能验证（1 warmup + 1 round）：output check PASS，AICore L0 wall 0.271518 ms
+- 正式计量（1 warmup + 10 rounds，全 PASS）：**AICore L0 wall 均值 0.265768 ms，Device 均值 0.357712 ms**（对照 A5 基线 percounter AICore 0.185173 ms，A6 约为 1.44×）
+
+**预期排除（非 bug）**：mask6/7、`ordinary_mix_interleaved`、`TestMixKernelRendezvous`、TwoVectorSync（双 AIV，平台过滤）；绕过过滤直接提交会触发 3.7 的 `single-AIV platform...` 报错（SIMPLER_ERROR_INVALID_ARGS）。
+
+**运维备注**：设备偶发 `rtSetDevice` 507033（E39007 设备子进程启动超时，内部超时约 3 分钟），无规律，重试即恢复（本轮上板过程中遇到 2 次，均在重试后通过）；与本仓代码无关。
+
+**未验证**：AICPU 设备链 orchestrator 折叠（当前 ST 全走 host 链）。
 
 **历史报错→根因对照**（已全修复，排查线索）：
 
@@ -181,35 +221,28 @@ mask6/7（双 AIV）与 `ordinary_mix_interleaved`（偶任务 mask7）、`TestM
 
 ## 5. 下一步任务（按优先级）
 
-### 5.1 run-entry CLI 适配
+### 5.1 run-entry CLI 适配——已完成（2026-11-18，蓝区 `e8fad256d`，见 3.14）
 
-- 目标：`prepare.py` / `run.py` 接受 `--platform a6`（run.py:85-86 目前硬检查 a5 并报错）；按 3.1 的平台注册模式补全 CLI 路径。A6 无 task-submit 提交通道（ST pytest 路径绕过），CLI 只需支持已有路径。
-- 验收：`--platform a6` 不再报 Unknown/unsupported；prepare→run 链跑通一个最小场景。
+- 验收达成：`--platform a6` 全链接受；prepare→run 跑通 SWA 最小场景（1 warmup + 1 round，output check PASS，见 §4）。
 
-### 5.2 其余 9 个测试类上板验证
+### 5.2 其余 9 个测试类上板验证——已完成（2026-11-18，见 §4 结果表）
 
-- 逐类跑 `TestPercounterSpmdAic` 等 9 类（见 §4 命令形态）。
-- 预期问题及处理模式：
-  - 双 AIV/3-slot 的 case → 按 3.8 模式做 CASES platforms 过滤（`+ (["a6"] if mask in (单AIV集合) else [])`）
-  - **Graph 系类**（TestPercounterGraph/Pure/Spmd/Predicate/GraphPredicate）注意：模板 body 任务不经 3.7 折叠（见 3.11）——若其 CASES 含 bit2 mask 的 body 任务需另行处理（在 `read_graph_template`/`build_graph_template` 入口做同样的平台折叠，或测试过滤）
-  - 新报错按 §4 对照表思路：先在 fail 路径加日志定位（参考 3.10 手法），再定根因
-- 验收：9 类在 a6 上全绿或明确过滤（每类给出通过/过滤清单）。
+- 8 类全绿 + TwoVectorSync 预期排除（收集级过滤）。双 AIV case 按 3.8/3.12 模式过滤；GraphSpmd 需要槽位步长平台化（3.13）；Graph 系实测未触发 3.11 预警的模板 body 问题。
 
-### 5.3 三目标 ABI 离线检查（Q6）
+### 5.3 三目标 ABI 离线检查（Q6）——待做
 
 - 目标：host/aicpu/aicore 三编译目标的共享结构 sizeof/alignof/offsetof 一致（重点：`SchedulerTaskMetadata`、`PercounterControl`、wire_types.h 各结构、`AicoreTeardownControl`）。
 - 方法：各目标编译一个 static_assert/打印程序比对（离线，不需设备）。
 - 验收：报告三目标布局一致，或列出差异并修复。
 
-### 5.4 诊断探针清理（合并前置）
+### 5.4 诊断探针清理（合并前置）——待做
 
 - 删除 3.10 全部 `A6-VERIFY` 探针（platform_regs.cpp d0 探针、region_plan.h 5 处审计、lane_loop.h detail 探针及其写入），保留 3.5 的 GM 信号逻辑本体（非探针）。
 - 验收：`grep -rn A6-VERIFY src/` 为空；重跑 TestPercounterMix 仍 4/4。
 
-### 5.5 SWA 端到端回放
+### 5.5 SWA 端到端回放——已完成（2026-11-18，见 §4）
 
-- DSV4.1 场景（16 任务/570 实例/30 buffer）在 a6 percounter 上回放+性能采集。
-- 验收：golden 通过，产出性能基线数据。
+- 验收达成：golden（output check）通过；性能基线产出：AICore L0 wall 均值 0.265768 ms / Device 均值 0.357712 ms（1 warmup + 10 rounds 全 PASS）。
 
 ## 6. 代码约束（改动必须遵守）
 
