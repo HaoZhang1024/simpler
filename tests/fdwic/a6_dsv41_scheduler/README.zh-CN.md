@@ -6,7 +6,7 @@
 
 | 顺序 | 执行什么 | 完成后填哪里 |
 | --- | --- | --- |
-| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)核对 A6 的原版 002 六组结果，缺项时复用 A5 原探针补跑 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
+| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)运行[本分支六组同址访问探针](probes/a6_same_address/run.sh)，按 A5 测法采集 A6 结果 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
 | **2 · CntNotify 确认后** | 按[同一张交接单的 SWA 命令](doc/a6-handoff.zh-CN.md#cntnotify-结果确认后执行-swa)跑固定版本，每卡 1 轮预热、10 轮正式回放 | 同一内网页面 → [SWA 单卡 L0 复测](doc/a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) |
 
 [性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md)是黄区内网页面的转存原文。黄区登记实际作业和原始文件位置，蓝区补齐统计、结论和下一步。
