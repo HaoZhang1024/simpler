@@ -4,12 +4,9 @@
 
 ## 黄区从这里开始
 
-| 顺序 | 执行什么 | 完成后填哪里 |
-| --- | --- | --- |
-| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)运行[本分支六组同址访问探针](probes/a6_same_address/run.sh)，按 A5 测法采集 A6 结果 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
-| **2 · CntNotify 确认后** | 按[同一张交接单的 SWA 命令](doc/a6-handoff.zh-CN.md#cntnotify-结果确认后执行-swa)跑固定版本，每卡 1 轮预热、10 轮正式回放 | 同一内网页面 → [SWA 单卡 L0 复测](doc/a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) |
+**当前执行**：按[黄区交接单](doc/a6-handoff.zh-CN.md#执行-swa-单卡-l0)复测固定版本的 A6 单卡 SWA L0。黄区在内网保留运行结果，由项目负责人反馈[精简摘要](doc/a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测)。
 
-[性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md)是黄区内网页面的转存原文。黄区登记实际作业和原始文件位置，蓝区补齐统计、结论和下一步。
+**已完成**：按 A5 硬件 SYNCALL 方法测量 A6 六组同址访问。[CntNotify 结果与结论](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延)
 
 11 月 20 日的软件栅障实验及 96/108 核结果已保存在[黄区当次提交的原文](https://github.com/HaoZhang1024/simpler/blob/91c4f1a29/tests/fdwic/a6_dsv41_scheduler/README.zh-CN.md#L77-L111)。
 
