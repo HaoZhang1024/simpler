@@ -65,7 +65,66 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/t25_report.py "${T25_L4:?已有�
 ### 黄区 L4 结果
 
 项目负责人在这里粘贴 `feedback.txt`。完整 trace、`task-details.json` 和原始文件保存在黄区内网同一实验目录，供按任务和 worker 查阅。蓝区据摘要先核对轮间波动、t25 的变化、向下游传递的时间，再决定是否改 percounter 的同核复用路径。整图收益沿用已测 L0。
+设备 0，A（64 块）/ B（54 块）各预热 1 轮、正式 3 轮，golden A/B 双过（result.json passed、validated_against_fused_prefix=true）。A、B kernel 区间数分别为 570、560，调度流 108，已知丢失 0、上报无损。
 
+（对应进展文档"当前状态与反馈位置"表 · t25 L4 与全图对照行）
+
+设备 0，A（64 块）/ B（54 块）各预热 1 轮、正式 3 轮，golden A/B 双过（result.json passed、validated_against_fused_prefix=true）。A、B kernel 区间数分别为 570、560，调度流 108，已知丢失 0、上报无损。
+
+归档位置（内网）：`/npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-t25-lk1vgyf9/t25-l4-3evzw1k0/`（含 `A6-SWA-t25-64-run1..3.json.gz`、`A6-SWA-t25-54-run1..3.json.gz`、`task-details.json`、`feedback.txt` 及 A1/B1 rank0 原始 records/deps/任务映射/golden）。
+
+以下为脚本生成的 `feedback.txt` 全文：
+
+```text
+device 0, 3 formal rounds per plan, golden PASS A/B
+metric_us: A64 median [min,max] | B54 median [min,max] | median(B) - median(A)
+t25_span: 43.572 [40.828,43.895] | 29.271 [28.802,31.195] | -14.301
+t22_end_to_t25_end: 51.437 [48.469,52.655] | 37.312 [36.697,38.081] | -14.125
+t22_end_to_t28_start: 68.642 [64.807,71.313] | 56.729 [54.643,58.591] | -11.913
+t22_end_to_t35_end: 202.449 [199.720,212.448] | 192.719 [191.276,192.748] | -9.730
+graph_kernel_span: 460.947 [460.412,466.547] | 447.249 [442.692,451.857] | -13.698
+first_kernel_to_t22_start: 222.599 [218.378,222.923] | 221.467 [215.083,221.502] | -1.132
+t18_end_to_t22_start: 40.045 [39.496,41.915] | 38.905 [38.269,40.523] | -1.140
+t25_end_to_t35_start: 118.240 [117.972,126.719] | 122.786 [119.481,122.934] | +4.546
+task | A/B medians_us: task span | start spread | AIC kernel median | AIV kernel median
+t8 | 12.296/12.802 | 0.676/1.084 | NA/NA | 11.254/11.226
+t9 | 20.228/21.679 | 18.970/20.356 | NA/NA | 0.487/0.483
+t12 | 15.159/14.674 | 5.780/5.536 | NA/NA | 8.626/8.610
+t16 | 32.285/31.790 | 21.851/21.568 | 10.313/10.356 | NA/NA
+t17 | 17.504/17.350 | 1.576/1.235 | NA/NA | 16.043/16.487
+t18 | 35.808/37.638 | 20.830/22.400 | 20.671/20.684 | 6.654/6.636
+t19 | 17.663/16.511 | 5.600/4.933 | 12.236/12.589 | NA/NA
+t20 | 11.142/12.081 | 3.229/3.904 | NA/NA | 7.981/7.889
+t22 | 35.721/34.890 | 13.401/15.358 | 20.595/20.322 | 22.968/22.776
+t25 | 43.572/29.271 | 32.579/17.796 | NA/NA | 11.027/11.047
+t28 | 44.833/46.908 | 20.157/15.792 | 20.581/20.461 | 24.928/32.434
+t29 | 42.625/40.401 | 10.667/10.135 | 28.142/27.872 | NA/NA
+t31 | 16.929/16.209 | 1.978/1.329 | NA/NA | 14.894/14.918
+t33 | 29.839/29.701 | 0.117/0.139 | 26.570/26.849 | NA/NA
+t34 | 5.643/5.804 | 1.097/1.171 | NA/NA | 5.043/4.787
+t35 | 33.074/33.236 | 24.081/24.530 | NA/NA | 8.993/8.978
+A1/run1: intervals=570, t25 workers=54, t25/t35 last-worker gaps_us=14.524/13.465, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=38.644
+  t25 worker=80, other kernels=0, phase overlaps_us: claim=3.166 resolve=0.511 prepare_subtask=2.323 publish_completion=0.489 async_seal=0.578
+  t35 worker=89, other kernels=0, phase overlaps_us: claim=3.078 resolve=0.495 prepare_subtask=2.402 publish_completion=0.536 async_seal=0.563
+A1/run2: intervals=570, t25 workers=54, t25/t35 last-worker gaps_us=14.617/13.753, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=40.265
+  t25 worker=79, other kernels=0, phase overlaps_us: claim=3.765 resolve=0.500 prepare_subtask=1.967 publish_completion=0.491 async_seal=0.560
+  t35 worker=71, other kernels=0, phase overlaps_us: claim=3.197 resolve=0.490 prepare_subtask=2.514 publish_completion=0.442 async_seal=0.593
+A1/run3: intervals=570, t25 workers=54, t25/t35 last-worker gaps_us=13.682/13.733, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=37.352
+  t25 worker=56, other kernels=0, phase overlaps_us: claim=2.789 resolve=0.488 prepare_subtask=2.145 publish_completion=0.535 async_seal=0.561
+  t35 worker=73, other kernels=0, phase overlaps_us: claim=2.823 resolve=0.512 prepare_subtask=2.768 publish_completion=0.446 async_seal=0.616
+B1/run1: intervals=560, t25 workers=54, t25/t35 last-worker gaps_us=None/13.851, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=38.788
+  t35 worker=89, other kernels=0, phase overlaps_us: claim=3.165 resolve=0.485 prepare_subtask=2.405 publish_completion=0.693 async_seal=0.586
+B1/run2: intervals=560, t25 workers=54, t25/t35 last-worker gaps_us=None/14.422, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=37.689
+  t35 worker=93, other kernels=0, phase overlaps_us: claim=3.379 resolve=0.521 prepare_subtask=2.798 publish_completion=0.546 async_seal=0.602
+B1/run3: intervals=560, t25 workers=54, t25/t35 last-worker gaps_us=None/14.113, sched streams=108, known dropped=0, reported loss-free=True
+  t18 kernel end to first t22 dispatch_us=36.900
+  t35 worker=93, other kernels=0, phase overlaps_us: claim=3.374 resolve=0.512 prepare_subtask=2.473 publish_completion=0.550 async_seal=0.636
+```
 ## 整图差距
 
 | L0 指标（µs） | A5 基线 | A6 上一批 | A6 本次反馈 | 本次 A6 − A5 |
