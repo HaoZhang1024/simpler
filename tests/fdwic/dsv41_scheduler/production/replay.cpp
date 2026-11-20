@@ -148,6 +148,14 @@ extern "C" __attribute__((visibility("default"))) void aicpu_orchestration_entry
             if (boundary.scalars.size() > 1 && scalar == boundary.scalars[1]) scalar = args.scalar<uint64_t>(1);
             task.add_scalar(scalar);
         }
+#ifdef DSV41_T25_PHASE_PROBE
+        if (header.kernels[1] == 20 || header.task_id == 25) {
+            if (header.task_id != 25 || header.kernels[1] != 20 || header.block_num != 64 || record.tensors.size() != 5 ||
+                record.scalars != std::vector<uint64_t>{72, 8, 80})
+                throw std::runtime_error("Expected the 64-block SWA func20 replay");
+            task.add_scalar(std::stoull(setting("DSV41_T25_STAMP_ADDRESS")));
+        }
+#endif
         std::vector<TaskId> dependencies;
         for (uint64_t old_id : record.dependencies) {
             const auto dependency = task_ids.find(old_id);

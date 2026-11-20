@@ -405,6 +405,15 @@ int run(int argc, char **argv) {
         }
         if (!manifest) throw std::runtime_error("Cannot save boundary manifest");
     };
+#ifdef DSV41_T25_PHASE_PROBE
+    if (!snapshot || ranks != 1 || runtime_name != "percounter" || level != 4)
+        throw std::runtime_error("t25 phase probe requires a single-rank percounter L4 snapshot");
+    constexpr size_t stamp_bytes = 64 * 64;  // One cache line per logical block.
+    const uint64_t stamp_address = worker.malloc(stamp_bytes);
+    if (!stamp_address || stamp_address % 64 ||
+        setenv("DSV41_T25_STAMP_ADDRESS", std::to_string(stamp_address).c_str(), 1) != 0)
+        throw std::runtime_error("Cannot provide the t25 device timestamp buffer");
+#endif
     uint64_t launch_generation = 0;
     auto launch = [&](uint64_t phase, int profiling, const std::string &label) {
         config.enable_chip_swimlane = profiling;
@@ -453,8 +462,16 @@ int run(int argc, char **argv) {
         // A single-level run warms the same collection path that it measures.
         int profiling = level;
         if (all_levels && iteration >= warmup + rounds) profiling = iteration == warmup + rounds ? 1 : 3;
+#ifdef DSV41_T25_PHASE_PROBE
+        initialize(worker, stamp_address, stamp_bytes, {0}, true);
+#endif
         const auto mode = launch(2, profiling, "run" + std::to_string(iteration));
         if (sliced) check_reference();
+#ifdef DSV41_T25_PHASE_PROBE
+        std::vector<uint8_t> stamps(stamp_bytes);
+        worker.copy_from(reinterpret_cast<uint64_t>(stamps.data()), stamp_address, stamp_bytes);
+        save_value(output / ("run" + std::to_string(iteration)) / "t25-stamps.bin", stamps, false);
+#endif
         for (auto index : checked) {
             const auto &buffer = buffers[index];
             std::vector<uint8_t> actual(buffer.bytes);
@@ -470,6 +487,9 @@ int run(int argc, char **argv) {
                   << std::flush;
         host_barrier(output, "checked" + std::to_string(iteration), rank, ranks);
     }
+#ifdef DSV41_T25_PHASE_PROBE
+    worker.free(stamp_address);
+#endif
     worker.unregister_callable(callable_id);
     for (const auto &buffer : buffers) {
         if (buffer.owned) worker.free(buffer.address);
