@@ -9,4 +9,4 @@
 | 内存 | L1 512 KiB，L0A / L0B 各 64 KiB，L0C 256 KiB，UB 376 KiB，L2 128 MiB |
 | 时钟 | query 报 Cube 1800 MHz；L4 计时器为 1 GHz |
 
-[原始查询输出](a6-evidence-2026-11-17) · [首次环境报告](a6-env-reprot.md) · [A6 上板结果](a6-result.md) · [A6 / A5 对比](a6-a5-comparison.zh-CN.md)
+[原始查询输出](../results/2026-11-17-a6-environment/device-query.txt) · [首次环境报告](../results/2026-11-17-a6-environment/README.md) · [A6 上板结果](a6-result.md) · [A6 / A5 对比](a6-a5-comparison.zh-CN.md)

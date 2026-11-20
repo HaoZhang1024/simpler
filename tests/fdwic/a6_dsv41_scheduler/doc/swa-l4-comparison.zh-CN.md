@@ -1,6 +1,6 @@
 # A5 / A6 单卡 percounter SWA 时延对照
 
-硬件、软件版本和 L0 实测见[A6 / A5 对比](a6-a5-comparison.zh-CN.md)。以下取两端同级 L4 的各一个正式轮，A5 无预热，A6 取预热后的 run1。[A5 逐任务数据](../results/2026-11-19-a5-percounter-l4/task-comparison.json) · [A6 逐任务数据](a6-l4-task-comparison.json)
+硬件、软件版本和 L0 实测见[A6 / A5 对比](a6-a5-comparison.zh-CN.md)。以下取两端同级 L4 的各一个正式轮，A5 无预热，A6 取预热后的 run1。[A5 逐任务数据](../results/2026-11-19-a5-percounter-l4/task-comparison.json) · [A6 逐任务数据](../results/2026-11-19-a6-percounter-l4/task-comparison.json)
 
 ## t22、t25、t35 的时间差
 
@@ -36,13 +36,13 @@
 | t25 / func20 | 6.511 / 7.760 | 11.031 / 11.352 |
 | t35 / func27 | 7.330 / 9.185 | 9.075 / 9.740 |
 
-## 复算与后续反馈
+## 用已有泳道复算
 
 从仓库根目录对同一正式轮的 Worker View trace（JSON 或 JSON.gz）和任务编号表执行：
 
 ```bash
-python tests/fdwic/a6_dsv41_scheduler/compare_l4.py \
+python tests/fdwic/a6_dsv41_scheduler/analysis/compare_l4.py \
   "${TRACE:?L4 Perfetto JSON}" "${MAP:?source-task-map.txt}" > task-comparison.json
 ```
 
-黄区正在测 GM 与 CntNotify 的同址访问时延。结果回传时附实际核数、指令、返回值、DSB、时钟和同轮原始样本；将微测与 SWA 的 48 个 block 到达计数对照。[反馈与待办](a6-l4-feedback.md) · [寄存器测试说明](a6-register-benchmark.zh-CN.md)
+两端同轮提取结果已归档。[A5 原始泳道与提取结果](../results/2026-11-19-a5-percounter-l4/) · [A6 提取结果与逐核事件](../results/2026-11-19-a6-percounter-l4/)
