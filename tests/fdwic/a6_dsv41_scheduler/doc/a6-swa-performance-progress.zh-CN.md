@@ -41,7 +41,25 @@ done
 `first_kernel` 和 `later_kernel` 按**同一任务、同一 worker**内的执行先后区分。两者量 kernel 开始到结束；`same_task_gap` 量同核前块结束到下一块开始，可含中间其他工作。每组报样本数、中位数、P90（按名次向上取整）和最大值，时间单位 µs。A5 蓝区已用同一脚本复算，两项任务均有 64 个首块、0 个后续块。t25 首块中位数 / P90 / 最大为 **6.511 / 6.923 / 7.760**，t35 为 **7.330 / 8.077 / 9.185**。
 
 **A6 离线结果回填处（项目负责人填写）**：按原顺序粘贴三组轮次与 t25/t35 输出；遇到错误填轮次和第一条错误。kernel 分段和 runtime 候选由蓝区准备，后续上板命令在本页更新。
+（对应进展文档"黄区现在执行：从已有 A6 泳道提取六行"，T25_L4 = 内网归档的 t25-l4-3evzw1k0 目录，A1 三份正式轮 + 各自 source-task-map，compare_l4.py --block-evidence 原样输出）
 
+```text
+A64/run1
+t25 {"first_kernel": {"n": 54, "median_us": 11.033, "p90_us": 11.118, "max_us": 11.349}, "later_kernel": {"n": 10, "median_us": 10.992, "p90_us": 11.043, "max_us": 11.077}, "same_task_gap": {"n": 10, "median_us": 13.237, "p90_us": 14.045, "max_us": 14.524}}
+t35 {"first_kernel": {"n": 54, "median_us": 9.011, "p90_us": 9.507, "max_us": 9.865}, "later_kernel": {"n": 10, "median_us": 8.901, "p90_us": 9.047, "max_us": 9.062}, "same_task_gap": {"n": 10, "median_us": 12.684, "p90_us": 13.465, "max_us": 13.853}}
+A64/run2
+t25 {"first_kernel": {"n": 54, "median_us": 11.037, "p90_us": 11.165, "max_us": 11.444}, "later_kernel": {"n": 10, "median_us": 11.001, "p90_us": 11.058, "max_us": 11.102}, "same_task_gap": {"n": 10, "median_us": 13.092, "p90_us": 13.805, "max_us": 14.617}}
+t35 {"first_kernel": {"n": 54, "median_us": 9.047, "p90_us": 9.547, "max_us": 9.726}, "later_kernel": {"n": 10, "median_us": 8.909, "p90_us": 9.144, "max_us": 9.533}, "same_task_gap": {"n": 10, "median_us": 12.725, "p90_us": 13.365, "max_us": 13.753}}
+A64/run3
+t25 {"first_kernel": {"n": 54, "median_us": 11.017, "p90_us": 11.132, "max_us": 11.403}, "later_kernel": {"n": 10, "median_us": 11.012, "p90_us": 11.067, "max_us": 11.094}, "same_task_gap": {"n": 10, "median_us": 13.394, "p90_us": 13.752, "max_us": 13.91}}
+t35 {"first_kernel": {"n": 54, "median_us": 8.998, "p90_us": 9.396, "max_us": 9.879}, "later_kernel": {"n": 10, "median_us": 8.911, "p90_us": 9.26, "max_us": 9.266}, "same_task_gap": {"n": 10, "median_us": 12.951, "p90_us": 13.733, "max_us": 13.798}}
+```
+
+三轮稳定，轮间差异 <0.05 µs。对照 A5 蓝区复算值（t25 首块中位/P90/最大 6.511/6.923/7.760；t35 7.330/8.077/9.185）：
+
+- **A6 t25 首块中位 ~11.03 µs（+4.52 vs A5），t35 首块 ~9.02（+1.69）——第一块就已经慢**，按任务表判读规则指向 kernel 内分段（输入搬运/计算/写回）而非复用路径。
+- later_kernel 与 first_kernel 基本持平（t25 10.99-11.01 vs 11.02-11.04；t35 8.90-8.91 vs 9.00-9.05）——后续块不比首块慢，缓存/流水线状态不是主因。
+- same_task_gap 中位 13.1-13.4（t25）/ 12.7-13.0（t35），与末块核窗口一致。
 ## t25 的 64 / 54 block 对照
 
 设备 0，复用此前通过的 SWA 输出目录（含 case/build.json、lib/a6/onboard、query/query），A=64 块 / B=54 块，均处理 64 个 head，按 A1、B1、B2、A2 各预热 1 轮、正式 10 轮。
