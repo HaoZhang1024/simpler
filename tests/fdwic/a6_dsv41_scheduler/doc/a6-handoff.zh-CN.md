@@ -13,10 +13,23 @@
 
 ## 当前执行：用本分支探针在 A6 测六组同址访问
 
-在黄区已加载 A6 CANN 的 Linux shell 中，使用含本次探针的 Simpler checkout。在仓库根目录执行下面一条命令，`DEVICE` 填已独占的 A6 逻辑设备号。脚本使用本分支的设备 kernel、Host 校验和统计程序。它优先从 `PTO_ISA_ROOT` 或 `build/pto-isa` 读取与 A5 测量匹配的 `6065c782e`，版本不同时自动下载该版 PTO-ISA 到本次输出目录。
+本轮探针固定在 Simpler 提交 `8090437706faeea0df8eb784e92c38dc6cb7efb2`。黄区使用已加载 CANN 9.3.0 的 Linux shell、Bash、Git、支持 C++17 的主机编译器和 Python 3.8 以上（标准库）。分配一张 966B7 卡，确认逻辑设备号。
+
+**首次下载。** 在存放源码的位置执行以下命令。已有该提交的 checkout 可直接进入仓库根目录执行下一步。
 
 ```bash
-bash tests/fdwic/a6_dsv41_scheduler/probes/a6_same_address/run.sh "${DEVICE:?请设置已分配的 A6 设备号}"
+git clone --filter=blob:none --single-branch --branch a6-swa-port --no-checkout \
+  https://github.com/HaoZhang1024/simpler.git simpler-a6-same-address &&
+cd simpler-a6-same-address &&
+git switch --detach 8090437706faeea0df8eb784e92c38dc6cb7efb2
+```
+
+**执行。** 在上述仓库根目录执行。已有分配变量 `TASK_DEVICE` 时沿用该值，否则按提示输入设备号。脚本编译本分支的探针，从 `PTO_ISA_ROOT` 或 `build/pto-isa` 取与 A5 匹配的 PTO-ISA `6065c782e`；若版本不同，自动从 GitHub 下载固定提交。编译范围为本探针的设备库和 Host 程序。
+
+```bash
+DEVICE=${TASK_DEVICE:-}
+if [ -z "$DEVICE" ]; then read -rp '已分配的 A6 逻辑设备号: ' DEVICE; fi
+bash tests/fdwic/a6_dsv41_scheduler/probes/a6_same_address/run.sh "$DEVICE"
 ```
 
 | 固定条件 | 本次执行 |
@@ -26,7 +39,7 @@ bash tests/fdwic/a6_dsv41_scheduler/probes/a6_same_address/run.sh "${DEVICE:?请
 | 写三组 | GM 普通写 1、GM atomicExch(1)、CntNotify SET 写 1。写后执行 DSB_DDR 再取结束时间；交换写每轮恰有一个核返回旧值 0 |
 | 校验与统计 | 每组预热 1 轮、正式 192 轮。读值和轮末状态逐轮校验。以本轮最早开始为零点按完成时间排序，输出第 1／48／96 名、P10/P90、起跑分散和相邻间隔 |
 
-**回填。** 开头的 `A6 output:` 给出目录，成功时末行显示 `PASS: six validated scenarios`。把 `result.md` 的成表复制到内网[CntNotify 并发时延](a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延)，填写设备、作业号、输出目录（含 `gm.csv`、`cnt_notify.csv`、`ranks.json` 和日志）。若失败，填失败步骤和 `run.log` 位置，并保留已有数据。[A5 已归档的对照结果](https://github.com/mihudaner/simpler/tree/0d76a7d55/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access)
+**回填。** 开头的 `A6 output:` 给出目录，成功时末行显示 `PASS: six validated scenarios`。把 `result.md` 的成表复制到内网[CntNotify 并发时延](a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延)，填写设备、作业号、输出目录（含 `gm.csv`、`cnt_notify.csv`、`ranks.json` 和日志）。若失败，填失败步骤和 `run.log` 位置，并保留已有数据。若尚未打印 `A6 output:`，回传终端报错。[A5 已归档的对照结果](https://github.com/mihudaner/simpler/tree/0d76a7d55/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access)
 
 **GM 软件栅**是各核通过全局内存中的共享计数或标志集合：到达的核更新 GM，等待的核轮询 GM，条件满足后各自开始。先放行的核可能已经在计时，其他核还在轮询。上面的六组统一用硬件 MIX SYNCALL，同一次访问之后的 DSB 用于约束本核写完成。
 
