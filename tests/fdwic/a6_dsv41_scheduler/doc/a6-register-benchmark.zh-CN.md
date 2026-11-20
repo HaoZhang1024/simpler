@@ -2,7 +2,7 @@
 
 黄区先回答两个问题：同一批 AICore 同时访问一个 32-bit 字时，第一、居中、最后一个参与者各在什么时候完成？SWA 的 t22 有 48 个同步 block，若这批访问发生在它的到达计数上，最后一个参与者是否推迟了 kernel 启动？先在已跑通 SWA 的工作树做独立探针，取得数据后再决定是否改 runtime。
 
-**本轮优先完成独立 probe。** 黄区跑完当前作业并回传原始数据、配置与日志。蓝区负责按完成名次统计、绘图和判断是否需要补测。第 3 节的 SWA 定位和 A/B 是后续分析。执行顺序和失败时的回传要求见[黄区交接单](a6-handoff.zh-CN.md)。
+**A5/A6 正式对照统一使用原版 002。** 执行入口、同版 PTO-ISA 和已有结果的复用条件见[黄区交接单](a6-handoff.zh-CN.md)。下文保存补充探针的实验设计和后续 SWA 分析。
 
 A5 对照材料已按实验归档，包含 GM 和 CntNotify 的原始 CSV 及逐名次统计。蓝区比较前先核对核型比例、原子指令和 DSB 位置。[A5 同址访问报告和数据](https://github.com/mihudaner/simpler/tree/0d76a7d55bcf8976a25777a5dc2ce9b5cbed2eeb/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access)
 

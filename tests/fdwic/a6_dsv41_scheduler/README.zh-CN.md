@@ -6,11 +6,15 @@
 
 | 顺序 | 执行什么 | 完成后填哪里 |
 | --- | --- | --- |
-| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)收齐正在跑的 CntNotify 实验数据 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
+| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)核对 A6 的原版 002 六组结果，缺项时复用 A5 原探针补跑 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
 | **2 · CntNotify 确认后** | 按[同一张交接单的 SWA 命令](doc/a6-handoff.zh-CN.md#cntnotify-结果确认后执行-swa)跑固定版本，每卡 1 轮预热、10 轮正式回放 | 同一内网页面 → [SWA 单卡 L0 复测](doc/a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) |
 
 [性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md)是黄区内网页面的转存原文。黄区登记实际作业和原始文件位置，蓝区补齐统计、结论和下一步。
-# A6 percounter 的 GM 与 CntNotify 并发测试
+
+## 黄区已回传的补充实验（软件栅障）
+
+以下是 11 月 20 日的现场记录。当前 A5 同法复测按首页第一项执行。
+
 
 黄区先回答两个问题：同一批 AICore 同时访问一个 32-bit 字时，第一、居中、最后一个参与者各在什么时候完成？SWA 的 t22 有 48 个同步 block，若这批访问发生在它的到达计数上，最后一个参与者是否推迟了 kernel 启动？先在已跑通 SWA 的工作树做独立探针，取得数据后再决定是否改 runtime。
 

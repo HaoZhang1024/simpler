@@ -1,24 +1,49 @@
 # A6 percounter SWA 黄区执行交接单
 
-**先完成当前 CntNotify 作业并回填。** 蓝区核对结果后，黄区再执行 SWA 单卡复测。
+**当前交付是把 A5 已测的 002 六组操作在 A6 上按原方法复测。** 蓝区核对结果后，黄区再执行 SWA 单卡复测。
 
 **黄区结果填在哪里。** 使用内网页面《A6 percounter SWA 性能分析与每日进展》。首次转存全文，已有页面只追加新栏目。下表链接指向仓库模板，实测结果填在内网同名栏目。
 
 | 测试任务 | 内网页面的填写位置 | 黄区填什么 |
 | --- | --- | --- |
-| 当前优先：CntNotify | 黄区结果回填 → [CntNotify 并发时延](a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) | 实际核数、时钟、轮数、操作与读回结果，原始 CSV、日志、配置位置；失败时附返回码 |
+| 当前优先：CntNotify | 黄区结果回填 → [CntNotify 并发时延](a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) | 002 的 ranks.json、两份 CSV 和运行日志的内网位置，设备号、代码和 PTO-ISA 版本；失败时附返回码 |
 | 随后：SWA 单卡复测 | 黄区结果回填 → [SWA 单卡 L0 复测](a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) | 设备、版本、轮数、校验状态和本轮输出目录 |
 
 蓝区每次交付新测试时，先在目标文档预留一行或新建结果页，再在这张表中写明文档名、栏目和待填内容。
 
-## 当前执行：完成 CntNotify 测量
+## 当前执行：在 A6 复现 A5 的 002
 
-| 顺序 | 黄区执行 | 回传内容 |
-| ---- | -------- | -------- |
-| 1 | 让已启动的 probe 按原配置跑完，保留该作业的输出目录 | 现有的逐轮逐核原始数据、运行日志、启动命令或配置。保留实际核数、时钟频率、操作名，以及 CntNotify 映射和读回记录 |
-| 2 | 作业结束即回传。若只跑完 GM、CntNotify 映射失败或某组中断，先交已生成的文件 | 附失败组名和原始报错或 SDK 返回码。蓝区定位原因、准备补测命令，黄区按命令补跑 |
+先找黄区报告引用的那次 **002** 作业。若能对应到原版 `probes/same_address`、PTO-ISA `6065c782e`、48C+48V、1 轮预热 + 192 轮正式以及六组读写校验，直接登记该作业的 `ranks.json`、GM/CntNotify CSV 和日志。原始 CSV 齐全时可用同版 `ranks.py` 重新汇总。现场的 op00–17 软件栅障实验另作补充。
 
-**完成标准。** 蓝区确认 A6 实际走通 CntNotify SET/read 并读回正确，再与同配置的 GM ld/st、GM atomic 对照。首组目标为 48 AIC + 48 AIV，每种读、写（含 DSB）组合各 192 个正式轮次。蓝区核对实际参与核、时钟和有效轮次，使用[统计脚本](../register_ranks.py)列出第 1、48、96 个完成者的时延和平均相邻间隔。若现场能力限制某条路径，蓝区记录具体接口、返回码及可测范围后再安排下一项。[测量口径](a6-register-benchmark.zh-CN.md)
+缺少可核对的原版结果时，在已加载 A6 CANN、配有 Python 3.10+、Git 和主机 C++ 编译器的 Linux shell，从 Simpler 根目录执行下面一段。输入已经独占的逻辑设备号。命令下载同事的固定版本与对应 PTO-ISA，在本次输出目录独立编译原探针。
+
+```bash
+(
+  set -euo pipefail
+  read -rp '已分配的 A6 逻辑设备号: ' device
+  [[ "$device" =~ ^[0-9]+$ ]]
+  mkdir -p build
+  out=$(mktemp -d "$PWD/build/002-a6-XXXXXXXX")
+  echo "002 output: $out"
+  exec > >(tee "$out/run.log") 2>&1
+  fetch_version() {
+    git init -q "$1"
+    git -C "$1" fetch -q --depth 1 "$2" "$3"
+    git -C "$1" checkout -q --detach FETCH_HEAD
+    git -C "$1" rev-parse HEAD
+  }
+  fetch_version "$out/src" https://github.com/mihudaner/simpler.git 0d76a7d55bcf8976a25777a5dc2ce9b5cbed2eeb
+  fetch_version "$out/isa" https://github.com/hw-native-sys/pto-isa.git "$(cat "$out/src/pto_isa.pin")"
+  p="$out/src/tests/fdwic/a6_dsv41_scheduler/probes/same_address"
+  bash "$p/build.sh" a6 "$out/isa" "$out/bin"
+  "$out/bin/probe" "$device" 48 gm "$out/gm.csv" 2>&1 | tee "$out/gm.log"
+  "$out/bin/probe" "$device" 48 cnt_notify "$out/cnt_notify.csv" 2>&1 | tee "$out/cnt_notify.log"
+  python3 "$p/ranks.py" "$out/gm.csv" "$out/cnt_notify.csv" --blocks 48 --vectors 48 \
+    --clock-hz 1000000000 --output "$out/ranks.json"
+)
+```
+
+六组是 GM 普通读／写、GM atomic 加零读／交换写、CntNotify SET/read 读／写。全部使用硬件 MIX SYNCALL 起跑；每个写操作在结束取时前执行 DSB。A5 启动 32C+64V，A6 启动 48C+48V，两端均为 96 个参与核。成功时登记含六组的 `ranks.json` 和日志；失败时登记已生成文件和首条报错。蓝区负责与 A5 逐组比对。[原始 A5 数据与方法](https://github.com/mihudaner/simpler/tree/0d76a7d55/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access)
 
 ## 后续 SWA 复测已交付的代码
 
