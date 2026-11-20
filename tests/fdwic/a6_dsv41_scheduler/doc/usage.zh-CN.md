@@ -111,7 +111,14 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
-黄区 agent 将[A6 SWA 性能分析与每日进展](a6-swa-performance-progress.zh-CN.md)全文转存到内网，并在当天记录中追加实际作业状态和原始结果位置。
+**黄区结果填在哪里。** 使用内网页面《A6 percounter SWA 性能分析与每日进展》。首次转存全文，已有页面只追加新栏目。下表链接指向仓库模板，实测结果填在内网同名栏目。
+
+| 测试任务 | 内网页面的填写位置 | 黄区填什么 |
+| --- | --- | --- |
+| 当前优先：CntNotify | 黄区结果回填 → [CntNotify 并发时延](a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) | 实际核数、时钟、轮数、操作与读回结果，原始 CSV、日志、配置位置；失败时附返回码 |
+| 随后：SWA 单卡复测 | 黄区结果回填 → [SWA 单卡 L0 复测](a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) | 设备、版本、轮数、校验状态和本轮输出目录 |
+
+蓝区每次交付新测试时，先在目标文档预留一行或新建结果页，再在这张表中写明文档名、栏目和待填内容。
 
 **2026-11-19 当前优先项：完成 A6 CntNotify 时延实验。** 黄区先执行下面这一项，回传后由蓝区核对。SWA 单卡复测排在 CntNotify 结果确认之后。
 
