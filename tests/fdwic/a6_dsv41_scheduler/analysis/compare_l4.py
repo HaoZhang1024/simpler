@@ -12,13 +12,37 @@
 import argparse
 import gzip
 import json
+import math
 import re
 from collections import Counter, defaultdict
 from pathlib import Path
 from statistics import median
 
 
-def summarize(trace, mapping):
+def block_evidence(by_core):
+    durations = defaultdict(list)
+    gaps = []
+    for intervals in by_core.values():
+        ordered = sorted(intervals)
+        for i, (start, end) in enumerate(ordered):
+            if end < start or (i and start < ordered[i - 1][1]):
+                raise ValueError("Invalid same-worker kernel intervals")
+            durations["first" if i == 0 else "later"].append(end - start)
+            if i:
+                gaps.append(start - ordered[i - 1][1])
+
+    def stats(values):
+        if not values:
+            return {"n": 0}
+        values = sorted(values)
+        return {"n": len(values), "median_us": round(median(values), 3),
+                "p90_us": round(values[math.ceil(0.9 * len(values)) - 1], 3), "max_us": round(values[-1], 3)}
+
+    return {"first_kernel": stats(durations["first"]), "later_kernel": stats(durations["later"]),
+            "same_task_gap": stats(gaps)}
+
+
+def summarize(trace, mapping, *, include_blocks=False):
     # Use the worker track: scheduler tracks may nest additional copies of kernel intervals.
     workers = {
         event["pid"]
@@ -87,6 +111,8 @@ def summarize(trace, mapping):
                 },
             }
         )
+        if include_blocks and task in (25, 35):
+            result["tasks"][-1]["block_evidence"] = block_evidence(by_core)
     return result
 
 
@@ -94,7 +120,17 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("trace", type=Path)
     parser.add_argument("source_task_map", type=Path)
+    parser.add_argument(
+        "--block-evidence", action="store_true", help="Print first and later t25/t35 blocks per worker (64-block plan)"
+    )
     args = parser.parse_args()
     pairs = [line.split() for line in args.source_task_map.read_text().splitlines() if line.strip()]
     with (gzip.open if args.trace.suffix == ".gz" else open)(args.trace, "rt", encoding="utf-8") as stream:
-        print(json.dumps(summarize(json.load(stream), {int(replay): int(src) for src, replay in pairs}), indent=2))
+        result = summarize(json.load(stream), {int(replay): int(src) for src, replay in pairs},
+                           include_blocks=args.block_evidence)
+    if args.block_evidence:
+        for task in result["tasks"]:
+            if "block_evidence" in task:
+                print(f"t{task['source_task']} {json.dumps(task['block_evidence'])}")
+    else:
+        print(json.dumps(result, indent=2))

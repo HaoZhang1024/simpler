@@ -1,8 +1,8 @@
 # A6 单卡 SWA · percounter
 
-**当前阶段：分析 A6 与 A5 的时延差距。** A6 本次 AICore wall 均值 267.511 µs，比 A5 多 82.338 µs；Device 均值 360.831 µs，比 A5 多 64.133 µs。整图测量和 CntNotify 微基准均已完成。
+**当前阶段是定位 A6 单块执行与同核调度的差距。** t25 调整为 54 块后，A6 同卡 L0 AICore 平均节省 4.870 µs；实验方案相对历史 A5 基线，AICore 仍多 77.032 µs、Device 多 58.830 µs。[t25 结果复核](doc/a6-swa-performance-progress.zh-CN.md#t25-结果复核)
 
-**[唯一进度与反馈入口：A6 SWA 性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)**。t25 的 54 块方案在 A6 同卡 L0 上平均节省 4.870 µs AICore 时间。A/B 各三轮 L4 已归档，以 t22 结束为起点，到整图最后一个 kernel 仍提前 9.730 µs。[t25 结果复核](doc/a6-swa-performance-progress.zh-CN.md#t25-结果复核)
+**黄区本轮只做离线提取。** 蓝区已复算 A5；黄区用现有的三份 A6 泳道提取 t25、t35 首块、后续块和复用间隔的分布。命令、回填处和后续上板条件在[下一步要补齐的证据](doc/a6-swa-performance-progress.zh-CN.md#下一步要补齐的证据)。
 
 | 要找什么 | 位置 |
 | --- | --- |
