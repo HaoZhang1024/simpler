@@ -3,7 +3,28 @@
 ## 当前状态与反馈位置
 
 **黄区本轮只需上板执行一次 t25 对照脚本。** 蓝区已核对两份 plan 和 64 个 head 的工作量。TCM 接口可以在等结果时查本机 SDK 或内网平台文档。两项各有一行回填位置。
+## t25 的 64 / 54 block 对照
 
+设备 0，复用此前通过的 SWA 输出目录（含 case/build.json、lib/a6/onboard、query/query），A=64 块 / B=54 块，均处理 64 个 head，按 A1、B1、B2、A2 各预热 1 轮、正式 10 轮。
+
+**Golden：4 批全部 PASS**（各批 summary.json 中 status=passed、rounds=10、numerical_validation=true）。
+
+| 批次        | AICore 均值（µs） | Device 均值（µs） |
+| ----------- | ----------------: | ----------------: |
+| A1（64 块） |           266.526 |           360.406 |
+| B1（54 块） |           261.409 |           355.017 |
+| B2（54 块） |           263.001 |           356.039 |
+| A2（64 块） |           267.624 |           360.607 |
+
+- AICore：**B1−A1 = −5.117 µs，B2−A2 = −4.623 µs**，A2−A1 = +1.098 µs
+- Device：B1−A1 = −5.389 µs，B2−A2 = −4.568 µs，A2−A1 = +0.201 µs
+
+两对 B−A 均为负，降幅（约 4.6~5.1 µs）明显大于 A2−A1 漂移与批内波动。40 个正式样本及各批 summary.json 已留存（脚本打印的实验目录）。
+
+## A6 TCM 接口（本机 SDK 检索）
+
+- **装入 TCM：未查到。** 本机 CANN 9.3.0（ascend-toolkit/latest 即 cann-9.3.0）与 PTO-ISA 83b1b2b5 中无任何 TCM 接口名、头文件或示例；A6 侧仅 `__gm__` / `__ubuf__` / `__cbuf__` 三种地址空间（TLoad 为 GM→UB / GM→CBUF）。
+- **AICore scalar 从 TCM 读取：未查到。** 同上；TCMP/TCMPS 为比较指令、aclrtCmo* 为 cache maintain op，均为前缀巧合，已排除。内网平台文档本机不可达，未查。
 | 项目 | 状态 | 项目负责人反馈的位置和内容 |
 | --- | --- | --- |
 | t25 的 64 / 54 block 对照 | 必测，执行下方命令一次 | **结果待填**。填设备号，贴终端最后四批的 AICore / Device 均值（µs）、两对 B−A、A2−A1 和 golden 状态。若失败，填失败步骤或批次及第一条错误。 |
