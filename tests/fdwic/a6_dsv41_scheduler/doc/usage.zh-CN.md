@@ -111,4 +111,22 @@ python tests/fdwic/a6_dsv41_scheduler/test_resources.py -v
 
 ## 黄区接续测试
 
-本轮执行顺序、固定版本、运行命令和回填位置见[黄区执行交接单](a6-handoff.zh-CN.md)。
+当前进度和反馈位置见[唯一任务表](a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)。以下保留历史版本的整图复现方法，用于后续有具体改动时作对照。
+
+使用已加载现场 CANN 9.3.0 的 Linux shell，从用于 SWA 的 Simpler 仓库根目录执行。沿用现场的项目 `.venv`、CMake、Ninja，以及 `build/pto-isa` 下的 PTO-ISA checkout。
+
+```bash
+(
+  set -e
+  git fetch https://github.com/HaoZhang1024/simpler.git refs/heads/a6-swa-port
+  git switch --detach cf78bd31a28aedeed4a43592c43f9203b6ce4348
+  source .venv/bin/activate
+  test "$(git -C build/pto-isa rev-parse HEAD)" = "$(cat pto_isa.pin)" || {
+    echo "PTO-ISA 版本与 pto_isa.pin 不一致"; exit 1
+  }
+  read -rp '本次分配的 A6 设备号: ' DEVICE
+  bash tests/fdwic/a6_dsv41_scheduler/test_a6_swa.sh "$DEVICE"
+)
+```
+
+脚本依次构建 A6 percounter、设备查询工具和 SWA 包，核对芯片型号后运行。开头的 `SWA output:` 给出本次目录。成功时终端最后的 `percounter` 行显示 `PASS`；`result/summary.json` 中 `status` 为 `passed`，该 runtime 的 `rounds` 为 10、`numerical_validation` 为 `true`。

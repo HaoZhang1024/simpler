@@ -16,11 +16,13 @@
 
 | 时延（µs） | A6 | A5 | A6 − A5 |
 | ---------- | -- | -- | ------- |
-| L0 AICore wall 均值 | 265.768 | 185.173 | +80.595 |
-| L0 Device 均值 | 357.712 | 296.698 | +61.014 |
+| L0 AICore wall 均值（本次） | 267.511 | 185.173 | +82.338 |
+| L0 Device 均值（本次） | 360.831 | 296.698 | +64.133 |
+| L0 AICore wall 均值（上一批） | 265.768 | 185.173 | +80.595 |
+| L0 Device 均值（上一批） | 357.712 | 296.698 | +61.014 |
 | L4 整图 kernel 跨度 | 453.489 | 320.997 | +132.492 |
 | L4 t22 kernel 跨度 | 36.213 | 21.923 | +14.290 |
 | L4 t25 kernel 跨度 | 42.285 | 19.103 | +23.182 |
 | L4 t35 kernel 跨度 | 33.093 | 12.844 | +20.249 |
 
-L0 各预热 1 轮、正式 10 轮。A6 使用黄区移植版本，A5 runtime 为 26b0511f3。L4 各取 1 个正式轮次；跨度从首个 kernel 开始算到最后一个 kernel 结束。[A6 现场记录](a6-result.md) · [A5 实测记录](a5-results-2026-11-17.zh-CN.md) · [A6 L4 数据](a6-l4-task-comparison.json) · [A5 L4 数据](../results/2026-11-19-a5-percounter-l4/task-comparison.json)
+L0 各预热 1 轮、正式 10 轮。本次 A6 AICore 范围为 259.7–275.2 µs，按负责人回报记录。上一批 A6 使用黄区移植版本，A5 runtime 为 26b0511f3。L4 各取 1 个正式轮次；跨度从首个 kernel 开始算到最后一个 kernel 结束。[A6 现场记录](a6-result.md) · [A5 实测记录](a5-results-2026-11-17.zh-CN.md) · [A6 L4 数据](a6-l4-task-comparison.json) · [A5 L4 数据](../results/2026-11-19-a5-percounter-l4/task-comparison.json)
