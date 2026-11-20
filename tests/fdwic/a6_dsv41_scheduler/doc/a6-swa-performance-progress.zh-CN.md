@@ -2,13 +2,13 @@
 
 ## 当前状态与反馈位置
 
-**本轮测 A（64 块）、B（54 块）的完整 A6 L4。** 新采时每组预热 1 轮、正式 3 轮，复用已验证的 L0 plan、kernel 和输入。若已采完上一版的 A/B 各一轮，优先用下方离线命令直接生成结果。
+**t25 的 L0、L4 对照均已完成。** 54 块让 t25 更早结束，提前量一直传到 t35 末块。当前由蓝区沿原有 64 块方案检查同核再领一块的 runtime 路径，黄区本轮采集已收齐。
 
 | 项目 | 状态 | 回填位置 |
 | --- | --- | --- |
 | t25 L0 | 已收，四批 golden 通过 | 见下方四批均值 |
 | A6 TCM 接口 | 本机 SDK 与 PTO-ISA 检索已收 | 见下方检索范围 |
-| t25 L4 与全图对照 | 待黄区执行 | **本行填设备号、两组正式轮数、golden 状态，以及黄区内网的 Perfetto / 明细归档位置。** 把脚本生成的 `feedback.txt` 内容贴到下方“黄区 L4 结果”处。失败时填批次、步骤和首条错误。 |
+| t25 L4 与全图对照 | 已收，A/B 各 3 个正式轮 | [蓝区复核](#t25-结果复核) · [黄区摘要与归档位置](#黄区-l4-结果) |
 
 ## t25 的 64 / 54 block 对照
 
@@ -39,6 +39,8 @@
 
 ### 黄区本轮命令
 
+本轮已执行。以下命令留作复现。
+
 在已加载 CANN 的环境、同一张 A6 卡上执行。沿用 L0 的 `SWA_RUN` 和 `DEVICE`。将 `T25_RUN` 设为刚才 L0 打印的 `swa-t25-*` 目录，`L4_LIB` 设为此前成功采集 A6 L4 的 percounter 运行库目录（形如 `lib/a6/onboard`，已启用 DFX、ORCH、SCHED）。
 
 ```bash
@@ -64,12 +66,7 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/t25_report.py "${T25_L4:?已有�
 
 ### 黄区 L4 结果
 
-项目负责人在这里粘贴 `feedback.txt`。完整 trace、`task-details.json` 和原始文件保存在黄区内网同一实验目录，供按任务和 worker 查阅。蓝区据摘要先核对轮间波动、t25 的变化、向下游传递的时间，再决定是否改 percounter 的同核复用路径。整图收益沿用已测 L0。
-设备 0，A（64 块）/ B（54 块）各预热 1 轮、正式 3 轮，golden A/B 双过（result.json passed、validated_against_fused_prefix=true）。A、B kernel 区间数分别为 570、560，调度流 108，已知丢失 0、上报无损。
-
-（对应进展文档"当前状态与反馈位置"表 · t25 L4 与全图对照行）
-
-设备 0，A（64 块）/ B（54 块）各预热 1 轮、正式 3 轮，golden A/B 双过（result.json passed、validated_against_fused_prefix=true）。A、B kernel 区间数分别为 570、560，调度流 108，已知丢失 0、上报无损。
+设备 0，A（64 块）与 B（54 块）各预热 1 轮、正式 3 轮。两组 golden 均通过，A/B 分别有 570/560 个 kernel 区间；六轮各有 108 条调度流，上报丢失 0 条。
 
 归档位置（内网）：`/npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-t25-lk1vgyf9/t25-l4-3evzw1k0/`（含 `A6-SWA-t25-64-run1..3.json.gz`、`A6-SWA-t25-54-run1..3.json.gz`、`task-details.json`、`feedback.txt` 及 A1/B1 rank0 原始 records/deps/任务映射/golden）。
 
@@ -125,6 +122,21 @@ B1/run3: intervals=560, t25 workers=54, t25/t35 last-worker gaps_us=None/14.113,
   t18 kernel end to first t22 dispatch_us=36.900
   t35 worker=93, other kernels=0, phase overlaps_us: claim=3.374 resolve=0.512 prepare_subtask=2.473 publish_completion=0.550 async_seal=0.636
 ```
+### t25 结果复核
+
+| L4 端点（µs，各组三轮中位数） | A，64 块 | B，54 块 | B−A |
+| --- | ---: | ---: | ---: |
+| t25 首块开始 → 末块结束 | 43.572 | 29.271 | −14.301 |
+| t22 结束 → t25 结束 | 51.437 | 37.312 | −14.125 |
+| t22 结束 → t28 首块开始 | 68.642 | 56.729 | −11.913 |
+| t22 结束 → t35 末块结束 | 202.449 | 192.719 | −9.730 |
+
+四项均为 B 最慢一轮仍早于 A 最快一轮。t25 首块到末块开始的分散从 32.579 降到 17.796 µs，而 AIV 单次 kernel 时长中位数为 11.027 / 11.047 µs。A 的末块所在核三轮均跑过前一块，两块间隔为 13.682–14.617 µs；B 的 54 块在 54 个 AIV 上各执行一次。三轮结果支持 t25 的主要变化来自启动和收尾。单块中位数对少数处理两个 head 的 B 块不敏感。
+
+以 t22 结束为共同起点，提前量到 t28 首块和 t35 末块仍然可见。另一个观察是 t28 AIV 单次 kernel 时长中位数从 24.928 升到 32.434 µs，t28 任务跨度从 44.833 升到 46.908 µs。当前回填无法确定该变化的原因，各区间中位数也不能直接相加归因。L4 的整图 kernel 窗口缩短 13.698 µs；关闭插桩的同卡 L0 AICore / Device 均值分别节省 4.870 / 4.979 µs。
+
+**蓝区下一步。** 保留 64 块这条对照，优先检查同一 AIV 第二次领到同任务时，取票和参数准备中哪些工作必须按块重做，哪些任务级数据可以复用。t35 的任务描述在 A/B 间相同，六轮末块核的复用间隔为 13.465–14.422 µs，且均无其他 kernel 穿插。窗口内 claim 为 2.823–3.379 µs、prepare_subtask 为 2.402–2.798 µs、resolve 为 0.485–0.521 µs。这些事件时长是与窗口的相交部分。t35 可作为后续检验通用 runtime 改动的对照。目前已测收益归在 t25 的 SWA 分块实验下。
+
 ## 整图差距
 
 | L0 指标（µs） | A5 基线 | A6 上一批 | A6 本次反馈 | 本次 A6 − A5 |
