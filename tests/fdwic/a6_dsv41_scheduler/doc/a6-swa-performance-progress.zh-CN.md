@@ -56,4 +56,4 @@ CntNotify 结果确认后执行。填脚本实际使用的版本和设备，状�
 
 蓝区按实测日期追加摘要，引用对应的黄区回填记录，给出带单位的差值、校验结论和下一项测试。
 
-仓库内可复核的材料见[两端基线对比](a6-a5-comparison.zh-CN.md)、[三任务实测事件](a6-l4-feedback.md)、[CntNotify 测量方法](a6-register-benchmark.zh-CN.md)和[黄区执行交接单](usage.zh-CN.md#黄区接续测试)。
+仓库内可复核的材料见[两端基线对比](a6-a5-comparison.zh-CN.md)、[三任务实测事件](a6-l4-feedback.md)、[CntNotify 测量方法](a6-register-benchmark.zh-CN.md)和[黄区执行交接单](a6-handoff.zh-CN.md)。

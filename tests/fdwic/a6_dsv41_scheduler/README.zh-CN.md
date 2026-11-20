@@ -1,16 +1,24 @@
-# SWA 独立用例
+# A6 单卡 SWA · percounter
 
-独立运行 DSV4.1 的 SWA 子层。蓝区维护 Simpler 平台、percounter 和测试代码；黄区在分配到的 A6 上构建、执行并反馈结果。
+目标是缩小 DSV4.1 SWA 在 A6 和 A5 上的时延差距。现有单卡 L0 基线中，A6 AICore wall 为 265.768 µs，A5 为 185.173 µs，相差 80.595 µs。[基线与测量条件](doc/a6-a5-comparison.zh-CN.md)
 
-| 入口 | 用途 |
-| ---- | ---- |
-| [A6 SWA 性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md) | 供黄区内网转存，按日跟踪与 A5 的差距、测试结果和下一步 |
-| [A6 / A5 对比](doc/a6-a5-comparison.zh-CN.md) | 硬件、工具链、SWA 实测时延 |
-| [本轮黄区交接单](doc/usage.zh-CN.md#黄区接续测试) | 交付版本、已验证的代码、正在跑的 CntNotify 实验、SWA 单卡命令及回传文件 |
-| [执行原理](doc/execution.zh-CN.md) | 19 个已有 kernel、任务图和固定输入；A6 的两处 MIX 变更 |
-| [三任务 L4 对照](doc/swa-l4-comparison.zh-CN.md) · [黄区测试清单](doc/a6-l4-feedback.md) | t22 的计数等待、t25/t35 的核复用 |
-| [GM 与 CntNotify 测量](doc/a6-register-benchmark.zh-CN.md) | 当前实验的计时和结果格式 |
-| [A6 现场原始报告](doc/a6-result.md) · [A5 实测记录](doc/a5-results-2026-11-17.zh-CN.md) | 两侧原始测量；A6 报告中的历史补丁可在[当时的目录](https://github.com/HaoZhang1024/simpler/tree/b36fdcca5/tests/fdwic/a6_dsv41_scheduler/doc)查阅 |
+## 黄区从这里开始
+
+| 顺序 | 执行什么 | 完成后填哪里 |
+| --- | --- | --- |
+| **1 · 当前** | 按[黄区执行交接单](doc/a6-handoff.zh-CN.md)收齐正在跑的 CntNotify 实验数据 | 内网《A6 percounter SWA 性能分析与每日进展》→ [CntNotify 并发时延](doc/a6-swa-performance-progress.zh-CN.md#cntnotify-并发时延) |
+| **2 · CntNotify 确认后** | 按[同一张交接单的 SWA 命令](doc/a6-handoff.zh-CN.md#cntnotify-结果确认后执行-swa)跑固定版本，每卡 1 轮预热、10 轮正式回放 | 同一内网页面 → [SWA 单卡 L0 复测](doc/a6-swa-performance-progress.zh-CN.md#swa-单卡-l0-复测) |
+
+[性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md)是黄区内网页面的转存原文。黄区登记实际作业和原始文件位置，蓝区补齐统计、结论和下一步。
+
+## 按问题查资料
+
+| 想了解什么 | 去哪里看 |
+| --- | --- |
+| 两端设备、时延和原始测量分别是什么？ | [A6 / A5 对比表](doc/a6-a5-comparison.zh-CN.md) · [A6 现场原始报告](doc/a6-result.md) · [A5 实测记录](doc/a5-results-2026-11-17.zh-CN.md)。A6 报告引用的历史补丁见[当时的目录](https://github.com/HaoZhang1024/simpler/tree/b36fdcca5/tests/fdwic/a6_dsv41_scheduler/doc) |
+| GM 与 CntNotify 的时延怎样测？ | [参与核、读写指令、计时和排名方法](doc/a6-register-benchmark.zh-CN.md) |
+| 哪几段 SWA 慢，泳道上看到了什么？ | [t22、t25、t35 的对照方法](doc/swa-l4-comparison.zh-CN.md) · [A6 同轮事件与数据](doc/a6-l4-feedback.md) |
+| SWA 怎么组包、更换 runtime 后要重编什么？ | [执行原理](doc/execution.zh-CN.md) · [构建与复测用法](doc/usage.zh-CN.md) |
 
 ## 代码与数据
 

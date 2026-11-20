@@ -2,7 +2,9 @@
 
 黄区先回答两个问题：同一批 AICore 同时访问一个 32-bit 字时，第一、居中、最后一个参与者各在什么时候完成？SWA 的 t22 有 48 个同步 block，若这批访问发生在它的到达计数上，最后一个参与者是否推迟了 kernel 启动？先在已跑通 SWA 的工作树做独立探针，取得数据后再决定是否改 runtime。
 
-**本轮优先完成独立 probe。** 黄区跑完当前作业并回传原始数据、配置与日志。蓝区负责按完成名次统计、绘图和判断是否需要补测。第 3 节的 SWA 定位和 A/B 是后续分析。执行顺序和失败时的回传要求见[黄区交接单](usage.zh-CN.md#黄区接续测试)。
+**本轮优先完成独立 probe。** 黄区跑完当前作业并回传原始数据、配置与日志。蓝区负责按完成名次统计、绘图和判断是否需要补测。第 3 节的 SWA 定位和 A/B 是后续分析。执行顺序和失败时的回传要求见[黄区交接单](a6-handoff.zh-CN.md)。
+
+A5 对照材料已按实验归档，包含 GM 和 CntNotify 的原始 CSV 及逐名次统计。蓝区比较前先核对核型比例、原子指令和 DSB 位置。[A5 同址访问报告和数据](https://github.com/mihudaner/simpler/tree/0d76a7d55bcf8976a25777a5dc2ce9b5cbed2eeb/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access)
 
 ## 1. 先确认测的是哪条指令
 
@@ -66,6 +68,6 @@ python "$SWA/register_ranks.py" "$RAW" --workers 96 --rounds 192 \
 
 - **L4 定位。** 先复用已有正式轮，沿 t22 给出最后前驱结束、最后 block 到达、首次观察到阈值、首 dispatch、首 kernel start、末 kernel end。每一对端点标注对应 lane；缺少内部事件就写“未观测”。需要补点时单独跑诊断轮。t25/t35 均有 64 个普通 Vector block，分别给出最后结束核的复用顺序和前后 block 间隙，再看 `percounter_claim_block` 取票是否出现在这一段。A6 头尾另按 `aicpu_ready` 发布→核观察及 `exit_request` 发布→核退出测量，两者均有自己的发布者、地址分布和观测端点。[三项任务的 A5 实测与 A6 提取命令](swa-l4-comparison.zh-CN.md)
 - **判定候选是否命中。** 记录硬件映射数、实际选中 INC 的 cohort、GM 回退数、最后到达与首 dispatch 的差值。读写寄存器可能缩短会合；需要返回唯一旧票号的 claim 仍须保证唯一分配。陈鹏的静态分配针对同步宽度恰好等于 owner 数，t22 的 48 与 A6 的 54 对并不相等。传瑜的 HBG 验证逐项检查硬件映射和实际执行，并把 Host bind 单独计时，两种方法都可复用。[percounter 实验](https://github.com/hw-native-sys/simpler/pull/3180) · [HBG 映射及 trace 验证](https://github.com/hw-native-sys/simpler/pull/3157)
-- **L0 验收益。** 有可用候选时，A 为当前 GM，B 仅更改已定位的一条路径。同一张卡、同一 plan/输入/工具链和 570 个执行实例，关诊断，先做 A/A，再按 A-B-B-A 交替。每批 1 次预热 + 10 个正式样本，每批独立输出目录。反馈各批 AICore wall、Device、输出校验和 B−A 配对差，结合 A/A 波动判断；涉及资源申请时另报首次/复用 bind。陈鹏 #3180 的 A5 SWA 为 165.847→166.647 µs（+0.48%，组合改动），这是另一组基线。硬件完成名次曲线和 L4 区间只能定位要验证的路径。[SWA 运行入口](usage.zh-CN.md#黄区接续测试) · [配对和 A/A 方法](https://github.com/hw-native-sys/simpler/pull/3151)
+- **L0 验收益。** 有可用候选时，A 为当前 GM，B 仅更改已定位的一条路径。同一张卡、同一 plan/输入/工具链和 570 个执行实例，关诊断，先做 A/A，再按 A-B-B-A 交替。每批 1 次预热 + 10 个正式样本，每批独立输出目录。反馈各批 AICore wall、Device、输出校验和 B−A 配对差，结合 A/A 波动判断；涉及资源申请时另报首次/复用 bind。陈鹏 #3180 的 A5 SWA 为 165.847→166.647 µs（+0.48%，组合改动），这是另一组基线。硬件完成名次曲线和 L4 区间只能定位要验证的路径。[SWA 运行入口](a6-handoff.zh-CN.md) · [配对和 A/A 方法](https://github.com/hw-native-sys/simpler/pull/3151)
 
 首批回传使用当前 probe 已生成的文件，保留实际版本、命令、时钟、参与核、读写路径及读回状态。蓝区从原始记录生成首、中、尾时延表，再决定下一次上板测什么。
