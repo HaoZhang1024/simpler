@@ -13,9 +13,112 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/saved_placement.py build/swa-a6-b
 
 **黄区离线复算结果填在这里**：请粘贴命令输出的 JSON，包含有效轮数、逐轮固定排块时间和等待贡献最大的三个 task。
 
-```text
-待黄区回填
+设备 0，复用 `build/swa-a6-bound-faV0oG`（HEAD a1ee04044 采集）已采好的十轮 L0/L2/model，纯 CPU 离线复算：保持实际 worker 分配与核上执行顺序的理想时间（fixed_order），并统计关键链 dispatch 前后的间隔。输入数据一致性校验全过（54 块、quantum 100 ns、runtime sha 与上轮求解一致、10 轮有效）。
+
+命令输出 JSON 全文：
+
+```json
+{
+  "device": 0,
+  "lower_bound_mean_us": 202.20999999999998,
+  "aicore_l0_mean_us": 262.6916,
+  "device_l0_mean_us": 356.97630000000004,
+  "fixed_order_mean_us": 204.39,
+  "fixed_order_valid_rounds": 10,
+  "l2_kernel_span_mean_us": 265.4167,
+  "l2_chain_gap_mean_us": 65.9361,
+  "l2_top_chain_gaps": [
+    {
+      "task": 22,
+      "mean_us": 12.145,
+      "before_dispatch_mean_us": 11.933000000000002,
+      "after_dispatch_mean_us": 0.2119999999999976,
+      "largest_observed_gap": {
+        "round": 7,
+        "task": 22,
+        "block": 39,
+        "worker": 77,
+        "prior_task": 18,
+        "prior_block": 9,
+        "prior_worker": 103,
+        "dispatch_cycles": 780418868850756,
+        "kernel_start_cycles": 780418868850941,
+        "prior_kernel_end_cycles": 780418868836605,
+        "prior_finish_cycles": 780418868836613,
+        "kernel_us": 22.45,
+        "gap_us": 14.336,
+        "gap_before_dispatch_us": 14.151,
+        "gap_after_dispatch_us": 0.185
+      }
+    },
+    {
+      "task": 9,
+      "mean_us": 9.4466,
+      "before_dispatch_mean_us": 9.0531,
+      "after_dispatch_mean_us": 0.39350000000000024,
+      "largest_observed_gap": {
+        "round": 3,
+        "task": 9,
+        "block": 76,
+        "worker": 78,
+        "prior_task": 31,
+        "prior_block": 4,
+        "prior_worker": 78,
+        "dispatch_cycles": 780418657401179,
+        "kernel_start_cycles": 780418657401459,
+        "prior_kernel_end_cycles": 780418657393625,
+        "prior_finish_cycles": 780418657393633,
+        "kernel_us": 1.834,
+        "gap_us": 7.834,
+        "gap_before_dispatch_us": 7.554,
+        "gap_after_dispatch_us": 0.28
+      }
+    },
+    {
+      "task": 35,
+      "mean_us": 7.7931,
+      "before_dispatch_mean_us": 7.3233999999999995,
+      "after_dispatch_mean_us": 0.4697000000000003,
+      "largest_observed_gap": {
+        "round": 3,
+        "task": 35,
+        "block": 60,
+        "worker": 54,
+        "prior_task": 35,
+        "prior_block": 28,
+        "prior_worker": 54,
+        "dispatch_cycles": 780418657635742,
+        "kernel_start_cycles": 780418657636064,
+        "prior_kernel_end_cycles": 780418657630688,
+        "prior_finish_cycles": 780418657630697,
+        "kernel_us": 8.55,
+        "gap_us": 5.376,
+        "gap_before_dispatch_us": 5.054,
+        "gap_after_dispatch_us": 0.322
+      }
+    }
+  ],
+  "fixed_order_us_by_round": [
+    214.5,
+    213.0,
+    207.8,
+    206.3,
+    203.1,
+    199.2,
+    200.5,
+    199.2,
+    203.3,
+    197.0
+  ]
+}
 ```
+
+判读（供蓝区按判断顺序参考）：
+
+- **放置近乎最优**：保持实际 worker 与核上顺序的理想时间 fixed_order_mean=204.39 µs，仅比自由排块下界 202.21 µs 高 **+2.18 µs（+1.1%）**——实际排块方案本身几乎无可挖掘，60.48 µs 的超界几乎全部来自**块间等待**而非放置。
+- **等待集中在 dispatch 之前**：关键链平均间隔 65.94 µs（≈ 超界 60.48 µs 同量级，L2 插桩略放大至 span 265.42 µs）；三个最大 gap 贡献任务的间隔 93–98% 发生在 dispatch 之前（t22 11.93/12.15、t9 9.05/9.45、t35 7.32/7.79），dispatch→kernel_start 仅 0.21–0.47 µs——**等待不是派发慢，而是块在前驱完成后没有立即被派发**（依赖可见性/取票/参数准备等 host 侧环节）。
+- **三个热点任务**：t22（12.15 µs 均值，最大轮 gap 14.34，前驱 t18，本块 kernel 22.45 µs）、t9（9.45，前驱 t31 同 worker，本块仅 1.83 µs——小 kernel 前的长等待）、t35（7.79，前驱同为 t35 自链块，同 worker 接块间隙）。结合此前离线提取：t22 的 dispatch 来自 t18 结束后零 kernel 间隔启动，AIC dispatch→自核 kernel 开 1.99-2.32 µs，与本次 after_dispatch 小、before_dispatch 大一致。
+- **方向**：收益抓手从"重排块"转向"压缩 dispatch 前等待"——t22/t9/t35 三处的依赖发布→取票→参数准备链路（claim/resolve/prepare 约 2.0-2.8 µs 级）与波间同步粒度；fixed_order 逐轮 197.0–214.5 µs 与自由下界逐轮走势一致（同轮差 ≤2.6 µs），十轮全部有效
 
 已回填的实验记录：[64 块 t25 的 FP8 分段](#a6-fp8-output-feedback) · [54 块整图 L2 排程下界](#a6-sync-bound-feedback)。
 
