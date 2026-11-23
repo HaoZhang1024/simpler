@@ -43,9 +43,42 @@
 
 在下方文本框粘贴命令打印的 `quant-abba-*/feedback.txt` 内容。四批构建日志和完整 L4 留在内网。蓝区按每批三轮中位数分别算 `A1−B1` 和 `A2−B2`，再减去对应的 A5 配对收益。
 
+设备 0，原 64 块 plan，A 保留 VDIV、B 用二次幂倒数乘法（--quant-reciprocal），同卡顺序 A1/B1/B2/A2，每批预热 1 轮 + 正式 3 轮，四批 golden 全过。内网输出目录：`build/swa-a6-MxF89z/quant-abba-Pv2fdxOw/`（含四批构建日志与 feedback.txt）。
+
+**指纹核对：与蓝区参考不一致，按文档保留实际值。** 原版 44e4d2a3… vs 蓝区 8b64230a…；分段版 27446f3f… vs 蓝区 fa7da38a…。补充取证：两个文件均为裸代码影像（无 ELF 头/元数据），尺寸 7648 / 8464 B；本次新构建的 A1/A2 批 func20 与历史分段版 func20.bin 逐字节一致（27446f3f…），B1/B2 批一致（6f72ab89…），现场构建链跨提交（71a6b8e46→56e914472）确定可复现。A1 批 quant 7.807–7.808 与 11-20 历史轮完全一致。
+
+`quant-abba-Pv2fdxOw/feedback.txt` 原文：
+
 ```text
-待黄区回填：两个实际指纹，以及 A1 / B1 / B2 / A2 的原始反馈。
+44e4d2a3763297309ff263c26b753d94070a3cceb6d92c35b3abc514ad9de198  /npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-a6-MxF89z/case/kernels/kernel-20.bin
+27446f3f09c89d8914a8a56ce6b41274d13b679d1318f6912d64963aaca3ce72  /npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-a6-MxF89z/t25-phases-3t468wbh/func20.bin
+A1
+a6 device=0 warmup=1 rounds=3 golden=PASS unit=us source=56e914472
+run1 {"first": 54, "later": 10, "load": 1.612, "rotate": 0.676, "quant": 7.807, "store": 0.866, "inner": 10.956, "outer_L4": 11.8}
+run2 {"first": 54, "later": 10, "load": 1.612, "rotate": 0.676, "quant": 7.808, "store": 0.877, "inner": 10.976, "outer_L4": 11.839}
+run3 {"first": 54, "later": 10, "load": 1.607, "rotate": 0.676, "quant": 7.807, "store": 0.874, "inner": 10.966, "outer_L4": 11.802}
+B1
+a6 reciprocal device=0 warmup=1 rounds=3 golden=PASS unit=us source=56e914472
+run1 {"first": 54, "later": 10, "load": 1.619, "rotate": 0.676, "quant": 7.813, "store": 0.88, "inner": 10.98, "outer_L4": 11.88}
+run2 {"first": 54, "later": 10, "load": 1.618, "rotate": 0.676, "quant": 7.812, "store": 0.87, "inner": 10.983, "outer_L4": 11.886}
+run3 {"first": 54, "later": 10, "load": 1.616, "rotate": 0.676, "quant": 7.812, "store": 0.868, "inner": 10.975, "outer_L4": 11.867}
+B2
+a6 reciprocal device=0 warmup=1 rounds=3 golden=PASS unit=us source=56e914472
+run1 {"first": 54, "later": 10, "load": 1.608, "rotate": 0.676, "quant": 7.812, "store": 0.873, "inner": 10.963, "outer_L4": 11.861}
+run2 {"first": 54, "later": 10, "load": 1.613, "rotate": 0.676, "quant": 7.813, "store": 0.872, "inner": 10.982, "outer_L4": 11.859}
+run3 {"first": 54, "later": 10, "load": 1.615, "rotate": 0.676, "quant": 7.812, "store": 0.876, "inner": 10.969, "outer_L4": 11.854}
+A2
+a6 device=0 warmup=1 rounds=3 golden=PASS unit=us source=56e914472
+run1 {"first": 54, "later": 10, "load": 1.611, "rotate": 0.677, "quant": 7.808, "store": 0.872, "inner": 10.972, "outer_L4": 11.801}
+run2 {"first": 54, "later": 10, "load": 1.607, "rotate": 0.676, "quant": 7.809, "store": 0.866, "inner": 10.961, "outer_L4": 11.813}
+run3 {"first": 54, "later": 10, "load": 1.603, "rotate": 0.676, "quant": 7.807, "store": 0.855, "inner": 10.959, "outer_L4": 11.788}
 ```
+
+判读（供蓝区参考）：
+
+- quant 三轮中位：A1 7.807 / B1 7.812 / B2 7.812 / A2 7.808（µs）。
+- **A1−B1 = −0.005、A2−B2 = −0.004 µs**——A6 上倒数替换收益 ≈ 0（B 微慢，噪声级）；对照 A5 配对收益 +0.072 / +0.066 µs，A6 净差约 −0.07 µs。**VDIV 吞吐不是 A6 量化段多 3.548 µs 的原因**，指向文档所述下一项：分组最大值→scale 的指令依赖（VCGMAXV2→VPACKV2 链）、向量函数启动与流水线等待。
+- 其余段 load/rotate/store 四批一致（±0.01 µs），替换只影响量化段
 
 蓝区对照指纹（依次为原版、原分段版）：
 
