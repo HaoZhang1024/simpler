@@ -140,9 +140,24 @@ trial=build/swa-integrated-758Yr8 &&
 | t9 | 0.09 | 0.988 |
 | t19 / t20 / t31 / t33 / t34 | 各 0.00 | 0.814 / 0.481 / 1.221 / 0 / 0 |
 
-**t25 的同工作量对照。** A5 每轮 64 个单 head 块，块内时长的逐轮中位数再取均值为 6.817 µs，最后结束的块为 62（7 轮）或 60（3 轮）。A6 当前计划的 0–9 号块各做两个 head，10–53 号各做一个。回填后用单 head 对单 head 比较，另看十轮末块是否集中在双 head。旧版带标记 L4 的三轮末块为 8、8、6；当前集成版以此次 L2 为准。[旧版逐块记录](https://github.com/HaoZhang1024/simpler/blob/97e3f0d3a/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
+#### t25 单 head 时延与 VPACKV2 的来源
 
-**t22 的派发前间隔。** A5 十轮各有一个 t22 关键块。以它最后一个可见阻塞 kernel 的返回为起点，按该 block 的 owner claim 和关键 lane 的事件切窗：
+集成版 L2 逐轮取单 head 块的中位数，再对十轮取均值，A5 为 6.817 µs，A6 为 10.691 µs，相差 **3.874 µs**。本组 A5、A6 均使用 PTO-ISA `45435c062`。A6 的双 head 块为 20.924 µs，十轮最后结束的块都落在双 head 的 0–9 号。下面的指令对照来自此前使用 `83b1b2b5` 的单 head 量化实验。[本轮 A6 逐块回填](#offline-l2) · [A5 集成版配置](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-a5-comparison.zh-CN.md#集成版-a5-swa-对照基线)
+
+A5 十轮的末块为 62 号（7 轮）或 60 号（3 轮）。A6 当前计划将其余 10–53 号块分给单 head；早期 L4 的三轮末块为 8、8、6，也都属于双 head。[旧版逐块记录](https://github.com/HaoZhang1024/simpler/blob/97e3f0d3a/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
+
+| 证据 | A5 | A6 |
+| --- | --- | --- |
+| SWA 源码 | 每个 256 元素的 chunk 调一次 `vcgmax(..., MODE_ZEROING)`，随后右移 23 位取指数 | 同一调用、同一输入规模。[量化循环](kernels/vendor/external/o_quant_vf.hpp#L43-L71) |
+| 已核验的 `quant_vf<80>` 机器码 | `VCGMAX → VSHRI` | `VCGMAXV2 → VPACKV2 → VSHRI`。每个有效行有两个 chunk，72 行比 A5 多执行 144 次向量打包，位置在求 scale 的依赖链上。[逐条反汇编](https://github.com/HaoZhang1024/simpler/blob/97e3f0d3a/tests/fdwic/a6_dsv41_scheduler/results/2026-11-23-t25-quant/quant-vf-80.asm.txt) |
+
+**已定位到 CCEC 的实现。** 蓝区 CANN 9.3.0 安装目录下，`tools/bisheng_compiler/lib/clang/15.0.5/include/__clang_cce_vector_intrinsics_legacy.h` 第 11073–11099 行的 `__VF_VCG_V920` 宏实例化了 FP32 的 `vcgmax`。宏先调用 `vcgmaxv2` 内建函数，把中间结果交给 `vpackv2`，再把打包结果返回给使用 `MODE_ZEROING` 的调用方。这个显式展开解释了 A6 反汇编中额外指令的来源。
+
+**设计动机和时延归因。** 一个独立 A6 测试项目记录了 8 组最大值中有 7 组出错，并列出 `vcgmaxv2 + vpackv2` 的处理方式。这支持“打包用于整理分组归约结果，使调用方按预期位置读取最大值”的解释。该提交记录的是使用者的观察；CCEC 最初引入该规则的提交及作者说明仍待查证。当前 3.874 µs 衡量整个单 head 块，多出的 `VPACKV2` 在这段差距中占多少仍待同版本对照测量。[独立项目的实测记录与提交差异](https://github.com/ivanmang/a6-vmi-dashboard/commit/78dfca536ab995dd4921db48a0c4e65281bcda89)
+
+#### t22 派发前间隔
+
+A5 十轮各有一个 t22 关键块。以它最后一个可见阻塞 kernel 的返回为起点，按该 block 的 owner claim 和关键 lane 的事件切窗。
 
 | A5 关键块派发前的事件段 | 十轮均值（µs） |
 | --- | ---: |
