@@ -1,5 +1,29 @@
 # A6 percounter SWA
 
+## 黄区本轮执行与回填
+
+从 `percounter` 运行 A6 集成版 SWA，t25=54。首次切换时，在旧 checkout 的同级目录单独下载新分支；以后在新目录运行 `git pull --ff-only`。
+
+```bash
+git clone --single-branch --branch percounter https://github.com/HaoZhang1024/simpler.git simpler-percounter
+cd simpler-percounter
+```
+
+加载黄区 A6 CANN 和此前使用的 Python 3.11 环境，分配到基线设备 0 后，从新 checkout 根目录执行：
+
+```bash
+DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_integrated_comparison.sh
+```
+
+脚本将当前提交检出到独立构建目录，按 `pto_isa.pin` 下载 PTO-ISA，运行 L0、L2 各 1 轮预热和 10 轮正式采样。检查参考输出、每轮 560 次 kernel 执行和模型求解状态。末行打印 `feedback.json` 的位置。黄区将 JSON 填入下框，同时记录 SoC、CANN 和 CCEC 版本；中途失败时填运行提交、阶段和首条错误。后续蓝区按这批结果对照 t22、t9、t35 的 dispatch 前后间隔。
+
+**本轮 A6 集成版 t25=54 回填**
+
+```text
+SoC / CANN / CCEC：
+feedback.json：
+```
+
 The SWA replay runs the production percounter scheduler on 54 AIC + 54 AIV.
 Each cluster has one AIC and one AIV. The case freezes the 19 kernel registrations and their source dependencies from
 the measured SWA replay in `kernels/` and the frozen input and reference tensors in `fixtures/`.
@@ -72,6 +96,17 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 | 黄区 A6，54C+54V，t25=64 | 1 / 10 | 待填 | 待填 | 待填 |
 | 黄区 A6，54C+54V，t25=54 | 1 / 10 | 待填 | 待填 | 待填 |
 
+### A5 集成版 SWA 调度下限
+
+在上述 A5 设备 4 上，用同一套 runtime、runner、callable 和 plan 单独采集原生 percounter L2。预热 1 轮，正式 10 轮，参考输出校验通过。每轮匹配 578 次 kernel 执行，t25 发 64 块，t22 发 24 个同步 C+V0+V1 块。
+
+| A5 调度模型 | 十轮均值 | 逐轮范围 |
+| --- | ---: | ---: |
+| 固定实测 worker 和核上执行顺序 | 120.710 µs | 116.1–126.0 µs |
+| 允许重新分核，10/10 轮求得最优解 | 120.260 µs | 116.0–125.7 µs |
+
+两条下限使用每轮实测 kernel 时长，保留依赖和同步启动约束，按 0.1 µs 向下量化。重新分核平均可再缩短 0.450 µs。L0 AICore 实测均值比固定分核模型高 43.773 µs，其中也包含 L0 整图头尾与模型执行窗口的差异。[A5 十轮明细与采集配置](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-a5-comparison.zh-CN.md#集成版-a5-swa-对照基线)
+
 ### 已回传的 A6 调度基线与下一步
 
 实验分支 `a6-swa-port` 的代码提交为 `a1ee04044`，结果回填提交为
@@ -89,14 +124,4 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 t22、t9 和 t35 每轮在关键链上 dispatch 前的间隔贡献分别为 11.933、9.053 和 7.323 µs。
 优先核对 t22 的 48-block MIX 同步放行，其次观察同核接块。不同插桩版本之间的整图改善以 L0 对照。
 
-黄区在原分支执行一次集成版 t25=54 的 L0/L2，结果统一填在[每日进展顶部](https://github.com/HaoZhang1024/simpler/blob/a6-swa-port/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)。脚本固定集成版代码和 PTO-ISA，并自动汇总十轮结果。
-
-| 黄区运行信息 | 回填值 |
-| --- | --- |
-| 集成提交、SoC、CANN、CCEC 版本 | 待填 |
-| L0 AICore 均值 / 中位数 / 最快一轮、Device 均值（µs） | 待填 |
-| 固定排块的理想时间均值（µs）、有效轮数 | 待填 |
-| L2 首核至末核跨度、关键链间隔总量（十轮均值 µs）、贡献最大的三个 task 及间隔 | 待填，见 `l2_kernel_span_mean_us`、`l2_chain_gap_mean_us`、`l2_top_chain_gaps` |
-| t25=54 每轮 kernel 执行数、成功匹配轮数 | 待填，预期 560 次 × 10 轮 |
-| `model/summary.json` 中的 `lower_bound_mean_us`、`feasible_mean_us`、`all_optimal` | 待填 |
-| 中途失败时的阶段、命令和首条错误 | 按需填写 |
+本轮集成版的执行命令和结果填写位置见[黄区本轮执行与回填](#黄区本轮执行与回填)。
