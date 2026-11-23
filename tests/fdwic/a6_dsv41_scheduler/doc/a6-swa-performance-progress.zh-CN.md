@@ -64,7 +64,33 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/t35_t22_l4.py "${T25_L4:?上轮 t
 ```text
 t35 / t22 六行结果：待回填
 ```
+## 黄区任务 t25 单块分段计时
 
+内网输出目录：`/npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-a6-MxF89z/t25-phases-3t468wbh/`
+
+执行结果（`feedback.txt` 四行原样，设备 0，warmup=1、rounds=3，逐轮 golden PASS，每轮 54 首块 + 10 后续块）：
+
+```text
+a6 device=0 warmup=1 rounds=3 golden=PASS unit=us source=71a6b8e46
+run1 {"first": 54, "later": 10, "load": 1.605, "rotate": 0.676, "quant": 7.809, "store": 0.88, "inner": 10.968, "outer_L4": 11.842}
+run2 {"first": 54, "later": 10, "load": 1.607, "rotate": 0.676, "quant": 7.808, "store": 0.868, "inner": 10.963, "outer_L4": 11.815}
+run3 {"first": 54, "later": 10, "load": 1.601, "rotate": 0.676, "quant": 7.807, "store": 0.874, "inner": 10.968, "outer_L4": 11.834}
+```
+
+## 黄区任务 t35 接块与 t22 启动
+
+t35 / t22 六行结果（`t35-t22-feedback.txt` 原样，输入为上轮 t25-l4-3evzw1k0 的 A1 三份正式轮）：
+
+```text
+run1 t35 {"full_streams": 10, "with_other_kernel": 0, "tail_worker": 89, "phase_n_median": {"claim": [10, 2.157], "resolve": [10, 0.504], "prepare_subtask": [10, 2.428], "publish_completion": [10, 0.623], "async_seal": [10, 0.577]}}
+run1 t22 {"aic": {"dispatch_n": 48, "dispatch_from_t18": [38.644, 44.317, 47.871, 48.608], "dispatch_to_own_start": [1.364, 1.992, 4.58, 6.421]}, "aiv": {"dispatch_n": 48, "dispatch_from_t18": [38.699, 46.15, 49.168, 50.723], "dispatch_to_own_start": [1.101, 1.603, 3.361, 4.538]}, "t21_last_kernel_from_t18": null}
+run2 t35 {"full_streams": 10, "with_other_kernel": 0, "tail_worker": 71, "phase_n_median": {"claim": [10, 2.072], "resolve": [10, 0.506], "prepare_subtask": [10, 2.441], "publish_completion": [10, 0.544], "async_seal": [10, 0.597]}}
+run2 t22 {"aic": {"dispatch_n": 48, "dispatch_from_t18": [40.265, 46.444, 49.376, 50.8], "dispatch_to_own_start": [1.369, 2.104, 5.579, 5.935]}, "aiv": {"dispatch_n": 48, "dispatch_from_t18": [40.595, 45.8, 48.794, 51.132], "dispatch_to_own_start": [0.994, 1.502, 3.638, 4.633]}, "t21_last_kernel_from_t18": null}
+run3 t35 {"full_streams": 10, "with_other_kernel": 0, "tail_worker": 73, "phase_n_median": {"claim": [10, 2.201], "resolve": [10, 0.512], "prepare_subtask": [10, 2.43], "publish_completion": [10, 0.611], "async_seal": [10, 0.596]}}
+run3 t22 {"aic": {"dispatch_n": 48, "dispatch_from_t18": [37.352, 45.094, 47.386, 50.817], "dispatch_to_own_start": [1.339, 2.321, 4.553, 7.409]}, "aiv": {"dispatch_n": 48, "dispatch_from_t18": [37.546, 44.187, 47.481, 50.542], "dispatch_to_own_start": [1.002, 1.577, 3.97, 5.067]}, "t21_last_kernel_from_t18": null}
+```
+
+逐核结果保留在内网：t35-workers.json（t25-l4-3evzw1k0 目录）
 ## 下一步要补齐的证据
 
 以 t25=54 的 A6 实验方案与历史 A5 基线比较，L0 AICore 仍多 77.032 µs，Device 多 58.830 µs。下面优先用原来的 **64 块**做原因对照，让两端的 func20 每块各处理一个 head。A5 有一轮无预热的 L4，A6 有三轮预热后的 L4；分平台、分轮列数。
