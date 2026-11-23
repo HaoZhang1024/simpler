@@ -2,13 +2,13 @@
 
 ## 当前状态与反馈位置
 
-**本轮三项任务，共两条命令。** t25 用已分配的卡测一次；t35 和 t22 共用旧 A64 泳道，一次离线提取即可。两个命令可独立执行。[上轮数据](#两端首块与同核接块)
+**黄区本轮三项结果均已收齐。** 下一步由蓝区用同一探针对照 A5 的 t25 分段耗时。[首块对照](#两端首块与同核接块)
 
-| 顺序 | 要回答的问题 | 执行与回填 |
+| 项目 | 本轮结果 | 记录 |
 | --- | --- | --- |
-| 1 · t25 | A6 首块多出的约 4.5 µs 分布在哪些 kernel 阶段？ | [上板命令，回填四行](#黄区任务-t25-单块分段计时) |
-| 2 · t35 | 末块核上看到的取票、准备参数开销，在其余复用核上有多普遍？ | [离线命令，回填三行 t35](#黄区任务-t35-接块与-t22-启动) |
-| 3 · t22 | 从 t18 结束到 48 个 AIC 和 48 个 AIV 分别开始派发，首个和最后一批相差多少？ | [同一离线命令，回填三行 t22](#黄区任务-t35-接块与-t22-启动) |
+| t25 单块分段 | 3 轮 golden 通过，A6 首块量化中位数为 7.807–7.809 µs | [复现命令与四行输出](#黄区任务-t25-单块分段计时) |
+| t35 同核接块 | 每轮 10 个复用核的记录齐全，接块间隔内均无其他 kernel | [三轮 t35 输出](#黄区任务-t35-接块与-t22-启动) |
+| t22 启动 | 每轮均取得 48 个 AIC 和 48 个 AIV 的 dispatch 时间 | [三轮 t22 输出](#黄区任务-t35-接块与-t22-启动) |
 
 | 项目 | 状态 | 回填位置 |
 | --- | --- | --- |
@@ -18,7 +18,7 @@
 
 ### 黄区任务 t25 单块分段计时
 
-在已加载 A6 CANN 的项目 venv 中，从本分支仓库根目录执行。沿用上轮的 `SWA_RUN`（包含原始 64 块的 `case/build.json` 与 `query/query`）、`L4_LIB`（上次 L4 的 `a6/onboard` 目录）和已分配的 `DEVICE`。PTO-ISA 位于 `build/pto-isa`；其他位置用 `--pto-isa` 指定。
+复现命令使用已加载 A6 CANN 的项目 venv，工作目录为仓库根目录。沿用上轮的 `SWA_RUN`（包含原始 64 块的 `case/build.json` 与 `query/query`）、`L4_LIB`（上次 L4 的 `a6/onboard` 目录）和已分配的 `DEVICE`。PTO-ISA 位于 `build/pto-isa`；其他位置用 `--pto-isa` 指定。
 
 ```bash
 python tests/fdwic/a6_dsv41_scheduler/analysis/t25_phases.py \
@@ -35,40 +35,11 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/t25_phases.py \
 | `store` | 量化完成至输出与 scales 两次 TSTORE 排空，含输出地址准备 |
 | `inner`、`outer_L4` | 同一轮首块的核内总时长和 runtime 包住整个 kernel 调用的时长，各自取中位数。外层还包含入口、写出诊断记录、返回和 runtime 写屏障 |
 
-每轮预计 54 个首块、10 个后续块。四段在设备上等对应流水线通知标量核再读钟，这会改变原有重叠。蓝区对照原 A6 首块 11.017–11.037 µs 评估扰动，用同方法的 A5 分段对照定位跨平台差值。外层与内层之差包含多项开销，末次 runtime 写屏障仍需独立证据。
+每轮实测 54 个首块、10 个后续块。四段在设备上等对应流水线通知标量核再读钟，这会改变原有重叠。蓝区对照原 A6 首块 11.017–11.037 µs 评估扰动，用同方法的 A5 分段对照定位跨平台差值。外层与内层之差包含多项开销，末次 runtime 写屏障仍需独立证据。
 
-**本轮反馈位置（负责人回填）**
+内网输出目录：`build/swa-a6-MxF89z/t25-phases-3t468wbh/`
 
-成功时将脚本打印的 `feedback.txt` 四行原样填入下框，带上内网输出目录。失败时填失败阶段、首条具体错误和内网日志位置，黄区即可结束本轮。原始时间戳和 L4 留在内网。
-
-```text
-内网输出目录：
-执行结果：待回填
-```
-
-### 黄区任务 t35 接块与 t22 启动
-
-沿用上轮 `T25_L4`，指向含 `A1/rank0` 的 `t25-l4-3evzw1k0`。在仓库根目录执行一次。输入为原始 records 与同轮任务映射。
-
-```bash
-python tests/fdwic/a6_dsv41_scheduler/analysis/t35_t22_l4.py "${T25_L4:?上轮 t25-l4 归档目录}"
-```
-
-- **t35** 每轮读取 10 个接第二块的 worker，按前块结束到后块开始裁剪事件。同名区间合并，分别报告 claim、resolve、prepare_subtask、publish_completion、async_seal。每项为“看见事件且采集完整的核数、这些核的中位耗时（µs）”。不同阶段可嵌套。`full_streams` 表示完整流数量，`with_other_kernel` 表示间隔内穿插其他 kernel 的核数，`tail_worker` 标出最后完成的核。逐核结果保留在内网 `t35-workers.json`。
-- **t22** 用同轮 t18 最后一个 kernel 结束作零点。按 AIC/AIV 分别列出 t22 的 dispatch 时间和每次 dispatch 到该核 kernel 开始的耗时，四个值依次为最小、中位、P90、最大（µs），两组各期望 48 条。`t21_last_kernel_from_t18=null` 表示 t21 缺少 kernel 结束事件。第 48 次同步加一和首次读到阈值均需带同步索引的设备事件才能直接计时。
-
-**t35 / t22 反馈位置（负责人回填）**
-
-将 `t35-t22-feedback.txt` 六行原样填入下框；若输入不全，填失败轮次、首条错误与内网归档目录。即使 t25 上板遇到阻塞，本项仍可先回填。
-
-```text
-t35 / t22 六行结果：待回填
-```
-## 黄区任务 t25 单块分段计时
-
-内网输出目录：`/npu/machine/z00880344/a6-swa-port/src/simpler/build/swa-a6-MxF89z/t25-phases-3t468wbh/`
-
-执行结果（`feedback.txt` 四行原样，设备 0，warmup=1、rounds=3，逐轮 golden PASS，每轮 54 首块 + 10 后续块）：
+设备 0 预热 1 轮，3 个正式轮均通过 golden。以下为 `feedback.txt` 原始输出。
 
 ```text
 a6 device=0 warmup=1 rounds=3 golden=PASS unit=us source=71a6b8e46
@@ -77,7 +48,16 @@ run2 {"first": 54, "later": 10, "load": 1.607, "rotate": 0.676, "quant": 7.808, 
 run3 {"first": 54, "later": 10, "load": 1.601, "rotate": 0.676, "quant": 7.807, "store": 0.874, "inner": 10.968, "outer_L4": 11.834}
 ```
 
-## 黄区任务 t35 接块与 t22 启动
+### 黄区任务 t35 接块与 t22 启动
+
+沿用上轮 `T25_L4`，指向含 `A1/rank0` 的 `t25-l4-3evzw1k0`。以下为归档数据的复现命令。输入为原始 records 与同轮任务映射。
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/analysis/t35_t22_l4.py "${T25_L4:?上轮 t25-l4 归档目录}"
+```
+
+- **t35** 每轮读取 10 个接第二块的 worker，按前块结束到后块开始裁剪事件。同名区间合并，分别报告 claim、resolve、prepare_subtask、publish_completion、async_seal。每项为“看见事件且采集完整的核数、这些核的中位耗时（µs）”。不同阶段可嵌套。`full_streams` 表示完整流数量，`with_other_kernel` 表示间隔内穿插其他 kernel 的核数，`tail_worker` 标出最后完成的核。逐核结果保留在内网 `t35-workers.json`。
+- **t22** 用同轮 t18 最后一个 kernel 结束作零点。按 AIC/AIV 分别列出 t22 的 dispatch 时间和每次 dispatch 到该核 kernel 开始的耗时，四个值依次为最小、中位、P90、最大（µs），两组各期望 48 条。`t21_last_kernel_from_t18=null` 表示 t21 缺少 kernel 结束事件。第 48 次同步加一和首次读到阈值均需带同步索引的设备事件才能直接计时。
 
 t35 / t22 六行结果（`t35-t22-feedback.txt` 原样，输入为上轮 t25-l4-3evzw1k0 的 A1 三份正式轮）：
 
@@ -91,6 +71,7 @@ run3 t22 {"aic": {"dispatch_n": 48, "dispatch_from_t18": [37.352, 45.094, 47.386
 ```
 
 逐核结果保留在内网：t35-workers.json（t25-l4-3evzw1k0 目录）
+
 ## 下一步要补齐的证据
 
 以 t25=54 的 A6 实验方案与历史 A5 基线比较，L0 AICore 仍多 77.032 µs，Device 多 58.830 µs。下面优先用原来的 **64 块**做原因对照，让两端的 func20 每块各处理一个 head。A5 有一轮无预热的 L4，A6 有三轮预热后的 L4；分平台、分轮列数。
