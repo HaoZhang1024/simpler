@@ -6,20 +6,7 @@
 
 集成版 `0b69dc4c0` 已包含 MIX 等前驱时预取参数（#3166）、同步路径减少返回型 GM 原子操作（#3180）和调度/完成路径优化（#3195）。本轮测这些改动和 A6 适配合在一起的效果。核对同卡、同输入、t25=54 和参考输出；集成版会重建与 runtime ABI 匹配的 kernel。单项收益留待对照其中一个改动时再归因。
 
-从 `a6-swa-port` 根目录加载 A6 CANN 和上次使用的 Python 3.11 环境，在分配到基线设备 0 后执行：
-
-```bash
-git pull --ff-only https://github.com/HaoZhang1024/simpler.git a6-swa-port &&
-DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_integrated_comparison.sh
-```
-
-脚本在独立目录检出固定的 Simpler、PTO-ISA，检查两种 Python 启动模式导入的源码，再运行 L0/L2 各 1 次预热、10 次正式轮。将输出末尾 `feedback.json` 填入下框；若中途失败，填失败阶段与首条错误。蓝区先看 L0 和 golden，再对照 t22、t9、t35 的关键链占用轮数、dispatch 前后间隔及 kernel 窗口。两个版本的 L2 插桩不同，跨版本收益以 L0 为准。
-
-**黄区集成版实卡结果回填位置**
-
-```text
-待回填 feedback.json
-```
+**新一轮 A6 测试与结果回填已迁至 `percounter`。** 首次下载、后续更新、t25=54 的 L0/L2 一键命令和 `feedback.json` 回填框都在[新分支 SWA 首页](https://github.com/HaoZhang1024/simpler/blob/percounter/tests/fdwic/a6_dsv41_scheduler/README.md#黄区本轮执行与回填)。以下保留旧版本的测量记录。
 
 ### 已完成：实验分支固定排块与关键链
 
