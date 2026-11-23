@@ -14,9 +14,103 @@ trial=build/swa-integrated-758Yr8 &&
 
 **本轮黄区回填位置**：把最后打印的 JSON 放入下框；出错时填报错轮次和首条错误。预期输入为 `source_commit=76c7c288b…`、`baseline_us=197.15`。JSON 同时给出现场 PTO-ISA 提交、16 项任务的模型收益区间、实际关键链的分任务 kernel 时间、t25 单双 head 时长与末块、t22 claim 与 dispatch 之间的事件分段。区间两端一致表示模型收益已确定。
 
-```text
-待回填 A6 集成版离线分析 JSON
+## 任务与命令
+
+- 任务：percounter 分支 691f09b21 "Add: rank SWA task latency and split MIX dispatch gaps offline"——复用集成版 trial 十轮 L2，离线复算任务敏感性与 t22 派发间隔拆分（CPU only，不占设备）。
+- 输入：`build/swa-integrated-758Yr8`（设备 0 集成版实卡采集，详见上份回执），用该 trial 自带 `.venv` Python 与求解器。
+- 命令（在 simpler-percounter 根目录，与 README 一致）：
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py "$trial"
 ```
+
+- 执行：checkout @691f09b21；脚本内部校验通过（十轮 L2 与 summary 的 runtime sha / device / build / all_optimal / 轮次 1–10 完全匹配，每轮 placement 链与 fixed_order_us 和保存模型一致，t22 相位拆分与关键链记录一致）；10 轮 × 16 任务变体重解全部完成，rc=0，总耗时约 90 秒。
+- 预期输入核对：`source_commit=76c7c288b…`、`baseline_us=197.15`，均符合 README 预期。
+
+## 回填 JSON（A6 集成版离线分析）
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "pto_isa_commit": "45435c0624c1d0d056bf38aa60d4f56dc0ef3b6b",
+  "baseline_us": 197.15,
+  "actual_chain_kernel_us": {
+    "8": 10.357,
+    "9": 1.241,
+    "12": 11.32,
+    "16": 10.025,
+    "17": 15.523,
+    "18": 20.945,
+    "19": 0,
+    "20": 0,
+    "22": 23.575,
+    "25": 20.932,
+    "28": 30.636,
+    "29": 32.12,
+    "31": 1.452,
+    "33": 0,
+    "34": 0,
+    "35": 17.433
+  },
+  "gain_us_if_task_10pct_shorter": {
+    "29": [3.2, 3.2],
+    "28": [3.1, 3.1],
+    "22": [2.44, 2.44],
+    "18": [2.13, 2.13],
+    "25": [2.13, 2.13],
+    "35": [1.74, 1.74],
+    "17": [1.57, 1.57],
+    "8": [1.15, 1.15],
+    "12": [1.14, 1.14],
+    "16": [1.05, 1.05],
+    "9": [0.12, 0.12],
+    "19": [0.0, 0.0],
+    "20": [0.0, 0.0],
+    "31": [0.0, 0.0],
+    "33": [0.0, 0.0],
+    "34": [0.0, 0.0]
+  },
+  "t25_mean_of_round_p50_us": {
+    "1": 10.691,
+    "2": 20.924
+  },
+  "t25_last_blocks_by_round": [
+    [6], [8], [8], [8], [6], [4], [6], [6], [2], [8]
+  ],
+  "t22_mean_us": {
+    "before_owner_claim_us": 0.0,
+    "in_owner_claim_us": 0.094,
+    "after_owner_claim_us": 7.956,
+    "claim_end_spread_us": 56.529,
+    "first_dispatch_minus_last_claim_us": 4.863
+  },
+  "t22_chain_hits_by_round": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  "t22_detailed_hits_by_round": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  "t22_after_claim_breakdown_us": {
+    "to_inputs_ready_us": 1.426,
+    "to_entry_commit_us": 1.661,
+    "to_ready_us": 4.576,
+    "ready_to_dispatch_us": 0.293
+  }
+}
+```
+
+## 判读（供蓝区按 README 判断顺序参考）
+
+- **16 项任务的模型收益区间两端全部一致**（feasible==lower 全部收敛）——模型收益已确定，无待收敛项。10% 缩短收益排名：**t29 3.20 > t28 3.10 > t22 2.44 > t18 = t25 2.13 > t35 1.74 > t17 1.57 > t8 1.15 > t12 1.14 > t16 1.05 > t9 0.12**；t19/t20/t31/t33/t34 为 0。
+- **两端 top3 同序（t29/t28/t22）**：与 A5 排名（2.09/1.83/1.49）一致，A6 各项绝对收益更大。**最大位次变化是 t25：A5 第 9（0.77）→ A6 第 5（2.13）**；t8 由 A5 第 5 降至 A6 第 8。t25/t28/t29 是 A6 上性价比最高的三个优化目标。
+- **链上 kernel 时间（A6 vs A5，µs）**：t29 32.12 vs 20.93（+11.2）、t28 30.64 vs 17.62（**+13.0**）、t22 23.58 vs 14.67（+8.9）、t18 20.95 vs 13.21（+7.7）、**t25 20.93 vs 6.35（+14.6，两端差距最大）**、t35 17.43 vs 6.92（+10.5）。除 t9/t31 外 A6 每项都显著高于 A5，说明差距普遍在 kernel 执行本身，不只调度。
+- **t25 拆分：单块变慢是主因，其次才是双 head 尾块**。单 head 块逐轮 p50 均值 **10.691 µs vs A5 单 head 6.817 µs（同工作量 +3.87 µs / +57%）**；双 head p50 20.924 µs（≈单 head 的 1.96×，接近线性）；链上 t25 步 20.932 µs 即一个双 head 块。**十轮末块全部落在双 head 的 0–9 号块（6/8/8/8/6/4/6/6/2/8）**，与旧版 L4 标记三轮（8、8、6）同型——尾部确实由双 head 块收尾，但即使全部改成单 head 排布，按 +57% 的单块差距也只能收回约 10 µs 中的一部分。
+- **t22 拆分（chain_hits=detailed_hits=10/10，细分完整）**：派发前 8.050 µs = claim 前 0.000 + claim 内 0.094 + claim 后 7.956；claim 后细分：**claim 结束→inputs_ready 1.426 → entry_commit 1.661（A5 0.692，+0.97）→ ready 4.576（A5 4.794，−0.22）→ dispatch 0.293**。按 README 的三段判断口径：**等待集中在同步放行阶段（entry_commit→ready，4.58 µs / 57%）**；而 A6 比 A5 多出的 0.837 µs 增量几乎全部来自 **inputs_ready→entry_commit（+0.969）**，同步放行段在集成版（#3166/#3180/#3195）反而已改善 0.22，其余段合计 +0.13。改哪段的提示：entry_commit 路径（每 lane 的 entry 提交/可见）是 A6 相对 A5 的独有退化点，同步放行段是绝对值大头但两端相当。
+- **整组 claim 跨度**：t22 全部 48 块 owner claim 完成跨度 56.529 µs，首 dispatch 晚于末 claim 结束 +4.863 µs（正值=所有 claim 完成后才开始 dispatch）。
+- 现场标记：`pto_isa_commit=45435c06…`（集成版 trial 实际使用）。提醒：测量分支 a6-swa-port（基线 a1ee04044 及此前全部实验）固定 pto-isa 83b1b2b52，两者差 43 个提交——t25/t28/t29 等 kernel 时长差里含 ISA/codegen 变量，与 #3166/#3180/#3195、1C1V 适配混在一起，单项归因时需注意。
+
+## 备注
+
+- 首次启动时黄区自加的 sanity 检查（从 checkout 根导入 `simpler_setup`/`simpler`）误报 `No module named 'simpler'`——该检查非任务依赖（task_sensitivity/swa_sync_bound 仅依赖 stdlib + ortools + analysis 同目录模块，已在 trial python 下验证导入通过），修正 sanity 后按 README 原命令重跑，未改动任何数据。
+- 原始输出：服务器 `/npu/z00880344/task_sens_final.json`（stdout 原文）与 `/npu/z00880344/task_sens_run.log`（进度与校验日志）；本地镜像 `bluezone-1119/task-sensitivity-feedback.json`
 
 ### 蓝区十轮复算
 
