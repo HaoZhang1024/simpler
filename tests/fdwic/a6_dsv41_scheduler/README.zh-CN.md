@@ -1,5 +1,8 @@
 # A6 单卡 SWA · percounter
 
+**黄区当前任务**：[离线复算固定排块极限，执行命令与结果回填位置](doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)。
+
+
 | 从这里看 | 内容 |
 | --- | --- |
 | [A6 与 A5 差异](doc/a6-a5-comparison.zh-CN.md) | 环境与核配置、寄存器和 GM 实测、整图时延、t22 / t25 / t35 当前定位 |

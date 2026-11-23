@@ -17,8 +17,9 @@ import math
 import statistics
 import sys
 from collections import Counter
-from graphlib import TopologicalSorter
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from typing import NamedTuple
 
 from t25_ab import REPO, SWA, split_plan
 
@@ -29,6 +30,23 @@ from sync_bound import QUANTUM_NS, solve_model  # noqa: E402
 CAPACITIES = {"aic": 54, "aiv": 54}
 ROWS_PER_ROUND = 560
 MANIFEST_KEYS = ("plan_sha256", "callable_sha256", "runner_sha256")
+
+
+class KernelExecution(NamedTuple):
+    iteration: int
+    source_task: int
+    task_id: int
+    block_idx: int
+    subtask_slot: int
+    core_type: str
+    worker: int
+    func_id: int
+    start_cycles: int
+    kernel_end_cycles: int
+    clock_hz: int
+    duration_ticks: int
+    dispatch_cycles: int
+    finish_cycles: int
 
 
 def read_json(path):
@@ -164,6 +182,115 @@ def write_csv(path, columns, rows):
         writer = csv.writer(stream)
         writer.writerow(columns)
         writer.writerows(rows)
+
+
+def analyze_placement(nodes, edges, rows):
+    """Compact measured block durations on their observed workers and trace a last-finishing chain."""
+    # Each edge constrains the destination's start by the source's start plus its weight.
+    constraints = {}
+    worker_rows = {}
+    task_rows = {}
+    hz = rows[0].clock_hz
+    first = min(row.start_cycles for row in rows)
+
+    def require(dst, src, weight=0):
+        links = constraints.setdefault(dst, {})
+        links[src] = max(links.get(src, 0), weight)
+
+    def group(row):
+        tid, block = row.task_id, row.block_idx
+        return ("group", tid, -1 if nodes[tid]["sync"] else block)
+
+    for tid in nodes:
+        require(("end", tid), ("begin", tid))
+    for pred, succ in edges:
+        require(("begin", succ), ("end", pred))
+    for row in rows:
+        tid, worker = row.task_id, row.worker
+        worker_rows.setdefault(worker, []).append(row)
+        task_rows.setdefault(tid, []).append(row)
+        require(group(row), ("begin", tid))
+        require(("end", tid), group(row), row.duration_ticks)
+
+    previous = {}
+    for sequence in worker_rows.values():
+        sequence.sort(key=lambda r: r.start_cycles)
+        for old, new in zip(sequence, sequence[1:]):
+            if old.kernel_end_cycles > new.start_cycles:
+                raise ValueError("Overlapping kernel intervals on one worker")
+            require(group(new), group(old), old.duration_ticks)
+            previous[new] = old
+
+    try:
+        order = TopologicalSorter(constraints).static_order()
+        starts = {}
+        for dst in order:
+            starts[dst] = max((starts[src] + w for src, w in constraints.get(dst, {}).items()), default=0)
+        compact = max(starts["end", tid] for tid in nodes) * QUANTUM_NS / 1000
+    except CycleError:
+        # Observed staggered admissions may conflict with the model's exact co-start rule.
+        compact = None
+
+    # Walk backward from the last kernel. Each step accounts for an execution and the
+    # gap after its latest visible blocker (graph predecessor or previous kernel on this worker).
+    parents = {tid: [] for tid in nodes}
+    for pred, succ in edges:
+        parents[succ].append(pred)
+    last = {}
+    incoming = {}
+    for tid in TopologicalSorter(parents).static_order():
+        incoming[tid] = max((last[p] for p in parents[tid] if last[p]), key=lambda r: r.kernel_end_cycles, default=None)
+        last[tid] = max(task_rows.get(tid, ()), key=lambda r: r.kernel_end_cycles, default=incoming[tid])
+    row = max(rows, key=lambda r: r.kernel_end_cycles)
+    span = row.kernel_end_cycles - first
+    chain = []
+    while row is not None:
+        prior = max((r for r in (incoming[row.task_id], previous.get(row)) if r), key=lambda r: r.kernel_end_cycles, default=None)
+        gap = row.start_cycles - (prior.kernel_end_cycles if prior else first)
+        if gap < 0:
+            raise ValueError("Overlapping kernel and visible predecessor")
+        after_dispatch = min(gap, row.start_cycles - row.dispatch_cycles)
+        chain.append({
+            "task": row.source_task, "block": row.block_idx, "worker": row.worker,
+            "prior_task": prior.source_task if prior else None,
+            "prior_block": prior.block_idx if prior else None,
+            "prior_worker": prior.worker if prior else None,
+            "dispatch_cycles": row.dispatch_cycles, "kernel_start_cycles": row.start_cycles,
+            "prior_kernel_end_cycles": prior.kernel_end_cycles if prior else None,
+            "prior_finish_cycles": prior.finish_cycles if prior else None,
+            "kernel_us": (row.kernel_end_cycles - row.start_cycles) * 1e6 / hz, "gap_us": gap * 1e6 / hz,
+            "gap_before_dispatch_us": (gap - after_dispatch) * 1e6 / hz,
+            "gap_after_dispatch_us": after_dispatch * 1e6 / hz,
+        })
+        row = prior
+    return {
+        "fixed_order_us": compact,
+        "l2_kernel_span_us": span * 1e6 / hz,
+        "chain_gap_us": sum(step["gap_us"] for step in chain),
+        "chain": chain[::-1],
+    }
+
+
+def placement_summary(results):
+    fixed = [r["fixed_order_us"] for r in results if r["fixed_order_us"] is not None]
+    gaps = Counter()
+    before_dispatch = Counter()
+    for r in results:
+        for step in r["chain"]:
+            gaps[step["task"]] += step["gap_us"]
+            before_dispatch[step["task"]] += step["gap_before_dispatch_us"]
+    return {
+        "fixed_order_mean_us": statistics.mean(fixed) if len(fixed) == len(results) else None,
+        "fixed_order_valid_rounds": len(fixed),
+        "l2_kernel_span_mean_us": statistics.mean(r["l2_kernel_span_us"] for r in results),
+        "l2_chain_gap_mean_us": statistics.mean(r["chain_gap_us"] for r in results),
+        "l2_top_chain_gaps": [
+            {"task": task, "mean_us": total / len(results),
+             "before_dispatch_mean_us": before_dispatch[task] / len(results),
+             "after_dispatch_mean_us": (total - before_dispatch[task]) / len(results)}
+            for task, total in gaps.most_common(3)
+        ],
+    }
 
 
 def main():

@@ -2,7 +2,23 @@
 
 ## 当前状态与反馈位置
 
-黄区按两项任务独立回填：[64 块 t25 的 FP8 分段](#a6-fp8-output-feedback) · [54 块整图 L2 排程下界](#a6-sync-bound-feedback)。
+**黄区当前任务：用设备 0 已采好的十轮 L2 离线复算固定排块极限。** 在 `a6-swa-port` 仓库根目录，使用上次求解成功的 Python 环境执行：
+
+```bash
+git pull --ff-only https://github.com/HaoZhang1024/simpler.git a6-swa-port &&
+python tests/fdwic/a6_dsv41_scheduler/analysis/saved_placement.py build/swa-a6-bound-faV0oG
+```
+
+输入是已有的 `model/`、`L0/` 和 `L2/`，全程用 CPU。该版已测 AICore L0 均值 262.692 µs，自由排块最优值均值 202.210 µs。本次补上保持实际 worker 和核上顺序的理想时间，并统计关键链中 dispatch 前后的间隔。
+
+**黄区离线复算结果填在这里**：请粘贴命令输出的 JSON，包含有效轮数、逐轮固定排块时间和等待贡献最大的三个 task。
+
+```text
+待黄区回填
+```
+
+已回填的实验记录：[64 块 t25 的 FP8 分段](#a6-fp8-output-feedback) · [54 块整图 L2 排程下界](#a6-sync-bound-feedback)。
+
 
 <a id="a6-fp8-output"></a>
 
