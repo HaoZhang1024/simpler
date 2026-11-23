@@ -2,7 +2,7 @@
 
 **当前阶段是定位 A6 单块执行与同核调度的差距。** t25 调整为 54 块后，A6 同卡 L0 AICore 平均节省 4.870 µs；实验方案相对历史 A5 基线，AICore 仍多 77.032 µs、Device 多 58.830 µs。[t25 结果复核](doc/a6-swa-performance-progress.zh-CN.md#t25-结果复核)
 
-**黄区已完成 t25、t35、t22 三项采集。** 交接文档已收录原始输出与复现命令。下一步由蓝区对照 A5 的 t25 分段耗时。[任务表与实测结果](doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)
+**两端 t25 分段已对齐。** 同为 64 块时，A6 首块量化比 A5 多 3.548 µs，占核内差值约 78%。黄区继续用已通过 golden 的 54 块 replay。[分段实测](doc/a6-swa-performance-progress.zh-CN.md#1a-t25-首块分段) · [黄区运行入口](doc/a6-swa-performance-progress.zh-CN.md#1b-黄区沿用-54-块-replay)
 
 | 要找什么 | 位置 |
 | --- | --- |
