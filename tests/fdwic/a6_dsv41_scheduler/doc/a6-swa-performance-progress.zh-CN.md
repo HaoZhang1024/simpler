@@ -52,9 +52,52 @@ A5 完整诊断 72 行首尾为 4.4090 / 4.3865 µs，漂移 −0.0225 µs；各
 
 把本次终端 `Feedback:` 打印的 `feedback.txt` 全文贴到下框。正常包含七个诊断函数的有效行指令计数、16 行 `golden=PASS`、五组差值与首尾漂移。每批的 `blocks.json`、L4 和各 VF 反汇编留在内网。中断时回填已完成的摘要、批名和首条错误；如果出错在构建或指令核对阶段，贴终端错误。
 
+设备 0，FP8 输出配对拆分，16 批（raw/norm/clip/cast/pack/keep/store × 24/72 行 + full72 首尾对照），每批 1 预热 + 3 正式轮，**十六批 golden 全过**；每块先计时诊断段（输出不参与 golden 的部分按层截断）、再计时原版 72 行量化。内网输出目录：`build/swa-a6-MxF89z/t25-quant-split-dzzmf3yf/`（含各批 blocks.json、原始 L4 与反汇编）。
+
+`t25-quant-split-dzzmf3yf/feedback.txt` 全文：
+
 ```text
-待黄区粘贴本轮带 --fp8-output 的 feedback.txt
+a6 device=0 func20=b3dc545c973347be99e7f6add925e4f24b82628258b66bc51afdcd2ff8f13c53 first=54 later=10 us
+quant_vf instructions=158 VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=8 VSCATTER=4
+split_full_vf instructions=158 VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=8 VSCATTER=4
+raw active-row div/mul/min/fp8/or8/ub-stores=0/0/0/0/0/8
+norm active-row div/mul/min/fp8/or8/ub-stores=8/8/0/0/0/8
+clip active-row div/mul/min/fp8/or8/ub-stores=8/8/8/0/0/8
+cast active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/0/8
+pack active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/6/8
+keep active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/8/0
+store active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/8/2
+full72-open golden=PASS first_p50=[7.99, 7.9925, 7.9925] first_p10/p90=7.972/8.0107 ref72=7.813 later_p50=7.9905
+raw24 golden=PASS first_p50=[1.1255, 1.183, 1.186] first_p10/p90=1.122/1.2168 ref72=7.812 later_p50=1.123
+norm24 golden=PASS first_p50=[1.972, 1.9745, 1.9765] first_p10/p90=1.9593/2.0114 ref72=7.812 later_p50=1.9715
+clip24 golden=PASS first_p50=[2.519, 2.518, 2.518] first_p10/p90=2.4996/2.5414 ref72=7.813 later_p50=2.5145
+cast24 golden=PASS first_p50=[2.765, 2.766, 2.765] first_p10/p90=2.763/2.7687 ref72=7.813 later_p50=2.7655
+pack24 golden=PASS first_p50=[3.02, 3.079, 3.0385] first_p10/p90=2.986/3.1327 ref72=7.8875 later_p50=3.0065
+keep24 golden=PASS first_p50=[2.9465, 2.9465, 2.945] first_p10/p90=2.932/3.0297 ref72=7.9055 later_p50=2.9435
+store24 golden=PASS first_p50=[2.935, 2.9355, 2.936] first_p10/p90=2.933/2.938 ref72=7.8125 later_p50=2.935
+raw72 golden=PASS first_p50=[2.8065, 2.802, 2.8085] first_p10/p90=2.747/2.8338 ref72=7.813 later_p50=2.749
+norm72 golden=PASS first_p50=[5.0025, 5.0, 5.0045] first_p10/p90=4.9813/5.1065 ref72=7.813 later_p50=4.998
+clip72 golden=PASS first_p50=[6.6925, 6.692, 6.6935] first_p10/p90=6.6696/6.7135 ref72=7.813 later_p50=6.6845
+cast72 golden=PASS first_p50=[7.696, 7.696, 7.694] first_p10/p90=7.692/7.7007 ref72=7.812 later_p50=7.695
+pack72 golden=PASS first_p50=[8.261, 8.1875, 8.246] first_p10/p90=8.1579/8.2951 ref72=7.8955 later_p50=8.2585
+keep72 golden=PASS first_p50=[8.247, 8.248, 8.249] first_p10/p90=8.2403/8.3654 ref72=7.9135 later_p50=8.247
+store72 golden=PASS first_p50=[8.232, 8.232, 8.233] first_p10/p90=8.228/8.2377 ref72=7.8125 later_p50=8.2325
+full72-close golden=PASS first_p50=[7.9905, 7.99, 7.993] first_p10/p90=7.9703/8.0157 ref72=7.812 later_p50=7.989
+normalize delta24=+0.7915 us delta72=+2.1960 us delta_slope=+29.26 ns/row
+clamp delta24=+0.5435 us delta72=+1.6900 us delta_slope=+23.89 ns/row
+fp8 delta24=+0.2470 us delta72=+1.0035 us delta_slope=+15.76 ns/row
+pack delta24=+0.2735 us delta72=+0.5500 us delta_slope=+5.76 ns/row
+ub-store delta24=-0.0110 us delta72=-0.0160 us delta_slope=-0.10 ns/row
+full72 close-open=-0.0020 us
 ```
+
+判读（供蓝区按判断顺序参考，A5 参考值 delta24/delta72/slope：normalize +0.5040/+1.3615/+17.86、clamp +0.3015/+0.9195/+12.87、fp8 +0.0505/+0.3085/+5.38、pack +0.0905/+0.1530/+1.30、ub-store +0.0425/+0.0025/−0.83）：
+
+- **对齐**：十六批 golden 全过；各批 ref72=7.812–7.813 与历史 7.808 一致（pack/keep 批 ref 7.89–7.91 为该批 golden 对照差异，p50 稳定）；full72 close-open=−0.0020 µs（首尾同配置稳定）。
+- **逐层配对差（A6−A5）**：normalize +0.7915/+2.1960 µs（斜率 +29.26 vs A5 +17.86，1.6×）；clamp +0.5435/+1.6900（+23.89 vs +12.87，1.9×）；**fp8 转换 +0.2470/+1.0035（+15.76 vs +5.38，2.9×）**；**pack +0.2735/+0.5500（+5.76 vs +1.30，4.4×）**；**ub-store −0.0110/−0.0160（−0.10 vs −0.83）——A6 的 UB 写出已不是开销项**（store24 2.935 vs keep24 2.9465，实际换出近乎免费）。
+- **量级排序**（72 行）：normalize 2.20 > clamp 1.69 > fp8 1.00 > pack 0.55 > ub-store −0.02，五段合计 +6.42 µs 中归一化+限幅占 61%；fp8/pack 虽绝对量小但斜率倍数最大（2.9×/4.4×），是"每行代价"劣化最重的两条指令路径（fp8 段含 8 条转换+4 次 VSCATTER，pack 段 6 次 OR 打包）。
+- **一致性**：指令侧 quant_vf 与 split_full_vf 完全一致（158 条、VCGMAXV2=2 VPACKV2=2 VDIV=8 VSCATTER=4），即 FP8 输出版 kernel 的 VF 段与拆分版逐指令相同，配对差全部来自诊断截断点之间的层；七个诊断函数 active-row 操作计数逐层递增（norm 加 div/mul、clip 加 min、cast 加 fp8、pack 加 or8×6、keep 保全部去 ub-store、store 仅留 2 次 ub-store），层语义正确。
+- **方向**：结合 8 批拆分结论（差距主体在 full 独有段），本批把 full 独有段进一步落到层：**归一化（VMUL/VDIV 逐行）与限幅（VMIN）是绝对量大头，FP8 转换与 OR 打包是斜率劣化最大头，UB 写出已排除**。优化优先级建议：归一化/限幅的按行计算形态（能否行内合并或换更宽向量指令）> FP8 转换指令序列 > 打包 OR 链
 
 蓝区先用完整 72 行首尾漂移、各批原版参照和首波 P10/P90 核对可比性。然后逐对比较 `delta72` 和 `delta_slope = (delta72 − delta24) / 48`，计算各自的 A6−A5 差值。优先核查两种指标方向一致、差值相对波动明显的阶段，并用第二波和逐块数据复核。后续候选改动在 54 块方案上用 L0 同卡 A/B 验收。
 
@@ -88,9 +131,73 @@ git pull --ff-only https://github.com/HaoZhang1024/simpler.git a6-swa-port &&
 
 把终端最后打印路径的 `feedback.txt` 全文贴在这里，含版本、10 个 L0 样本、每轮求解状态、均值和差值。失败时贴 `run.log` 的首条错误和实验目录；如已完成采集，可复用同一目录离线求解。完整 `model/summary.json`、`blocks.csv`、`tasks.csv`、`edges.csv` 和每轮原始文件留在黄区。
 
+设备 0，`run_swa_sync_bound.sh` 完整流程：重建 percounter runtime → L0（1 预热 + 10 轮）→ L2 采集（同轮数）→ OR-Tools 逐轮求 54C+54V 容量约束下的整图排程下界（quantum 100 ns，每轮 560 个执行块，限时 30 s/轮）。内网输出目录：`build/swa-a6-bound-faV0oG/`（含 L0/L2 原始采集、lib、model）。
+
+`swa-a6-bound-faV0oG/feedback.txt` 全文：
+
 ```text
-待黄区粘贴 54 块 SWA 的 L0 / L2 feedback.txt
+a1ee0404401c2ed740e3f292ce935b0ac271cc21
+{"round": 1, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 212.6, "feasible_us": 212.6}
+{"round": 2, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 208.7, "feasible_us": 208.7}
+{"round": 3, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 204.5, "feasible_us": 204.5}
+{"round": 4, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 204.7, "feasible_us": 204.7}
+{"round": 5, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 201.7, "feasible_us": 201.7}
+{"round": 6, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 197.5, "feasible_us": 197.5}
+{"round": 7, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 199.2, "feasible_us": 199.2}
+{"round": 8, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 198.2, "feasible_us": 198.2}
+{"round": 9, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 200.2, "feasible_us": 200.2}
+{"round": 10, "status": "OPTIMAL", "optimal": true, "lower_bound_us": 194.8, "feasible_us": 194.8}
+{
+  "platform": "a6",
+  "case": "swa",
+  "device": 0,
+  "runtime_sha256": {
+    "dispatcher/libsimpler_aicpu_dispatcher.so": "193f7ae5eee1a8e1b39b28631397dea996bb4ab9189084a9c71315d781522023",
+    "onboard/percounter/libhost_runtime.so": "1edb6f1070d94ee98095cae7870de7b44da421c2c79716cfdd7fa524946ec248",
+    "onboard/percounter/libaicpu_kernel.so": "afc36fbb422175aa48f7f83f688b6189b9e5eea168369a15658c01be1b281b49",
+    "onboard/percounter/aicore_kernel.o": "e12cca4389dab22e5a7d1a9c9da084b47e168fc40ad43f4a193ae1d71ded295e"
+  },
+  "t25_block_num": 54,
+  "capacities": {
+    "aic": 54,
+    "aiv": 54
+  },
+  "capture_level": 2,
+  "quantum_ns": 100,
+  "time_limit_seconds_per_round": 30.0,
+  "executions_per_round": 560,
+  "aicore_wall_l0_mean_us": 262.6916,
+  "lower_bound_mean_us": 202.20999999999998,
+  "feasible_mean_us": 202.20999999999998,
+  "all_optimal": true,
+  "excess_us": 60.481600000000014,
+  "excess_percent_of_bound": 29.910291281341195
+}
+round,aicore_wall_us
+1,268.04699999999997
+2,269.83299999999997
+3,264.299
+4,263.277
+5,267.794
+6,262.248
+7,254.056
+8,260.146
+9,256.801
+10,260.415
 ```
+
+执行说明（重要，环境问题已定位并修复）：
+
+- 首跑（`build/swa-a6-bound-dawvpY/`）L0/L2 采集与数值校验均过，但求解阶段 `read_round` 报 `Expected an A6 54C+54V Percounter L2 block capture`——L2 的 `scheduler_tasks` 只有 `producer/records`，缺 `execution_blocks`。
+- 排查结论：**共享 venv（`/npu/z00880344/venv`）内有一个 editable 安装指向旧源码副本 `/npu/z00880344/a6local/simpler`（scikit-build 的 `ScikitBuildRedirectingFinder` 插在 `sys.meta_path` 首部，PYTHONPATH 无法压制）**。`run_swa_sync_bound.sh` 里 `python simpler_setup/build_runtimes.py ...`（脚本方式调用，sys.path[0]=脚本目录）因此命中 a6local 旧包，用 11-20 的旧源码与旧产物编译 runtime（与 SWA L0 时代产物 sha 一致），旧 runtime 无 `execution_blocks` 记录逻辑。
+- 修复：`/npu/z00880344/fixpath/sitecustomize.py`（PYTHONPATH 挂载）在解释器启动时摘除该 finder、清理 a6local/pypto 路径并把本仓库置于 sys.path 首位；以 `PYTHONPATH=/npu/z00880344/fixpath bash run_swa_sync_bound.sh` 重跑，runtime 从当前 HEAD（a1ee04044）源码全量重编（新 sha 见上），L2 记录含 `execution_blocks`（560 条），求解正常。`run.py`（`python -I` 隔离模式）不受影响，行为与首跑一致。
+- 该修复对后续所有经该 venv 构建 runtime 的任务均需沿用（凡 `import simpler_setup`/`simpler` 且未显式把仓库插到 sys.path 首位的调用方式）。
+
+判读（供蓝区按判断顺序参考）：
+
+- **模型紧**：10 轮全部 OPTIMAL 且 `feasible==lower_bound`（每轮都找到与下界重合的可行排程），下界无间隙，202.21 µs 就是 54C+54V 容量+依赖约束下该执行块集合的排程最优值。
+- **超界量**：实测 L0 均值 262.69 µs（逐轮 254–270，方差 ±3%），比排程下界高 **60.48 µs（29.91%）**——这部分不是核容量或依赖排布能解释的，来自块内执行时间本身的波动/等待/同步粒度（quantum 100 ns 之上）等。
+- **方向**：整图在理想排程下可到 ~202 µs，当前 ~263 µs 存在 ~60 µs 的非排程开销空间；结合泳道证据（末块双 head 21.9 µs vs 单 head 11.7 µs、quant 段 A6−A5 差 ~3.5 µs），压缩块内执行（尤其首波 44 单 head 块的量化/转换路径）是主要抓手，其次看波间等待。L0 每轮 wall 与历史 AICore L0（0.2615 ms）一致，采集可信
 
 `excess_us = L0 AICore wall 均值 − 模型下界均值`，百分比以模型下界为分母。下界和可行排程之间的差反映求解还剩多少不确定性。只有每轮都证明最优，才能把下界均值记为该模型的最优值。L2 插桩会影响输入时长，模型也放宽了物理核组的放置约束；可兑现的收益仍用后续 L0 同卡 A/B 衡量。
 
