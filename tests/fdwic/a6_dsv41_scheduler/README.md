@@ -19,10 +19,75 @@ DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_integrated_comparison.
 
 **本轮 A6 集成版 t25=54 回填**
 
-```text
-SoC / CANN / CCEC：
+SoC / CANN / CCEC：Ascend960DT_966B7 / CANN 9.3.0（1022，`/npu/cann/1022/cann-9.3.0`）/ CCEC（bisheng ccec，clang 15.0.5，2026-10-20 构建）
+
+设备 0，percounter 分支 `76c7c288b`（集成 #3166 MIX 前驱预取参数 + #3180 减少 GM 原子 + #3195 调度/完成路径优化 + A6 适配），独立构建目录 `build/swa-integrated-758Yr8/`，L0/L2 各 1 预热 + 10 正式轮，参考输出数值校验通过，每轮 560 次 kernel 执行，模型 10/10 轮 OPTIMAL（feasible==lower_bound）。
+
 feedback.json：
+
+```json
+{
+  "platform": "a6",
+  "case": "swa",
+  "device": 0,
+  "runtime_sha256": {
+    "dispatcher/libsimpler_aicpu_dispatcher.so": "9be46d5ef764b7e6267c402eef340039265bed4d67c967898e3e8494f61179a2",
+    "onboard/percounter/libhost_runtime.so": "8b4c01158bfd7c5978bd27ae44a9d62e0beee06e89e7936386acee6ecc62d1a6",
+    "onboard/percounter/libaicpu_kernel.so": "26699e7009ba4a46af12a55dbd3747116ea6ef769e582076b7365d8ce8fa5c9d",
+    "onboard/percounter/aicore_kernel.o": "dded49cda5599c73f6ddcddf38ce9297a8548f6b406ac8a34f1872edb185fedc"
+  },
+  "t25_block_num": 54,
+  "capacities": {"aic": 54, "aiv": 54},
+  "capture_level": 2,
+  "quantum_ns": 100,
+  "time_limit_seconds_per_round": 30.0,
+  "executions_per_round": 560,
+  "aicore_wall_l0_mean_us": 239.8697,
+  "aicore_wall_l0_min_us": 231.522,
+  "aicore_wall_l0_median_us": 239.8925,
+  "device_l0_mean_us": 305.49519999999995,
+  "lower_bound_mean_us": 197.15,
+  "fixed_order_mean_us": 198.73,
+  "fixed_order_valid_rounds": 10,
+  "l2_kernel_span_mean_us": 246.6253,
+  "l2_chain_gap_mean_us": 51.0665,
+  "l2_top_chain_gaps": [
+    {"task": 22, "mean_us": 8.3914, "before_dispatch_mean_us": 8.0501, "after_dispatch_mean_us": 0.3413000000000011},
+    {"task": 9, "mean_us": 7.933400000000002, "before_dispatch_mean_us": 7.516799999999999, "after_dispatch_mean_us": 0.4166000000000025},
+    {"task": 35, "mean_us": 7.2052, "before_dispatch_mean_us": 6.707000000000001, "after_dispatch_mean_us": 0.49819999999999853}
+  ],
+  "feasible_mean_us": 197.15,
+  "all_optimal": true,
+  "excess_us": 42.71969999999999,
+  "excess_percent_of_bound": 21.668627948262742,
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "aicore_l0_samples_us": [
+    248.208,
+    244.50900000000001,
+    242.94199999999998,
+    242.684,
+    240.90800000000002,
+    238.877,
+    238.862,
+    231.522,
+    236.96200000000002,
+    233.223
+  ],
+  "critical_chain_by_source_task": {
+    "22": {"rounds_present": 10, "gap_us": 8.3914, "gap_before_dispatch_us": 8.0501, "gap_after_dispatch_us": 0.34130000000000005},
+    "9": {"rounds_present": 10, "gap_us": 7.933400000000002, "gap_before_dispatch_us": 7.516799999999999, "gap_after_dispatch_us": 0.41659999999999997},
+    "35": {"rounds_present": 10, "gap_us": 7.2052, "gap_before_dispatch_us": 6.707000000000001, "gap_after_dispatch_us": 0.49820000000000003}
+  }
+}
 ```
+
+判读（与实验分支 a1ee04044 基线同卡同输入对照，供蓝区按判断顺序参考）：
+
+- **整图实测大幅下降**：AICore L0 均值 262.692 → **239.870 µs（−22.82，−8.7%）**，中位 262.763 → 239.893，逐轮区间 254.1–269.8 → 231.5–248.2（最快轮 −22.5）；Device L0 均值 356.976 → **305.495 µs（−51.48，−14.4%）**。
+- **交接优先对照项 t22 收窄最显著**：关键链 gap 12.145 → **8.391 µs（−3.75）**，其中 before_dispatch 11.933 → 8.050（−3.88），after_dispatch 0.212 → 0.341；t9 9.447 → 7.933（before −1.54）；t35 7.793 → 7.205（before −0.62）。三项合计 29.385 → 23.530 µs，before_dispatch 合计 28.310 → 22.275 µs——集成版收益集中在派发前等待，与 #3166/#3180/#3195 的作用面一致。
+- **模型侧同向改善**：自由排块下界 202.210 → 197.150 µs（10/10 OPTIMAL，feasible==lower），固定排块 204.390 → 198.730 µs；超界 60.482（29.91%）→ **42.720 µs（21.67%）**；L2 span 265.417 → 246.625、链间隔 65.936 → 51.067 µs。下界本身降 5.06 µs 说明 kernel 执行时长也有变化（集成版重建与 runtime ABI 匹配的 callable），收益不完全来自调度。
+- **剩余空间**：gap 仍 92–96% 在 dispatch 之前（t22 8.05/8.39、t9 7.52/7.93、t35 6.71/7.21），下一步热点依旧是派发前等待（依赖可见/取票/参数准备），t22 余量最大；三项 rounds_present 均 10/10。
+- 环境说明：trial venv 以 `--system-site-packages` 继承基础环境中的 pypto editable 安装，被脚本自带的 normal/isolated 双模式导入校验拦截（`Expected … found /npu/w00949861/pypto/...`）；黄区在 venv 创建后向其 site-packages 注入 sitecustomize（摘除 skbuild editable finder、清 pypto/a6local 路径，仅作用于该 trial venv），重跑通过，未改动共享环境。实际导入路径：trial 内 `simpler_setup`/`simpler` 均解析到 `swa-integrated-758Yr8/src/`
 
 The SWA replay runs the production percounter scheduler on 54 AIC + 54 AIV.
 Each cluster has one AIC and one AIV. The case freezes the 19 kernel registrations and their source dependencies from
