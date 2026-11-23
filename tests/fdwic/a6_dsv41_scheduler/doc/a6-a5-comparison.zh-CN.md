@@ -27,15 +27,66 @@ A6 现场 query 还报告 8 个 AICPU、L1 512 KiB、L0A/L0B 各 64 KiB、L0C 25
 | CntNotify SET / INC | 同址 SET 读写已测，INC 别名为 SET+0x08 | 同址 SET 读写和 INC 已测，现场 INC 别名为 SET+0x20 |
 | IPC，0x5500 / 0x5520 | HBG 通路 | 本例 percounter 未使用，现场记录未验证 |
 
-同址并发测试每轮固定 96 核（A5 32C+64V，A6 48C+48V），硬件 SYNCALL 对齐起跑，预热 1 轮、正式 192 轮。下表是每轮相对最早起跑的**第 96 个完成时刻均值**，单位 µs。A6 的 GM 原子完成计数可继续作为基线；t22 在生产图上何时观察到阈值，仍需由实际调度事件定位。
+### CntNotify 与 GM 同址测试
 
-| 单次 32-bit 同址访问 | A6 | A5 |
-| --- | ---: | ---: |
-| GM 普通读 / 写后 DSB | 0.495 / 1.665 | 1.660 / 8.931 |
-| GM 原子加零取返回 / exchange 后 DSB | 1.043 / 1.046 | 16.387 / 16.385 |
-| CntNotify SET 读 / 写后 DSB | 1.225 / 1.331 | 1.199 / 1.447 |
+每轮所有参与核用硬件 `SYNCALL<Mix>` 对齐起跑，每核向同一个 32 位地址访问一次。预热 1 轮后测 192 轮。每轮以最早开始时刻为零点，按结束时刻排名，再对同一名次取 192 轮均值。平均相邻间隔按每轮（末名时刻 − 首名时刻）除以（核数 − 1）计算。写后有 DSB 的组计到屏障返回；无 fence 的组计到指令发出。
 
-A6 同批扩展项中，GM 加一取返回后 DSB 为 1.051 µs，CntNotify INC 后 DSB 为 1.336 µs。[正式探针](../probes/a6_same_address/) · [A5 对照数值来源](../probes/a6_same_address/summarize.py) · [黄区 96 / 108 核原始回填](https://github.com/HaoZhang1024/simpler/blob/2d4396a56/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#L98-L138)
+**A5 · 96 核（32 AIC + 64 AIV），11 月 19 日复测。** 总表的 A5 基线取自这批可复算的记录。[逐名次原始数据](https://github.com/mihudaner/simpler/blob/0d76a7d55bcf8976a25777a5dc2ce9b5cbed2eeb/tests/fdwic/a6_dsv41_scheduler/results/002-hbg-same-address-access/a5-ranks.json)
+
+| 操作 | 路径 | 第 1 名（µs） | 第 48 名（µs） | 第 96 名（µs） | 第 96 名 P10–P90（µs） | 平均相邻间隔（ns） |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| 读 | GM 普通读 | 0.073 | 0.866 | 1.660 | 1.625–1.703 | 16.7 |
+| 读 | GM 原子加零，取返回值 | 0.207 | 8.236 | 16.387 | 16.277–16.581 | 170.3 |
+| 读 | CntNotify SET 读 | 0.133 | 0.616 | 1.199 | 1.181–1.218 | 11.2 |
+| 写 + DSB | GM 普通写 | 0.064 | 4.516 | 8.931 | 8.852–8.987 | 93.3 |
+| 写 + DSB | GM 原子交换 | 0.208 | 8.238 | 16.385 | 16.278–16.531 | 170.3 |
+| 写 + DSB | CntNotify SET 写 | 0.207 | 0.735 | 1.447 | 1.431–1.464 | 13.1 |
+
+<details>
+<summary>A5 原图的六组读数（96 核，另一批测量）</summary>
+
+| 操作 | 路径 | 第 1 名（µs） | 第 48 名（µs） | 第 96 名（µs） | 平均相邻间隔（ns） |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 读 | GM ld/st | 0.082 | 0.803 | 1.530 | 15.2 |
+| 读 | GM atomic | 0.234 | 8.305 | 16.946 | 175.9 |
+| 读 | CntNotify | 0.143 | 0.627 | 1.203 | 11.2 |
+| 写 + DSB | GM ld/st | 0.075 | 4.579 | 9.231 | 96.4 |
+| 写 + DSB | GM atomic | 0.237 | 8.310 | 16.956 | 176.0 |
+| 写 + DSB | CntNotify | 0.218 | 0.747 | 1.463 | 13.1 |
+
+</details>
+
+**A6 · 96 核（48 AIC + 48 AIV），11 月 20 日复测。** 这组与 A5 的并发总数相同，两端的 C/V 比例见表题。
+
+| 操作 | 路径 | 第 1 名（µs） | 第 48 名（µs） | 第 96 名（µs） | 平均相邻间隔（ns） |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 读 | GM ld/st | 0.111 | 0.181 | 0.495 | 4.0 |
+| 读 | GM atomic（add 0 取返回） | 0.241 | 0.768 | 1.043 | 8.4 |
+| 读 | CntNotify SET | 0.160 | 0.696 | 1.225 | 11.2 |
+| 写 + DSB | GM ld/st | 0.107 | 0.986 | 1.665 | 16.4 |
+| 写 + DSB | GM atomic（exch） | 0.251 | 0.771 | 1.046 | 8.4 |
+| 写 + DSB | GM atomic（faa，生产指令） | 0.251 | 0.773 | 1.051 | 8.4 |
+| 写 + DSB | CntNotify SET | 0.223 | 0.779 | 1.331 | 11.7 |
+| 写 + DSB | CntNotify INC（+0x20） | 0.223 | 0.771 | 1.336 | 11.7 |
+| 写（无 fence） | GM ld/st / GM atomic issue / CntNotify INC | 0.002 | 0.021 | 0.048 | 0.5 |
+
+**A6 · 108 核（54 AIC + 54 AIV），同批全核对照。** 中间名次取第 54 名，最后一个完成的是第 108 名。
+
+| 操作 | 路径 | 第 1 名（µs） | 第 54 名（µs） | 第 108 名（µs） | 平均相邻间隔（ns） |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 读 | GM ld/st | 0.113 | 0.210 | 0.525 | 3.9 |
+| 读 | GM atomic（add 0 取返回） | 0.263 | 0.843 | 1.148 | 8.3 |
+| 读 | CntNotify SET | 0.164 | 0.757 | 1.361 | 11.2 |
+| 写 + DSB | GM ld/st | 0.115 | 1.424 | 2.350 | 20.9 |
+| 写 + DSB | GM atomic（exch） | 0.269 | 0.849 | 1.153 | 8.3 |
+| 写 + DSB | GM atomic（faa，生产指令） | 0.269 | 0.847 | 1.152 | 8.3 |
+| 写 + DSB | CntNotify SET | 0.232 | 0.848 | 1.477 | 11.6 |
+| 写 + DSB | CntNotify INC（+0x20） | 0.232 | 0.845 | 1.474 | 11.6 |
+| 写（无 fence） | GM ld/st / GM atomic issue / CntNotify INC | 0.002 | 0.024 | 0.051 | 0.5 |
+
+A6 无 fence 的三条路径在回填精度下读数相同，合列一行。CntNotify INC 在每轮同步后从 SET 读回的终值均等于参与核数；GM 原子加一取返回值（faa）的票号也逐轮覆盖 0 到核数减一。[黄区两组完整回填与校验](https://github.com/HaoZhang1024/simpler/blob/2d4396a56/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#L98-L138)
+
+同为 96 核，GM 原子加零读的末名从 A5 的 **16.387 µs** 降到 A6 的 **1.043 µs**，CntNotify SET 读分别为 **1.199 / 1.225 µs**。在 A6 的完成计数对照中，GM 原子加一后 DSB 为 **1.051 µs**，CntNotify INC 后 DSB 为 **1.336 µs**。这组结果支持 SWA 继续使用 GM 完成计数；t22 等待第 48 个 block 到达的时间另看生产泳道。[t22 的 L4 端点](a6-swa-performance-progress.zh-CN.md#l4-endpoints)
 
 ## 整图时延与当前定位点
 
