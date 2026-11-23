@@ -2,16 +2,26 @@
 
 ## 当前状态与反馈位置
 
-**黄区当前任务：用设备 0 已采好的十轮 L2 离线复算固定排块极限。** 在 `a6-swa-port` 仓库根目录，使用上次求解成功的 Python 环境执行：
+**黄区当前任务：在同一张 A6 卡上测集成版 percounter，优先对照 t22 的 dispatch 前间隔。** 旧版 `a1ee04044` 的十轮采样和离线复算已完成。固定原排块的理想值是 **204.390 µs**，自由排块是 **202.210 µs**。十轮逐对相差 **1.0–4.3 µs**，均值 **2.180 µs**。实测 L0 AICore 为 **262.692 µs**，Device 为 **356.976 µs**。
+
+集成版 `0b69dc4c0` 已包含 MIX 等前驱时预取参数（#3166）、同步路径减少返回型 GM 原子操作（#3180）和调度/完成路径优化（#3195）。本轮测这些改动和 A6 适配合在一起的效果。核对同卡、同输入、t25=54 和参考输出；集成版会重建与 runtime ABI 匹配的 kernel。单项收益留待对照其中一个改动时再归因。
+
+从 `a6-swa-port` 根目录加载 A6 CANN 和上次使用的 Python 3.11 环境，在分配到基线设备 0 后执行：
 
 ```bash
 git pull --ff-only https://github.com/HaoZhang1024/simpler.git a6-swa-port &&
-python tests/fdwic/a6_dsv41_scheduler/analysis/saved_placement.py build/swa-a6-bound-faV0oG
+DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_integrated_comparison.sh
 ```
 
-输入是已有的 `model/`、`L0/` 和 `L2/`，全程用 CPU。该版已测 AICore L0 均值 262.692 µs，自由排块最优值均值 202.210 µs。本次补上保持实际 worker 和核上顺序的理想时间，并统计关键链中 dispatch 前后的间隔。
+脚本在独立目录检出固定的 Simpler、PTO-ISA，检查两种 Python 启动模式导入的源码，再运行 L0/L2 各 1 次预热、10 次正式轮。将输出末尾 `feedback.json` 填入下框；若中途失败，填失败阶段与首条错误。蓝区先看 L0 和 golden，再对照 t22、t9、t35 的关键链占用轮数、dispatch 前后间隔及 kernel 窗口。两个版本的 L2 插桩不同，跨版本收益以 L0 为准。
 
-**黄区离线复算结果填在这里**：请粘贴命令输出的 JSON，包含有效轮数、逐轮固定排块时间和等待贡献最大的三个 task。
+**黄区集成版实卡结果回填位置**
+
+```text
+待回填 feedback.json
+```
+
+### 已完成：实验分支固定排块与关键链
 
 设备 0，复用 `build/swa-a6-bound-faV0oG`（HEAD a1ee04044 采集）已采好的十轮 L0/L2/model，纯 CPU 离线复算：保持实际 worker 分配与核上执行顺序的理想时间（fixed_order），并统计关键链 dispatch 前后的间隔。输入数据一致性校验全过（54 块、quantum 100 ns、runtime sha 与上轮求解一致、10 轮有效）。
 
@@ -113,12 +123,15 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/saved_placement.py build/swa-a6-b
 }
 ```
 
-判读（供蓝区按判断顺序参考）：
+**蓝区复核。** L2 首核到末核跨度 265.417 µs，其中沿最后完成路径选出的可见间隔合计 65.936 µs。这一口径与 L0 整图减去模型最优值的 60.482 µs 不同。固定排块模型沿用 L2 时长并将派发、通知耗时设为零，单块向下量化到 0.1 µs。204.390 µs 描述这组约束下的理想值。
 
-- **放置近乎最优**：保持实际 worker 与核上顺序的理想时间 fixed_order_mean=204.39 µs，仅比自由排块下界 202.21 µs 高 **+2.18 µs（+1.1%）**——实际排块方案本身几乎无可挖掘，60.48 µs 的超界几乎全部来自**块间等待**而非放置。
-- **等待集中在 dispatch 之前**：关键链平均间隔 65.94 µs（≈ 超界 60.48 µs 同量级，L2 插桩略放大至 span 265.42 µs）；三个最大 gap 贡献任务的间隔 93–98% 发生在 dispatch 之前（t22 11.93/12.15、t9 9.05/9.45、t35 7.32/7.79），dispatch→kernel_start 仅 0.21–0.47 µs——**等待不是派发慢，而是块在前驱完成后没有立即被派发**（依赖可见性/取票/参数准备等 host 侧环节）。
-- **三个热点任务**：t22（12.15 µs 均值，最大轮 gap 14.34，前驱 t18，本块 kernel 22.45 µs）、t9（9.45，前驱 t31 同 worker，本块仅 1.83 µs——小 kernel 前的长等待）、t35（7.79，前驱同为 t35 自链块，同 worker 接块间隙）。结合此前离线提取：t22 的 dispatch 来自 t18 结束后零 kernel 间隔启动，AIC dispatch→自核 kernel 开 1.99-2.32 µs，与本次 after_dispatch 小、before_dispatch 大一致。
-- **方向**：收益抓手从"重排块"转向"压缩 dispatch 前等待"——t22/t9/t35 三处的依赖发布→取票→参数准备链路（claim/resolve/prepare 约 2.0-2.8 µs 级）与波间同步粒度；fixed_order 逐轮 197.0–214.5 µs 与自由下界逐轮走势一致（同轮差 ≤2.6 µs），十轮全部有效
+| 目的 task | 关键链间隔贡献 / µs | dispatch 前 / µs | dispatch 后 / µs | 原始样本能定位到哪里 |
+| --- | ---: | ---: | ---: | --- |
+| t22 | 12.145 | 11.933 | 0.212 | 48 个同步 MIX block。第 7 轮 t18/b9 返回到 t22/b39 开始相隔 14.336 µs；该链选择了这个可见前驱，最后一个同步参与者到达的时刻仍需单独区分 |
+| t9 | 9.447 | 9.053 | 0.394 | 第 3 轮 worker 78 从 t31/b4 转到 t9/b76。这个相邻关系来自同核顺序 |
+| t35 | 7.793 | 7.323 | 0.470 | 第 3 轮 worker 54 从 t35/b28 转到 b60，是同一任务复用同一个核 |
+
+表中均值按每轮该 task 在关键链上的间隔求和，再取十轮平均。三项合计 29.385 µs，其中 28.310 µs 在 dispatch 前。该区间涵盖 AICore resident 调度、依赖与硬件同步等待，也可能包含尚未观测的工作。先验证 t22，在同核换块的 t35 上交叉检查。
 
 已回填的实验记录：[64 块 t25 的 FP8 分段](#a6-fp8-output-feedback) · [54 块整图 L2 排程下界](#a6-sync-bound-feedback)。
 

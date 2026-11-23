@@ -1,6 +1,6 @@
 # A6 单卡 SWA · percounter
 
-**黄区当前任务**：[离线复算固定排块极限，执行命令与结果回填位置](doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)。
+**黄区当前任务**：[集成版 A6 实卡对照，执行命令与结果回填位置](doc/a6-swa-performance-progress.zh-CN.md#当前状态与反馈位置)。
 
 
 | 从这里看 | 内容 |
@@ -8,7 +8,7 @@
 | [A6 与 A5 差异](doc/a6-a5-comparison.zh-CN.md) | 环境与核配置、寄存器和 GM 实测、整图时延、t22 / t25 / t35 当前定位 |
 | [A6 percounter SWA 性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md) | 实验命令、A5 基线、A6 逐批回填、泳道端点和每日结论 |
 
-黄区有两项独立实验。查 t25 慢在哪条操作，用 64 块的 [FP8 分段命令](doc/a6-swa-performance-progress.zh-CN.md#a6-fp8-output)，填 [FP8 结果](doc/a6-swa-performance-progress.zh-CN.md#a6-fp8-output-feedback)。查当前 54 块方案整图还有多少排程空间，用 [L0 / L2 命令](doc/a6-swa-performance-progress.zh-CN.md#a6-sync-bound)，填 [整图下界结果](doc/a6-swa-performance-progress.zh-CN.md#a6-sync-bound-feedback)。
+实验分支的 FP8 分段、整图下界和固定排块复算均已回填。集成版实卡对照使用上方「黄区当前任务」入口。
 
 ## 用例与构建
 
