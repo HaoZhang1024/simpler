@@ -26,9 +26,31 @@ python3 tests/fdwic/a6_dsv41_scheduler/analysis/t25_quant_asm.py \
 
 把 `quant-abba-Pv2fdxOw/quant-vf-80/feedback.txt` 全文贴到下框。有缺件或工具报错时，保留对应批次的 `ERROR` 行。完整的 `A1.asm.txt`、`B1.asm.txt` 留在同目录，蓝区根据摘要与 A5 对齐归约链。指令数是静态计数，时延仍以已回填的四批实测为准。
 
+离线执行 `t25_quant_asm.py build/swa-a6-MxF89z/quant-abba-Pv2fdxOw`（主机侧，无需上板）。工具：系统 readelf/c++filt + CANN bisheng `llvm-objdump`（`LLVM_OBJDUMP=/npu/cann/1022/cann-9.3.0/tools/bisheng_compiler/bin/llvm-objdump`，系统 python3 过老改用项目 venv 3.11）。脚本按 A1.log/B1.log 的 `Output:` 定位原始构建目录，核对当批 func20.bin，选择 `.text` 逐字节一致的 linked ELF，按符号地址/长度解码完整 `quant_vf<80>`。完整反汇编留内网 `quant-abba-Pv2fdxOw/quant-vf-80/`（A1.asm.txt、B1.asm.txt）。
+
+`quant-vf-80/feedback.txt` 全文：
+
 ```text
-待黄区粘贴 A1、B1 指令摘要
+A1
+func20=27446f3f09c89d8914a8a56ce6b41274d13b679d1318f6912d64963aaca3ce72 elf=o_quant_vf.cpp.incore_b1zisbxt.o.linked_poajm6do.elf .text_match=yes
+Rows=80 start=0x2e98 bytes=632 instructions=158
+whole_symbol VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=8 VMUL=8
+  +00cc    9ad00bf6  VCGMAXV2.f32 V13, V13, P2 | +00d0    9ad0017e  VPACKV2.b32 V13, V13 | +00d4    9adaeac0  VSHRI.b32 V13, V13, #23, P2, #1, #1 | +00d8    9ad24aa8  VADDS.s32 V13, V13, S18, P2
+  +019c    9ad00bf6  VCGMAXV2.f32 V13, V13, P2 | +01a0    9ad0017e  VPACKV2.b32 V13, V13 | +01a4    9adaeac0  VSHRI.b32 V13, V13, #23, P2, #1, #1 | +01a8    9ad24aa8  VADDS.s32 V13, V13, S18, P2
+same_words_as_blue_a6_baseline=yes
+B1
+func20=6f72ab89f446c47cb7615263ea46c0d11c6a0970aae2e3d208ce082d8ce166bf elf=o_quant_vf.cpp.incore_bitzi1u_.o.linked_xyg9g678.elf .text_match=yes
+Rows=80 start=0x2f58 bytes=648 instructions=162
+whole_symbol VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=0 VMUL=16
+  +00cc    9ad00bf6  VCGMAXV2.f32 V13, V13, P2 | +00d0    9ad0017e  VPACKV2.b32 V13, V13 | +00d4    9adaeac0  VSHRI.b32 V13, V13, #23, P2, #1, #1 | +00d8    9ad24aa8  VADDS.s32 V13, V13, S18, P2
+  +01a4    9ad00bf6  VCGMAXV2.f32 V13, V13, P2 | +01a8    9ad0017e  VPACKV2.b32 V13, V13 | +01ac    9adaeac0  VSHRI.b32 V13, V13, #23, P2, #1, #1 | +01b0    9ad24aa8  VADDS.s32 V13, V13, S18, P2
 ```
+
+判读（供蓝区参考）：
+
+- **A1 quant_vf 机器码与蓝区 A6 离线基线逐指令一致**（same_words_as_blue_a6_baseline=yes）——上轮整文件指纹差异（44e4…/2744… vs 8b64…/fa7d…）不在 quant_vf 函数内，位于 func20 其余区段（两文件为裸影像，quant_vf 158 条/632B 之外的差异待蓝区复核）。
+- A1 实测归约链确认为 `VCGMAXV2.f32 → VPACKV2.b32 → VSHRI.b32 #23 → VADDS.s32`（每 chunk 一组，两处 +00cc/+019c），与蓝区离线编译所见一致；无旧版 VCGMAX。
+- B1 替换确认：**VDIV=0、VMUL=16**（8 条接管除法 + 8 条原有乘法），归约链不变；函数体 162 条/648B（比 A1 多 4 条，即每行新增的 4 条倒数指数运算）
 
 <a id="a6-quant-abba"></a>
 
