@@ -1,8 +1,8 @@
 # A6 单卡 SWA · percounter
 
-**当前阶段是定位 A6 单块执行与同核调度的差距。** t25 调整为 54 块后，A6 同卡 L0 AICore 平均节省 4.870 µs；实验方案相对历史 A5 基线，AICore 仍多 77.032 µs、Device 多 58.830 µs。[t25 结果复核](doc/a6-swa-performance-progress.zh-CN.md#t25-结果复核)
+**黄区当前任务是 A6 t25 的量化对照。** 使用原始 64 块 plan，每块计算 1 个 head。交接页顶部有一段可直接执行的 Bash 命令，以及粘贴结果的位置。[执行命令与回填位置](doc/a6-swa-performance-progress.zh-CN.md#a6-quant-abba)
 
-**两端 t25 分段已对齐。** 同为 64 块时，A6 首块量化比 A5 多 3.548 µs，占核内差值约 78%。黄区继续用已通过 golden 的 54 块 replay。[分段实测](doc/a6-swa-performance-progress.zh-CN.md#1a-t25-首块分段) · [黄区运行入口](doc/a6-swa-performance-progress.zh-CN.md#1b-黄区沿用-54-块-replay)
+同为 64 块时，A6 首块量化比 A5 多 3.548 µs。日常运行沿用 54 块 replay，A6 同卡 L0 AICore 平均节省 4.870 µs。54 块的逐块采集已结束，补采三轮的末块均为双 head 块。[量化分段](doc/a6-swa-performance-progress.zh-CN.md#1a-t25-首块分段) · [54 块结果](doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
 
 | 要找什么 | 位置 |
 | --- | --- |
