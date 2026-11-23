@@ -1,0 +1,14 @@
+a5 device=1 func20=52a574f521e5081afab0ec4d88d31b84f6fe86b862f4ab70950099297c745626 first=64 later=0 us
+quant_vf instructions=155 VCGMAX=2 VCGMAXV2=0 VPACKV2=0 VDIV=8 VSCATTER=4
+split_full_vf instructions=155 VCGMAX=2 VCGMAXV2=0 VPACKV2=0 VDIV=8 VSCATTER=4
+split_scale_vf instructions=92 VCGMAX=2 VCGMAXV2=0 VPACKV2=0 VDIV=0 VSCATTER=4
+full72-open golden=PASS first_p50=[4.211, 4.2605, 4.253] first_p10/p90=4.0889/4.4104 ref72=4.282 later_p50=None
+fence golden=PASS first_p50=[0.016, 0.016, 0.016] first_p10/p90=0.015/0.02 ref72=4.2805 later_p50=None
+pad8 golden=PASS first_p50=[0.2105, 0.211, 0.213] first_p10/p90=0.194/0.3032 ref72=4.292 later_p50=None
+full24 golden=PASS first_p50=[1.545, 1.554, 1.5515] first_p10/p90=1.4983/1.5988 ref72=4.3035 later_p50=None
+scale72 golden=PASS first_p50=[1.5565, 1.5545, 1.5565] first_p10/p90=1.5323/1.6207 ref72=4.282 later_p50=None
+full48 golden=PASS first_p50=[2.8925, 2.9015, 2.9055] first_p10/p90=2.7942/2.9828 ref72=4.298 later_p50=None
+scale24 golden=PASS first_p50=[0.675, 0.674, 0.6735] first_p10/p90=0.6556/0.7144 ref72=4.291 later_p50=None
+full72-close golden=PASS first_p50=[4.2575, 4.2525, 4.2595] first_p10/p90=4.0892/4.3463 ref72=4.2955 later_p50=None
+first-wave ns/active-row full24-48=56.25 full48-72=56.41 scale24-72=18.39
+full72 close-open=+0.0045 us

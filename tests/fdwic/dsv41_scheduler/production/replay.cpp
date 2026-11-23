@@ -154,6 +154,9 @@ extern "C" __attribute__((visibility("default"))) void aicpu_orchestration_entry
                 record.tensors.size() != 5 || record.scalars != std::vector<uint64_t>{72, 8, 80})
                 throw std::runtime_error("Unexpected SWA func20 probe plan");
             task.add_scalar(std::stoull(setting("DSV41_T25_STAMP_ADDRESS")));
+#ifdef DSV41_T25_QUANT_SPLIT
+            task.add_scalar(std::stoull(setting("DSV41_T25_QUANT_MODE")));
+#endif
         }
 #endif
         std::vector<TaskId> dependencies;

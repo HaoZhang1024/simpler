@@ -79,7 +79,7 @@ def reciprocal_quant(header):
     return header
 
 
-def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False):
+def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False, quant_split=False):
     sys.path[:0] = [str(ROOT), str(ROOT / "python")]
     from simpler_setup.elf_parser import extract_text_section
     from simpler_setup.kernel_compiler import KernelCompiler
@@ -102,9 +102,12 @@ def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False):
     kernel, = (k for k in manifest["kernels"] if k["func_id"] == 20)
     source = source_root / kernel["source"]
     host = out / "host"
+    flags = f"-DDSV41_T25_PHASE_PROBE={54 if block_plan is not None else 64}"
+    if quant_split:
+        flags += " -DDSV41_T25_QUANT_SPLIT"
     subprocess.run(["cmake", "-S", SUITE / "production", "-B", host, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                     f"-DSIMPLER_ROOT={ROOT}", f"-DDSV41_ARCH={platform}",
-                    f"-DCMAKE_CXX_FLAGS=-DDSV41_T25_PHASE_PROBE={54 if block_plan is not None else 64}"], check=True)
+                    f"-DCMAKE_CXX_FLAGS={flags}"], check=True)
     subprocess.run(["cmake", "--build", host, "--target", "native-runner", "replay", "--parallel", "4"], check=True)
     sig = json.loads(subprocess.check_output([host / "native-runner", "--describe-callable", source_bundle / "callable.bin"]))
     compiler = KernelCompiler(platform)
@@ -124,7 +127,12 @@ def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False):
             raise ValueError("The reciprocal comparison uses the 64-block phase probe")
         header = source.with_suffix(".hpp")
         (out / header.name).write_text(reciprocal_quant(header.read_text()))
-    if block_plan is None:
+    if quant_split:
+        from t25_quant_split import split_sources
+        cpp, hpp = split_sources(instrument(source.read_text()), source.with_suffix(".hpp").read_text())
+        diag.write_text(cpp)
+        diag.with_suffix(".hpp").write_text(hpp)
+    elif block_plan is None:
         diag.write_text(instrument(source.read_text()))
     else:
         from t25_blocks import mark_block

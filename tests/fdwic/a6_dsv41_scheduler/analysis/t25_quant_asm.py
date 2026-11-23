@@ -38,17 +38,17 @@ def output(args, **kwargs):
     return proc.stdout
 
 
-def disassemble(elf):
+def disassemble(elf, function="quant_vf"):
     symbols = output(["readelf", "-sW", elf])
     demangled = output(["c++filt"], input=symbols)
     matches = set()
     for line in demangled.splitlines():
         fields = line.split(None, 7)
-        if len(fields) == 8 and fields[3] == "FUNC" and "o_quant::quant_vf<" in fields[7]:
+        if len(fields) == 8 and fields[3] == "FUNC" and f"o_quant::{function}<" in fields[7]:
             if re.search(r"__fp8e4m3,\s*80,\s*512,", fields[7]):
                 matches.add((int(fields[1], 16), int(fields[2], 0), fields[7]))
     if len(matches) != 1:
-        raise ValueError(f"{elf.name}: expected one quant_vf<Rows=80> symbol, found {len(matches)}")
+        raise ValueError(f"{elf.name}: expected one {function}<Rows=80> symbol, found {len(matches)}")
     start, size, symbol = matches.pop()
     dump = output([os.environ.get("LLVM_OBJDUMP", "llvm-objdump"), "-d", f"--start-address={start}",
                    f"--stop-address={start + size}", elf])
