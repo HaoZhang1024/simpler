@@ -1,0 +1,32 @@
+a5 device=1 func20=d8fff5852c4b07289f5719e64b8357daabc1a7ac43572afd2b19f6ac3e535b0c first=64 later=0 us
+quant_vf instructions=155 VCGMAX=2 VCGMAXV2=0 VPACKV2=0 VDIV=8 VSCATTER=4
+split_full_vf instructions=155 VCGMAX=2 VCGMAXV2=0 VPACKV2=0 VDIV=8 VSCATTER=4
+raw active-row div/mul/min/fp8/or8/ub-stores=0/0/0/0/0/8
+norm active-row div/mul/min/fp8/or8/ub-stores=8/8/0/0/0/8
+clip active-row div/mul/min/fp8/or8/ub-stores=8/8/8/0/0/8
+cast active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/0/8
+pack active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/6/8
+keep active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/8/0
+store active-row div/mul/min/fp8/or8/ub-stores=8/8/8/8/8/2
+full72-open golden=PASS first_p50=[4.44, 4.409, 4.3725] first_p10/p90=4.2392/4.6408 ref72=4.2655 later_p50=None
+raw24 golden=PASS first_p50=[0.692, 0.693, 0.697] first_p10/p90=0.6763/0.7147 ref72=4.2685 later_p50=None
+norm24 golden=PASS first_p50=[1.191, 1.2035, 1.197] first_p10/p90=1.1376/1.2498 ref72=4.275 later_p50=None
+clip24 golden=PASS first_p50=[1.4585, 1.4985, 1.5025] first_p10/p90=1.4016/1.5762 ref72=4.2835 later_p50=None
+cast24 golden=PASS first_p50=[1.549, 1.551, 1.5425] first_p10/p90=1.5053/1.6134 ref72=4.289 later_p50=None
+pack24 golden=PASS first_p50=[1.6395, 1.666, 1.625] first_p10/p90=1.5504/1.8112 ref72=4.29 later_p50=None
+keep24 golden=PASS first_p50=[1.6125, 1.602, 1.605] first_p10/p90=1.5223/1.7155 ref72=4.2655 later_p50=None
+store24 golden=PASS first_p50=[1.6395, 1.6515, 1.6475] first_p10/p90=1.5534/1.7503 ref72=4.2895 later_p50=None
+raw72 golden=PASS first_p50=[1.5815, 1.5835, 1.58] first_p10/p90=1.5586/1.6244 ref72=4.282 later_p50=None
+norm72 golden=PASS first_p50=[2.935, 2.943, 2.947] first_p10/p90=2.8852/3.0442 ref72=4.271 later_p50=None
+clip72 golden=PASS first_p50=[3.868, 3.8625, 3.8555] first_p10/p90=3.7478/4.0178 ref72=4.2605 later_p50=None
+cast72 golden=PASS first_p50=[4.1845, 4.171, 4.166] first_p10/p90=4.0603/4.3072 ref72=4.2905 later_p50=None
+pack72 golden=PASS first_p50=[4.324, 4.311, 4.3565] first_p10/p90=4.1957/4.6273 ref72=4.2965 later_p50=None
+keep72 golden=PASS first_p50=[4.321, 4.365, 4.345] first_p10/p90=4.2076/4.7305 ref72=4.2655 later_p50=None
+store72 golden=PASS first_p50=[4.3485, 4.3475, 4.3455] first_p10/p90=4.2329/4.7057 ref72=4.286 later_p50=None
+full72-close golden=PASS first_p50=[4.3865, 4.447, 4.378] first_p10/p90=4.2506/4.6104 ref72=4.2835 later_p50=None
+normalize delta24=+0.5040 us delta72=+1.3615 us delta_slope=+17.86 ns/row
+clamp delta24=+0.3015 us delta72=+0.9195 us delta_slope=+12.87 ns/row
+fp8 delta24=+0.0505 us delta72=+0.3085 us delta_slope=+5.38 ns/row
+pack delta24=+0.0905 us delta72=+0.1530 us delta_slope=+1.30 ns/row
+ub-store delta24=+0.0425 us delta72=+0.0025 us delta_slope=-0.83 ns/row
+full72 close-open=-0.0225 us

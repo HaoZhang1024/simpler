@@ -16,6 +16,7 @@ from pathlib import Path
 from statistics import median
 
 from t25_phases import ROOT, SUITE, allocated_device, build_probe, check_device, digest
+import t25_fp8
 
 CASES = (("full72-open", 256 + 72), ("fence", 0), ("pad8", 256), ("full24", 256 + 24),
          ("scale72", 512 + 72), ("full48", 256 + 48), ("scale24", 512 + 24), ("full72-close", 256 + 72))
@@ -27,7 +28,7 @@ def replace_once(source, anchor, replacement):
     return source.replace(anchor, replacement)
 
 
-def split_sources(cpp, header):
+def split_sources(cpp, header, fp8_output=False):
     start = header.index("template <typename Output")
     end = header.index("#endif", start)
     full = replace_once(header[start:end], "void quant_vf(", "void split_full_vf(")
@@ -37,7 +38,8 @@ def split_sources(cpp, header):
     # Keep the reduction, compact exponent and the original scale scatter.
     lo = scale.index("                vselr((RegTensor<uint32_t>&)exponent")
     hi = scale.index("                RegTensor<uint32_t> e0, e1;", lo)
-    header = header[:end] + full + scale[:lo] + scale[hi:] + header[end:]
+    extra, dispatch = t25_fp8.variants(full) if fp8_output else ("", "")
+    header = header[:end] + full + scale[:lo] + scale[hi:] + extra + header[end:]
     anchor = "        o_quant::quant_vf<"
     trial = """        if (mode >= 512) {
             o_quant::split_scale_vf<decltype(output), decltype(scales), Input>(
@@ -50,7 +52,7 @@ def split_sources(cpp, header):
         set_flag(PIPE_V, PIPE_S, EVENT_ID7); wait_flag(PIPE_V, PIPE_S, EVENT_ID7);
         trial_end = t25_clock();
 """
-    cpp = replace_once(cpp, anchor, trial + anchor)
+    cpp = replace_once(cpp, anchor, dispatch + trial + anchor)
     cpp = replace_once(cpp, "uint64_t start = t25_clock()", "int mode = args[9];\n    uint64_t trial_end, start = t25_clock()")
     cpp = replace_once(cpp, "row[1] = loaded; row[2] = rotated;", "row[1] = rotated; row[2] = trial_end;")
     return cpp, header
@@ -65,7 +67,7 @@ def stats(values):
     return [percentile(p) for p in (0.1, 0.5, 0.9)]
 
 
-def instruction_report(out):
+def instruction_report(out, fp8_output=False):
     from t25_quant_asm import disassemble, extract_text_section
 
     payload = (out / "func20.bin").read_bytes()
@@ -73,11 +75,16 @@ def instruction_report(out):
     if elf is None:
         raise ValueError("No linked ELF matches the split func20 payload")
     lines = []
-    for name in ("quant_vf", "split_full_vf", "split_scale_vf"):
+    names = ["quant_vf", "split_full_vf"]
+    names += [f"out_{name}_vf" for name in t25_fp8.STAGES] if fp8_output else ["split_scale_vf"]
+    for name in names:
         _, _, rows = disassemble(elf, name)
         counts = Counter(op.upper().split(".")[0] for _, _, op, _ in rows)
         listing = "\n".join(f"+{off:04x} {word} {op} {args}" for off, word, op, args in rows)
         (out / f"{name}.asm.txt").write_text(listing + "\n")
+        if name.startswith("out_"):
+            lines.append(t25_fp8.active_opcodes(name[4:-3], rows))
+            continue
         lines.append(f"{name} instructions={len(rows)} " + " ".join(
             f"{op}={counts[op]}" for op in ("VCGMAX", "VCGMAXV2", "VPACKV2", "VDIV", "VSCATTER")))
         if not (counts["VCGMAX"] + counts["VCGMAXV2"] and counts["VSCATTER"]):
@@ -112,7 +119,7 @@ def read_round(run, workers):
     return dict(hz=hz, summary=summary, blocks=dict(waves))
 
 
-def run_cases(out, lib, device, platform, report_only=False):
+def run_cases(out, lib, device, platform, report_only=False, fp8_output=False):
     feedback = out / ("feedback-offline.txt" if report_only else "feedback.txt")
     feedback.write_text("")
     env = dict(os.environ, TASK_DEVICE=str(device), DSV41_PYTHON=sys.executable, DSV41_RUNNER=str(out / "host/native-runner"))
@@ -125,7 +132,7 @@ def run_cases(out, lib, device, platform, report_only=False):
     for line in (out / "opcodes.txt").read_text().splitlines():
         emit(line)
     medians = {}
-    for label, mode in CASES:
+    for label, mode in (t25_fp8.CASES if fp8_output else CASES):
         dest = out / label
         try:
             if not report_only:
@@ -149,11 +156,15 @@ def run_cases(out, lib, device, platform, report_only=False):
         except Exception as exc:
             emit(f"{label} ERROR {exc}; see {dest}/rank0/console.log")
             raise
-    full72 = (medians["full72-open"] + medians["full72-close"]) / 2
-    emit("first-wave ns/active-row "
-         f"full24-48={(medians['full48'] - medians['full24']) * 1000 / 24:.2f} "
-         f"full48-72={(full72 - medians['full48']) * 1000 / 24:.2f} "
-         f"scale24-72={(medians['scale72'] - medians['scale24']) * 1000 / 48:.2f}")
+    if fp8_output:
+        for line in t25_fp8.contrasts(medians):
+            emit(line)
+    else:
+        full72 = (medians["full72-open"] + medians["full72-close"]) / 2
+        emit("first-wave ns/active-row "
+             f"full24-48={(medians['full48'] - medians['full24']) * 1000 / 24:.2f} "
+             f"full48-72={(full72 - medians['full48']) * 1000 / 24:.2f} "
+             f"scale24-72={(medians['scale72'] - medians['scale24']) * 1000 / 48:.2f}")
     emit(f"full72 close-open={medians['full72-close'] - medians['full72-open']:+.4f} us")
 
 
@@ -168,6 +179,7 @@ def main():
     p.add_argument("--prepare-only", action="store_true", help="Build outside the device allocation")
     p.add_argument("--prepared", type=Path, help="Run a split probe previously built with --prepare-only")
     p.add_argument("--report-only", action="store_true", help="Read existing captures under --prepared on the host")
+    p.add_argument("--fp8-output", action="store_true", help="Collect matched scale-to-FP8 output controls")
     args = p.parse_args()
     case = args.case.resolve()
     if args.prepared and args.prepare_only:
@@ -177,20 +189,21 @@ def main():
     if args.prepared:
         out = args.prepared.resolve()
         identity = json.loads((out / "split.json").read_bytes())
-        if identity != [args.platform, digest(case / "build.json"), digest(out / "func20.bin"), digest(out / "bundle/callable.bin")]:
+        expected = [args.platform, digest(case / "build.json"), digest(out / "func20.bin"), digest(out / "bundle/callable.bin")]
+        if identity != expected + (["fp8-output"] if args.fp8_output else []):
             p.error("prepared probe does not match the selected platform or case")
     else:
         out = Path(tempfile.mkdtemp(prefix="t25-quant-split-", dir=case.parent))
         print(f"Output: {out}", flush=True)
-        build_probe(case, out, args.pto_isa.resolve(), args.platform, quant_split=True)
-        (out / "opcodes.txt").write_text("\n".join(instruction_report(out)) + "\n")
+        build_probe(case, out, args.pto_isa.resolve(), args.platform, quant_split=True, fp8_output=args.fp8_output)
+        (out / "opcodes.txt").write_text("\n".join(instruction_report(out, args.fp8_output)) + "\n")
         (out / "split.json").write_text(json.dumps([args.platform, digest(case / "build.json"), digest(out / "func20.bin"),
-                                                    digest(out / "bundle/callable.bin")]))
+                                                    digest(out / "bundle/callable.bin")] + (["fp8-output"] if args.fp8_output else [])))
     if args.prepare_only:
         return
     if args.report_only:
         device = json.loads((out / CASES[0][0] / "rank0/result.json").read_bytes())["device"]
-        run_cases(out, args.l4_lib, device, args.platform, report_only=True)
+        run_cases(out, args.l4_lib, device, args.platform, report_only=True, fp8_output=args.fp8_output)
         return
     device = allocated_device(p, args.device) if "TASK_DEVICE" in os.environ else args.device
     if device is None or device < 0 or (args.platform == "a5" and "TASK_DEVICE" not in os.environ):
@@ -201,7 +214,7 @@ def main():
     if (out / "feedback.txt").exists():
         p.error("this probe has an existing capture; select a fresh output")
     print(f"Feedback: {out}/feedback.txt", flush=True)
-    run_cases(out, args.l4_lib.resolve(), device, args.platform)
+    run_cases(out, args.l4_lib.resolve(), device, args.platform, fp8_output=args.fp8_output)
 
 
 if __name__ == "__main__":

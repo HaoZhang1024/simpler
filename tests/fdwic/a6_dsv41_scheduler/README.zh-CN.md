@@ -1,6 +1,6 @@
 # A6 单卡 SWA · percounter
 
-**A6 t25 八批量化拆分已完成，24 个正式轮全部通过。** 首块诊断差距 3.7250 µs，其中增加 72 个有效行带来的差距为 3.5195 µs。蓝区下一步优先拆完整量化中生成 FP8 输出的路径。[两端实测与判读](doc/a6-swa-performance-progress.zh-CN.md#a6-quant-split-feedback)
+**黄区本轮执行 t25 的 FP8 输出对照。** 同一卡、同一二进制一次跑完归一化、限幅、FP8 转换、打包和 UB 写入，回填一份摘要。[执行命令与 A5 基线](doc/a6-swa-performance-progress.zh-CN.md#a6-fp8-output) · [本轮回填位置](doc/a6-swa-performance-progress.zh-CN.md#a6-fp8-output-feedback)
 
 同为 64 块时，A6 首块量化比 A5 多 3.548 µs。日常运行沿用 54 块 replay，A6 同卡 L0 AICore 平均节省 4.870 µs。54 块的逐块采集已结束，补采三轮的末块均为双 head 块。[量化分段](doc/a6-swa-performance-progress.zh-CN.md#1a-t25-首块分段) · [54 块结果](doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
 

@@ -79,7 +79,7 @@ def reciprocal_quant(header):
     return header
 
 
-def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False, quant_split=False):
+def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False, quant_split=False, fp8_output=False):
     sys.path[:0] = [str(ROOT), str(ROOT / "python")]
     from simpler_setup.elf_parser import extract_text_section
     from simpler_setup.kernel_compiler import KernelCompiler
@@ -129,7 +129,7 @@ def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False, qua
         (out / header.name).write_text(reciprocal_quant(header.read_text()))
     if quant_split:
         from t25_quant_split import split_sources
-        cpp, hpp = split_sources(instrument(source.read_text()), source.with_suffix(".hpp").read_text())
+        cpp, hpp = split_sources(instrument(source.read_text()), source.with_suffix(".hpp").read_text(), fp8_output)
         diag.write_text(cpp)
         diag.with_suffix(".hpp").write_text(hpp)
     elif block_plan is None:
