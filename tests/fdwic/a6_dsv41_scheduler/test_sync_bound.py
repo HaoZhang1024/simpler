@@ -38,7 +38,8 @@ def test_round_joins_explicit_block_identity_and_checks_completion(tmp_path, mon
     for row, end in zip(raw["aicore_tasks"], [1800, 900, 500], strict=True):
         worker, tid, _, start, finish, _, epoch = row
         events.append({"kind": "kernel_end", "worker_id": worker, "task_id": tid, "block_count": 1,
-                       "kernel_start_cycles": start, "cycles": end, "finish_cycles": finish, "dispatch_cycles": start - 20,
+                       "kernel_start_cycles": start, "cycles": end, "finish_cycles": finish,
+                       "dispatch_cycles": start - 20,
                        "run_epoch": epoch, "block_index": 0, "cluster_lane": int(worker >= 54)})
         row[4] = end
     raw["percounter_task_events"] = {"records": events, "dropped": 0, "unmatched_deferred_updates": 0}
@@ -136,3 +137,28 @@ def test_saved_placement_reads_completed_run(tmp_path, monkeypatch):
     capture.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="Invalid block timing"):
         saved.report(tmp_path)
+
+
+def test_sensitivity_uses_matching_work_and_clips_early_claim(monkeypatch):
+    pytest.importorskip("ortools")
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent / "analysis"))
+    tool = importlib.import_module("task_sensitivity")
+    row_type = importlib.import_module("swa_sync_bound").KernelExecution
+    rows = [row_type(1, 25, 25, b, 1, "aiv", b, 20, 2000, 3000 + 100 * (b < 10), 10**9,
+                     10 + int(b < 10), 1900, 3200) for b in range(54)]
+    rows.append(row_type(1, 22, 22, 0, 0, "aic", 54, 18, 1700, 1800, 10**9, 1, 1600, 1810))
+    raw = {"percounter_task_events": {"records": [
+        dict(task_id=22, kind="claim", block_index=0, cycles=900, claim_start_cycles=800),
+        *[dict(task_id=22, kind=kind, block_index=0, worker_id=54, cycles=cycles)
+          for kind, cycles in (("inputs_ready", 1100), ("entry_commit", 1200), ("ready", 1500))],
+    ]}}
+    chain = [dict(task=22, block=0, worker=54, prior_kernel_end_cycles=1000,
+                  dispatch_cycles=1600, gap_before_dispatch_us=0.6)]
+    quant, mix = tool.task_windows(rows, raw, chain, 54)
+    assert quant["p50_us"] == {1: 1.0, 2: 1.1}
+    assert quant["last_blocks"] == list(range(10))
+    assert mix["in_owner_claim_us"] == 0 and mix["after_owner_claim_us"] == pytest.approx(0.6)
+    assert mix["detailed_hits"] == 1 and mix["to_ready_us"] == pytest.approx(0.3)
+    nodes = {22: {"sync": True, "units": []}, 25: {"sync": False, "units": []}}
+    gains = tool.sensitivity(nodes, [(22, 25)], rows, {"aic": 1, "aiv": 54}, 1.2, 5)
+    assert gains[25] == pytest.approx((0.2, 0.2))
