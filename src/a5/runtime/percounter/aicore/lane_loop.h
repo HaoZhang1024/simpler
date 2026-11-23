@@ -85,6 +85,7 @@ struct LaneConfig {
     __gm__ PercounterTaskTiming *task_records{nullptr};
     uint32_t *profile_task_count{nullptr};
     uint32_t *task_dropped{nullptr};
+    bool capture_block_timing{false};
     mutable PercounterTaskTiming pending_task{};
     mutable bool pending_task_valid{false};
     mutable AicoreWorkWindow work_window{};
@@ -149,6 +150,11 @@ inline __aicore__ void percounter_commit_task_timing(const LaneConfig &cfg) {
             record->start = cfg.pending_task.start;
             record->finish = cfg.pending_task.finish;
             TaskId::assign(record->task_token, cfg.pending_task.task_token);
+            if (cfg.capture_block_timing) {
+                record->kernel_end = cfg.pending_task.kernel_end;
+                record->block_idx = cfg.pending_task.block_idx;
+                record->subtask_slot = cfg.pending_task.subtask_slot;
+            }
             ++*cfg.profile_task_count;
         } else if (*cfg.task_dropped != UINT32_MAX) ++*cfg.task_dropped;
     } else {
@@ -672,6 +678,7 @@ inline __aicore__ bool percounter_run_prepared(
         if (cfg.scalar != nullptr) ++cfg.scalar->depth;
     }
     kernel(reinterpret_cast<__gm__ int64_t *>(payload->args));
+    const uint64_t kernel_end = cfg.capture_block_timing ? get_sys_cnt_aicore() : 0;
     OUT_OF_ORDER_STORE_BARRIER();
     if constexpr (profile_compiled) {
         if (cfg.scalar != nullptr) --cfg.scalar->depth;
@@ -682,6 +689,7 @@ inline __aicore__ bool percounter_run_prepared(
         cfg.pending_task.finish = end_time;
         cfg.pending_task.dispatch = receive_time;
         cfg.pending_task.start = start_time;
+        cfg.pending_task.kernel_end = kernel_end;
         const TaskId token = task.shell < 0 ? TaskId::make_global(static_cast<int32_t>(task.id)) :
                                               TaskId::make_sub_task(task.shell, task.local);
         TaskId::assign(cfg.pending_task.task_token, token);
@@ -1479,6 +1487,10 @@ inline __aicore__ bool percounter_step(const LaneConfig &cfg, PercounterLaneStat
         const uint64_t completion = state->prepared[payload].completion_address;
         if (!percounter_run_prepared(cfg, state, *task, cfg.payloads + payload, completion, data_acquired, &deferred))
             return false;
+        if (cfg.capture_block_timing && cfg.pending_task_valid) {
+            cfg.pending_task.block_idx = percounter_order_block_idx(selected.entry);
+            cfg.pending_task.subtask_slot = selected.shared ? cfg.cluster_lane : __builtin_ctz(selected.mask);
+        }
         state->batch = measure_batch && get_sys_cnt_aicore() - start < PLATFORM_PROF_SYS_CNT_FREQ * 3 / 1000000 ?
                            PERCOUNTER_PENDING_CAPACITY :
                            1;
@@ -1608,6 +1620,7 @@ run_percounter_lane(
     uint32_t task_count = 0;
     uint32_t task_dropped = 0;
     const uint64_t level = percounter_gm_read(control->profiling_level);
+    cfg.capture_block_timing = level == 2;
     if (level >= 2) {
         cfg.profile_buffer =
             scheduler_state_at<PercounterProfileBuffer>(control, percounter_gm_read(control->profile_buffers_offset)) +

@@ -17,8 +17,6 @@ import statistics
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 
-from simpler_setup.tools.hbg.execution_identity import attach_execution_identities
-
 
 def ideal_lower_bound_ms(records, deps):
     """A lower bound under fixed measured kernel durations and zero scheduling cost.
@@ -103,6 +101,8 @@ def complete_flat_dag(deps, mapping_path, original_ids, repetitions):
 
 
 def read_case(bundle, capture):
+    from simpler_setup.tools.hbg.execution_identity import attach_execution_identities  # noqa: PLC0415
+
     metadata = json.loads((bundle / "case.json").read_text())
     result = json.loads((capture / "result.json").read_text())
     if metadata["device_count"] != 1 or result["ranks"] != 1:

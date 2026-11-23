@@ -51,10 +51,11 @@ bool export_profile(const ProfileOwner &owner) {
     const auto &layout = owner.layout;
     const auto headers =
         read_records<PercounterProfileBuffer>(owner, layout.profile_buffers_offset, SCHEDULER_WORKER_CAPACITY);
-    std::ostringstream tasks, kernels, streams;
+    std::ostringstream tasks, kernels, streams, blocks;
     kernels << "[";
     tasks << "{\"producer\":\"aicore\",\"records\":[";
     streams << "{\"streams\":[";
+    blocks << '[';
     bool first_task = true, first_stream = true;
     const auto epoch = owner.api->run_epoch();
     for (size_t worker = 0; worker < headers.size(); ++worker) {
@@ -74,12 +75,20 @@ bool export_profile(const ProfileOwner &owner) {
             if (!first_task) {
                 tasks << ',';
                 kernels << ',';
+                if (layout.profiling_level == 2) blocks << ',';
             }
             first_task = false;
             kernels << '[' << worker << ',' << TaskId::to_uint64(task.task_token) << ',' << registration << ','
                     << task.start << ',' << task.finish << ',' << task.start - task.dispatch << ',' << epoch << ']';
             tasks << '[' << worker << ',' << registration << ',' << task.dispatch << ',' << task.finish << ',' << epoch
                   << ']';
+            if (layout.profiling_level == 2) {
+                if (task.kernel_end < task.start || task.kernel_end > task.finish ||
+                    task.subtask_slot >= PLATFORM_CORES_PER_BLOCKDIM)
+                    throw std::runtime_error("invalid percounter block timing");
+                blocks << '[' << worker << ',' << registration << ',' << epoch << ',' << task.block_idx << ','
+                       << task.subtask_slot << ',' << task.kernel_end << ']';
+            }
         }
         if (layout.profiling_level < 3) continue;
         if (header.scalar_records_offset != scalar_offset ||
@@ -139,7 +148,9 @@ bool export_profile(const ProfileOwner &owner) {
         }
         streams << "]}";
     }
-    tasks << "]}";
+    tasks << ']';
+    if (layout.profiling_level == 2) tasks << ",\"execution_blocks\":" << blocks.str() << ']';
+    tasks << '}';
     kernels << "]";
     streams << "]}";
     return publish(owner, ChipSwimlaneExtensionSection::AicoreTasks, kernels) &&

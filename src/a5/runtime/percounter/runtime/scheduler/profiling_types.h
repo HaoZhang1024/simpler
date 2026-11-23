@@ -133,6 +133,9 @@ struct PercounterTaskTiming {
     uint64_t start;
     uint64_t finish;
     TaskId task_token;
+    uint64_t kernel_end;
+    uint32_t block_idx;
+    uint32_t subtask_slot;
 };
 
 inline constexpr uint32_t PERCOUNTER_SCALAR_WORD_CAPACITY =
