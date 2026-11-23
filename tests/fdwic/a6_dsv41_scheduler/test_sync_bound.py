@@ -95,3 +95,44 @@ def test_observed_worker_order_may_conflict_with_exact_co_start(monkeypatch, syn
         assert result["fixed_order_us"] == pytest.approx(0.2)
     assert result["l2_kernel_span_us"] == pytest.approx(0.3)
     assert result["chain_gap_us"] == pytest.approx(0.1)
+
+def test_saved_placement_reads_completed_run(tmp_path, monkeypatch):
+    pytest.importorskip("ortools")
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent / "analysis"))
+    saved = importlib.import_module("saved_placement")
+    monkeypatch.setattr(saved, "ROWS_PER_ROUND", 1)
+    model = tmp_path / "model"
+    model.mkdir()
+    build = dict.fromkeys(("plan_sha256", "callable_sha256", "runner_sha256"), "sample")
+    common = dict(device=0, runtime_sha256={"host": "pinned"}, build=build)
+    (model / "summary.json").write_text(json.dumps(dict(
+        **common, capacities=saved.CAPACITIES, t25_block_num=54, quantum_ns=100, lower_bound_mean_us=1.0)))
+    for level in (0, 2):
+        folder = tmp_path / f"L{level}"
+        folder.mkdir()
+        result = dict(runtime="percounter", profiling_level=level, warmup=1, rounds=10,
+                      numerical_validation=True, aicore_samples_ms=[0.002] * 10, device_mean_ms=0.003)
+        (folder / "summary.json").write_text(json.dumps(dict(
+            **common, case="swa", status="passed", platform="a6", results=[result])))
+    (model / "tasks.csv").write_text("task_id,source_task,block_num,sync_start\n3,25,1,0\n")
+    (model / "edges.csv").write_text("pred_task_id,succ_task_id\n")
+    (model / "blocks.csv").write_text(
+        "round,source_task,task_id,block_idx,subtask_slot,core_type,worker,func_id,"
+        "start_cycles,kernel_end_cycles,clock_hz,duration_ticks\n"
+        + "".join(f"{i},25,3,0,1,aiv,54,20,200,1200,1000000000,10\n" for i in range(1, 11)))
+    for i in range(1, 11):
+        folder = tmp_path / f"L2/percounter/rank0/run{i}"
+        folder.mkdir(parents=True)
+        capture = folder / "chip_swimlane_records.json"
+        raw = {"chip_swimlane_level": 2, "metadata": {"runtime": "percounter", "clock_freq_hz": 10**9,
+               "core_types": ["aic"] * 54 + ["aiv"] * 54}, "aicore_tasks": [[54, 3, 1, 200, 1250, 20, i]],
+               "scheduler_tasks": {"producer": "aicore", "records": [[54, 1, 180, 1250, i]]}}
+        capture.write_text(json.dumps(raw))
+    summary = saved.report(tmp_path)
+    assert summary["fixed_order_valid_rounds"] == 10
+    assert summary["fixed_order_mean_us"] == summary["l2_kernel_span_mean_us"] == 1.0
+    assert summary["device_l0_mean_us"] == 3.0
+    raw["scheduler_tasks"]["records"][0][2] = 250
+    capture.write_text(json.dumps(raw))
+    with pytest.raises(ValueError, match="Invalid block timing"):
+        saved.report(tmp_path)

@@ -72,14 +72,40 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 | 黄区 A6，54C+54V，t25=64 | 1 / 10 | 待填 | 待填 | 待填 |
 | 黄区 A6，54C+54V，t25=54 | 1 / 10 | 待填 | 待填 | 待填 |
 
-黄区本轮直接执行 `analysis/run_swa_sync_bound.sh`。它会生成 t25=54 的 L0 和 L2 并完成分析。
-已有本集成版本配套的 t25=54、L0 和原生 L2 时，直接运行以下离线命令，`RUN` 指向先前输出目录。
-在下表回填结果，蓝区根据首要间隔选择一次优化。
+### 已回传的 A6 调度基线与下一步
+
+实验分支 `a6-swa-port` 的代码提交为 `a1ee04044`，结果回填提交为
+[`520732d11`](https://github.com/HaoZhang1024/simpler/blob/520732d11/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#a6-sync-bound-feedback)。
+设备 0，t25=54，预热 1 轮、正式 10 轮，L0 与 L2 独立采集。黄区修正了共享 venv 的 editable 安装指向旧 checkout 的问题，重新构建 runtime 并用这批产物完成采样。跨版本对照时，记录实际导入的 `simpler`、`simpler_setup` 路径及运行库摘要。
+
+| 已核实的指标 | 实验分支结果 |
+| --- | --- |
+| L0 AICore 均值 / 中位数 / 最小–最大 | 262.692 / 262.763 / 254.056–269.833 µs |
+| 自由排块最优值 | 均值 202.210 µs，逐轮 194.8–212.6 µs。10/10 轮下界与可行解重合 |
+| L0 与模型之差 | 60.482 µs，占 L0 的 23.02%，或相对模型高 29.91%。它包含时间窗口、采样和放置约束的差异 |
+| 固定实际 worker 和顺序后的理想值 | 待离线复算，同时回填下面的关键链统计 |
+
+**黄区本轮只做离线复算。** 在 `percounter` 分支运行分析脚本，参数指向已有测试目录的绝对路径。
+脚本读取同一目录下的 `model/*.csv`、L0 摘要和十轮 L2，用核编号、任务、开始时间和注册序号核对 dispatch、kernel 返回和 finish。无需申请设备、编译或重新求解。
 
 ```bash
-python tests/fdwic/a6_dsv41_scheduler/analysis/swa_sync_bound.py \
-    "$RUN/t25-54" "$RUN/L0" "$RUN/L2" "$RUN/model-placement" --time-limit 30
+python tests/fdwic/a6_dsv41_scheduler/analysis/saved_placement.py \
+    /实际路径/build/swa-a6-bound-faV0oG
 ```
+
+**实验分支离线复算回填位置**（把上条命令打印的 JSON 填在这里）：
+
+```text
+待填 fixed_order_mean_us、fixed_order_valid_rounds、l2_kernel_span_mean_us、
+l2_chain_gap_mean_us、l2_top_chain_gaps、device_l0_mean_us。
+```
+
+蓝区按十轮关键链的贡献和 dispatch 前后分布选择一个优化点。t25 的 FP8 分段来自另一组 64-block 诊断；
+72 行时归一化、限幅、FP8 转换、打包四项的配对增量分别比 A5 多
+0.835、0.771、0.695、0.397 µs，保留作 kernel 证据。
+
+**集成分支实卡回填**使用下表。首次运行 `analysis/run_swa_sync_bound.sh` 会生成本版本的基线；
+已有同一版本的完整模型目录时也可直接运行上面的离线脚本。
 
 | 黄区运行信息 | 回填值 |
 | --- | --- |

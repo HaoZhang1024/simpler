@@ -284,6 +284,28 @@ def analyze_placement(nodes, edges, rows):
     }
 
 
+def placement_summary(results):
+    fixed = [r["fixed_order_us"] for r in results if r["fixed_order_us"] is not None]
+    gaps = Counter()
+    before_dispatch = Counter()
+    for r in results:
+        for step in r["chain"]:
+            gaps[step["task"]] += step["gap_us"]
+            before_dispatch[step["task"]] += step["gap_before_dispatch_us"]
+    return {
+        "fixed_order_mean_us": statistics.mean(fixed) if len(fixed) == len(results) else None,
+        "fixed_order_valid_rounds": len(fixed),
+        "l2_kernel_span_mean_us": statistics.mean(r["l2_kernel_span_us"] for r in results),
+        "l2_chain_gap_mean_us": statistics.mean(r["chain_gap_us"] for r in results),
+        "l2_top_chain_gaps": [
+            {"task": task, "mean_us": total / len(results),
+             "before_dispatch_mean_us": before_dispatch[task] / len(results),
+             "after_dispatch_mean_us": (total - before_dispatch[task]) / len(results)}
+            for task, total in gaps.most_common(3)
+        ],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("case", type=Path, help="Prepared t25-54 directory containing build.json, bundle and host")
@@ -358,13 +380,6 @@ def main():
     mean_l0 = statistics.mean(l0_samples)
     mean_bound = statistics.mean(row["lower_bound_us"] for row in results)
     feasible_values = [row["feasible_us"] for row in results if row["feasible_us"] is not None]
-    fixed = [r["fixed_order_us"] for r in results if r["fixed_order_us"] is not None]
-    gaps = Counter()
-    before_dispatch = Counter()
-    for r in results:
-        for step in r["chain"]:
-            gaps[step["task"]] += step["gap_us"]
-            before_dispatch[step["task"]] += step["gap_before_dispatch_us"]
     summary = {
         "platform": "a6",
         "case": "swa",
@@ -382,16 +397,7 @@ def main():
         "aicore_wall_l0_median_us": statistics.median(l0_samples),
         "device_l0_mean_us": l0["device_mean_ms"] * 1000,
         "lower_bound_mean_us": mean_bound,
-        "fixed_order_mean_us": statistics.mean(fixed) if len(fixed) == len(results) else None,
-        "fixed_order_valid_rounds": len(fixed),
-        "l2_kernel_span_mean_us": statistics.mean(r["l2_kernel_span_us"] for r in results),
-        "l2_chain_gap_mean_us": statistics.mean(r["chain_gap_us"] for r in results),
-        "l2_top_chain_gaps": [
-            {"task": task, "mean_us": total / len(results),
-             "before_dispatch_mean_us": before_dispatch[task] / len(results),
-             "after_dispatch_mean_us": (total - before_dispatch[task]) / len(results)}
-            for task, total in gaps.most_common(3)
-        ],
+        **placement_summary(results),
         "feasible_mean_us": statistics.mean(feasible_values) if len(feasible_values) == len(results) else None,
         "all_optimal": all(row["optimal"] for row in results),
         "excess_us": mean_l0 - mean_bound,
