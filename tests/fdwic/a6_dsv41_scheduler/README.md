@@ -12,6 +12,21 @@ the measured SWA replay in `kernels/` and the frozen input and reference tensors
 | SSBUF | Runtime uses bytes 1792–2047. The AIC and AIV callable context slots start at 1920 and 1984. Rebuild the runtime and callable together. |
 | Profiling | L0 records whole-run timing. Native percounter L2 records each block's kernel start, return and scheduler finish. |
 
+## 当前目标：A6 上 SWA 动态调度能跑到多少微秒
+
+固定 54 组 1C1V、同一份输入、kernel 和任务图，主测 t25=54。用三组时间回答三个问题。
+A5 与 t25=64 的数据留作历史对照。
+
+| 时间 | 怎么得到 | 用它判断什么 |
+| --- | --- | --- |
+| 当前实测 | A6 原版 percounter，L0 预热 1 轮、正式 10 轮。主指标是 AICore wall 均值，另报中位数、最快一轮和 Device 均值 | 当前方案已经达到的整图性能 |
+| 固定每块落核与核上顺序的理想时间 | 每轮 L2 保留 560 条 kernel 的时长、实际 worker 与执行顺序、DAG 前驱、MIX 同块起跑和 `sync_start`。把取任务、通知和派发的耗时设为零，重排开始时间 | 沿用本轮排块决策，执行窗口理论上能压到多短。实际错峰与模型的严格同步规则形成环时，该轮标记为空并统计有效轮数 |
+| 自由排块的理想时间 | 同一轮时长和依赖，允许求解器重新安排 block，限制 AIC/AIV 各 54 个。报求解下界、可行解和最优状态 | 固定排块与自由排块之间还有多少空间。求解区间收敛以后再给单一最优值 |
+
+两种模型均按 0.1 µs 向下量化单个 kernel 时长。自由排块模型按核类型计容量，MIX 配对的物理 cluster、访存争用随排布改变的影响均未单独建模。以上极限适用于这张 SWA 图和这批时长。L0 包含整图头尾，L2 模型覆盖 kernel 执行窗口，两者来自独立的十轮采样。
+
+**瓶颈和优化怎么选。** `model/summary.json` 逐轮从最后一个 kernel 沿实际 worker 顺序和图依赖回溯，经空控制节点继续找最近的计算前驱。对每个关键 block，记录最后一个可见前驱或同核上一块返回到本块开始的间隔，并按本块 dispatch 时间拆成前后两段。每轮这条链上的 kernel 时间与间隔之和等于 L2 首核开始至末核返回的跨度。`l2_top_chain_gaps` 按 task 汇总十轮平均贡献，包含同步等待、调度、采样影响以及未记录的工作。蓝区从贡献最大的重复间隔入手，对照 L2 的 claim、dispatch、kernel_start 和 finish，区分同核换块、等前驱和 MIX 集合起跑。若主要空间出在排块，优先查末波落核。按证据选一个 runtime 改动，在同卡同输入下用基线和候选版本交替跑 L0，检查输出、全部样本和对应 L2 间隔是否缩短。
+
 ## Build and run
 
 Use Linux, the A6 CANN environment, CCEC, a host C++ compiler, CMake, Ninja and a Python environment with the Simpler build dependencies. From the repository root, prepare PTO-ISA at the revision selected by this checkout.
@@ -57,13 +72,21 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 | 黄区 A6，54C+54V，t25=64 | 1 / 10 | 待填 | 待填 | 待填 |
 | 黄区 A6，54C+54V，t25=54 | 1 / 10 | 待填 | 待填 | 待填 |
 
-黄区先执行上面的 `test_a6_swa.sh`，将输出目录中 `test.log` 的校验结果和均值填入
-t25=64 行。通过后执行 `analysis/run_swa_sync_bound.sh`，将 L0 结果填入 t25=54 行，
-并在下表记录 L2 的 10 轮统计。当前迁移分支已经开跑的实验按原提交回填。
+黄区本轮直接执行 `analysis/run_swa_sync_bound.sh`。它会生成 t25=54 的 L0 和 L2 并完成分析。
+已有本集成版本配套的 t25=54、L0 和原生 L2 时，直接运行以下离线命令，`RUN` 指向先前输出目录。
+在下表回填结果，蓝区根据首要间隔选择一次优化。
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/analysis/swa_sync_bound.py \
+    "$RUN/t25-54" "$RUN/L0" "$RUN/L2" "$RUN/model-placement" --time-limit 30
+```
 
 | 黄区运行信息 | 回填值 |
 | --- | --- |
 | 集成提交、SoC、CANN、CCEC 版本 | 待填 |
+| L0 AICore 均值 / 中位数 / 最快一轮、Device 均值（µs） | 待填 |
+| 固定排块的理想时间均值（µs）、有效轮数 | 待填 |
+| L2 首核至末核跨度、关键链间隔总量（十轮均值 µs）、贡献最大的三个 task 及间隔 | 待填，见 `l2_kernel_span_mean_us`、`l2_chain_gap_mean_us`、`l2_top_chain_gaps` |
 | t25=54 每轮 kernel 执行数、成功匹配轮数 | 待填，预期 560 次 × 10 轮 |
 | `model/summary.json` 中的 `lower_bound_mean_us`、`feasible_mean_us`、`all_optimal` | 待填 |
 | 中途失败时的阶段、命令和首条错误 | 按需填写 |

@@ -38,7 +38,7 @@ def test_round_joins_explicit_block_identity_and_checks_completion(tmp_path, mon
     for row, end in zip(raw["aicore_tasks"], [1800, 900, 500], strict=True):
         worker, tid, _, start, finish, _, epoch = row
         events.append({"kind": "kernel_end", "worker_id": worker, "task_id": tid, "block_count": 1,
-                       "kernel_start_cycles": start, "cycles": end, "finish_cycles": finish,
+                       "kernel_start_cycles": start, "cycles": end, "finish_cycles": finish, "dispatch_cycles": start - 20,
                        "run_epoch": epoch, "block_index": 0, "cluster_lane": int(worker >= 54)})
         row[4] = end
     raw["percounter_task_events"] = {"records": events, "dropped": 0, "unmatched_deferred_updates": 0}
@@ -60,12 +60,38 @@ def test_round_joins_explicit_block_identity_and_checks_completion(tmp_path, mon
     assert nodes[14] == {"sync": True, "units": [(0, 0, "aic", 8), (0, 1, "aiv", 4)]}
     assert nodes[15] == {"sync": False, "units": []}
     assert nodes[17]["units"] == [(0, 1, "aiv", 8)]
+    placement = bound.analyze_placement(nodes, edges, rows)
+    assert placement["fixed_order_us"] == pytest.approx(1.6)
+    assert placement["l2_kernel_span_us"] == pytest.approx(1.7)
+    assert placement["chain_gap_us"] == pytest.approx(0.1)
+    assert [step["task"] for step in placement["chain"]] == [22, 25]
+    assert placement["chain"][-1]["prior_worker"] == 0
+    assert placement["chain"][-1]["gap_before_dispatch_us"] == pytest.approx(0.08)
+    assert placement["chain"][-1]["gap_after_dispatch_us"] == pytest.approx(0.02)
     assert len(rows) == 3
     solved = bound.solve_model(nodes, edges, bound.CAPACITIES, 2)
     assert solved["optimal"] and solved["lower_ticks"] == 16
 
     raw["aicore_tasks"][0][3] = 800
     events[0]["kernel_start_cycles"] = 800
+    events[0]["dispatch_cycles"] = 780
     record_path.write_text(json.dumps(raw))
     with pytest.raises(ValueError, match="early release at t25"):
         bound.read_round(tmp_path, plan, 1)
+
+@pytest.mark.parametrize("sync", [False, True])
+def test_observed_worker_order_may_conflict_with_exact_co_start(monkeypatch, sync):
+    pytest.importorskip("ortools")
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent / "analysis"))
+    bound = importlib.import_module("swa_sync_bound")
+    nodes = {t: {"sync": sync} for t in (1, 2)}
+    # Worker 0 executes t1 then t2. Worker 1 executes t2 then t1.
+    rows = [bound.KernelExecution(1, t, t, w, 1, "aiv", w, 20, start, start + 100, 10**9, 1, start - 10, start + 115)
+            for w, t, start in [(0, 1, 100), (0, 2, 300), (1, 2, 110), (1, 1, 290)]]
+    result = bound.analyze_placement(nodes, [], rows)
+    if sync:
+        assert result["fixed_order_us"] is None
+    else:
+        assert result["fixed_order_us"] == pytest.approx(0.2)
+    assert result["l2_kernel_span_us"] == pytest.approx(0.3)
+    assert result["chain_gap_us"] == pytest.approx(0.1)

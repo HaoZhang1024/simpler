@@ -17,8 +17,9 @@ import math
 import statistics
 import sys
 from collections import Counter
-from graphlib import TopologicalSorter
+from graphlib import CycleError, TopologicalSorter
 from pathlib import Path
+from typing import NamedTuple
 
 from t25_ab import REPO, SWA, split_plan
 
@@ -29,6 +30,23 @@ from sync_bound import QUANTUM_NS, solve_model  # noqa: E402
 CAPACITIES = {"aic": 54, "aiv": 54}
 ROWS_PER_ROUND = 560
 MANIFEST_KEYS = ("plan_sha256", "callable_sha256", "runner_sha256")
+
+
+class KernelExecution(NamedTuple):
+    iteration: int
+    source_task: int
+    task_id: int
+    block_idx: int
+    subtask_slot: int
+    core_type: str
+    worker: int
+    func_id: int
+    start_cycles: int
+    kernel_end_cycles: int
+    clock_hz: int
+    duration_ticks: int
+    dispatch_cycles: int
+    finish_cycles: int
 
 
 def read_json(path):
@@ -140,7 +158,7 @@ def read_round(folder, plan_tasks, iteration):
             or key in seen
             or not 0 <= worker < len(kinds)
             or kinds[worker] != kind
-            or not 0 < start < end <= finish
+            or not 0 < event["dispatch_cycles"] <= start < end <= finish
         ):
             raise ValueError(f"Invalid or duplicate execution {key} on worker {worker}")
         seen.add(key)
@@ -148,7 +166,10 @@ def read_round(folder, plan_tasks, iteration):
         nodes[tid]["units"].append((block, lane, kind, ticks))
         first, last = spans.get(tid, (start, end))
         spans[tid] = (min(first, start), max(last, end))
-        rows.append((iteration, mapping[tid], tid, block, lane, kind, worker, expected[key], start, end, hz, ticks))
+        rows.append(KernelExecution(
+            iteration, mapping[tid], tid, block, lane, kind, worker, expected[key], start, end, hz, ticks,
+            event["dispatch_cycles"], finish,
+        ))
     if timing or seen != expected.keys() or len(seen) != ROWS_PER_ROUND:
         raise ValueError("Expected 560 unique SWA executions")
 
@@ -174,6 +195,93 @@ def write_csv(path, columns, rows):
         writer = csv.writer(stream)
         writer.writerow(columns)
         writer.writerows(rows)
+
+
+def analyze_placement(nodes, edges, rows):
+    """Compact measured block durations on their observed workers and trace a last-finishing chain."""
+    # Each edge constrains the destination's start by the source's start plus its weight.
+    constraints = {}
+    worker_rows = {}
+    task_rows = {}
+    hz = rows[0].clock_hz
+    first = min(row.start_cycles for row in rows)
+
+    def require(dst, src, weight=0):
+        links = constraints.setdefault(dst, {})
+        links[src] = max(links.get(src, 0), weight)
+
+    def group(row):
+        tid, block = row.task_id, row.block_idx
+        return ("group", tid, -1 if nodes[tid]["sync"] else block)
+
+    for tid in nodes:
+        require(("end", tid), ("begin", tid))
+    for pred, succ in edges:
+        require(("begin", succ), ("end", pred))
+    for row in rows:
+        tid, worker = row.task_id, row.worker
+        worker_rows.setdefault(worker, []).append(row)
+        task_rows.setdefault(tid, []).append(row)
+        require(group(row), ("begin", tid))
+        require(("end", tid), group(row), row.duration_ticks)
+
+    previous = {}
+    for sequence in worker_rows.values():
+        sequence.sort(key=lambda r: r.start_cycles)
+        for old, new in zip(sequence, sequence[1:]):
+            if old.kernel_end_cycles > new.start_cycles:
+                raise ValueError("Overlapping kernel intervals on one worker")
+            require(group(new), group(old), old.duration_ticks)
+            previous[new] = old
+
+    try:
+        order = TopologicalSorter(constraints).static_order()
+        starts = {}
+        for dst in order:
+            starts[dst] = max((starts[src] + w for src, w in constraints.get(dst, {}).items()), default=0)
+        compact = max(starts["end", tid] for tid in nodes) * QUANTUM_NS / 1000
+    except CycleError:
+        # Observed staggered admissions may conflict with the model's exact co-start rule.
+        compact = None
+
+    # Walk backward from the last kernel. Each step accounts for an execution and the
+    # gap after its latest visible blocker (graph predecessor or previous kernel on this worker).
+    parents = {tid: [] for tid in nodes}
+    for pred, succ in edges:
+        parents[succ].append(pred)
+    last = {}
+    incoming = {}
+    for tid in TopologicalSorter(parents).static_order():
+        incoming[tid] = max((last[p] for p in parents[tid] if last[p]), key=lambda r: r.kernel_end_cycles, default=None)
+        last[tid] = max(task_rows.get(tid, ()), key=lambda r: r.kernel_end_cycles, default=incoming[tid])
+    row = max(rows, key=lambda r: r.kernel_end_cycles)
+    span = row.kernel_end_cycles - first
+    chain = []
+    while row is not None:
+        prior = max((r for r in (incoming[row.task_id], previous.get(row)) if r), key=lambda r: r.kernel_end_cycles, default=None)
+        gap = row.start_cycles - (prior.kernel_end_cycles if prior else first)
+        if gap < 0:
+            raise ValueError("Overlapping kernel and visible predecessor")
+        after_dispatch = min(gap, row.start_cycles - row.dispatch_cycles)
+        chain.append({
+            "task": row.source_task, "block": row.block_idx, "worker": row.worker,
+            "prior_task": prior.source_task if prior else None,
+            "prior_block": prior.block_idx if prior else None,
+            "prior_worker": prior.worker if prior else None,
+            "dispatch_cycles": row.dispatch_cycles, "kernel_start_cycles": row.start_cycles,
+            "prior_kernel_end_cycles": prior.kernel_end_cycles if prior else None,
+            "prior_finish_cycles": prior.finish_cycles if prior else None,
+            "kernel_us": (row.kernel_end_cycles - row.start_cycles) * 1e6 / hz, "gap_us": gap * 1e6 / hz,
+            "gap_before_dispatch_us": (gap - after_dispatch) * 1e6 / hz,
+            "gap_after_dispatch_us": after_dispatch * 1e6 / hz,
+        })
+        row = prior
+    return {
+        "fixed_order_us": compact,
+        "l2_kernel_span_us": span * 1e6 / hz,
+        "chain_gap_us": sum(step["gap_us"] for step in chain),
+        "chain": chain[::-1],
+    }
 
 
 def main():
@@ -214,6 +322,8 @@ def main():
             "kernel_end_cycles",
             "clock_hz",
             "duration_ticks",
+            "dispatch_cycles",
+            "finish_cycles",
         ),
         (row for _, _, rows, _ in rounds for row in sorted(rows)),
     )
@@ -229,12 +339,14 @@ def main():
     write_csv(args.output / "edges.csv", ("pred_task_id", "succ_task_id"), edges)
     write_csv(args.output / "l0.csv", ("round", "aicore_wall_us"), enumerate(l0_samples, 1))
     results = []
-    for i, (nodes, _, _, _) in enumerate(rounds, 1):
+    for i, (nodes, _, rows, _) in enumerate(rounds, 1):
+        placement = analyze_placement(nodes, edges, rows)
         solved = solve_model(nodes, edges, CAPACITIES, args.time_limit)
         lower_us = solved["lower_ticks"] * QUANTUM_NS / 1000
         feasible = solved["feasible_ticks"]
         results.append(
             {
+                **placement,
                 "round": i,
                 "status": solved["status"],
                 "optimal": solved["optimal"],
@@ -242,10 +354,17 @@ def main():
                 "feasible_us": None if feasible is None else feasible * QUANTUM_NS / 1000,
             }
         )
-        print(json.dumps(results[-1]), flush=True)
+        print(json.dumps({k: v for k, v in results[-1].items() if k != "chain"}), flush=True)
     mean_l0 = statistics.mean(l0_samples)
     mean_bound = statistics.mean(row["lower_bound_us"] for row in results)
     feasible_values = [row["feasible_us"] for row in results if row["feasible_us"] is not None]
+    fixed = [r["fixed_order_us"] for r in results if r["fixed_order_us"] is not None]
+    gaps = Counter()
+    before_dispatch = Counter()
+    for r in results:
+        for step in r["chain"]:
+            gaps[step["task"]] += step["gap_us"]
+            before_dispatch[step["task"]] += step["gap_before_dispatch_us"]
     summary = {
         "platform": "a6",
         "case": "swa",
@@ -259,7 +378,20 @@ def main():
         "time_limit_seconds_per_round": args.time_limit,
         "executions_per_round": ROWS_PER_ROUND,
         "aicore_wall_l0_mean_us": mean_l0,
+        "aicore_wall_l0_min_us": min(l0_samples),
+        "aicore_wall_l0_median_us": statistics.median(l0_samples),
+        "device_l0_mean_us": l0["device_mean_ms"] * 1000,
         "lower_bound_mean_us": mean_bound,
+        "fixed_order_mean_us": statistics.mean(fixed) if len(fixed) == len(results) else None,
+        "fixed_order_valid_rounds": len(fixed),
+        "l2_kernel_span_mean_us": statistics.mean(r["l2_kernel_span_us"] for r in results),
+        "l2_chain_gap_mean_us": statistics.mean(r["chain_gap_us"] for r in results),
+        "l2_top_chain_gaps": [
+            {"task": task, "mean_us": total / len(results),
+             "before_dispatch_mean_us": before_dispatch[task] / len(results),
+             "after_dispatch_mean_us": (total - before_dispatch[task]) / len(results)}
+            for task, total in gaps.most_common(3)
+        ],
         "feasible_mean_us": statistics.mean(feasible_values) if len(feasible_values) == len(results) else None,
         "all_optimal": all(row["optimal"] for row in results),
         "excess_us": mean_l0 - mean_bound,
