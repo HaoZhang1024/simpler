@@ -37,10 +37,33 @@ A5 卡 1，任务 `task_20261123_141258_15511524397`。每批 1 轮预热、3 �
 #### 黄区回填 · 八批共用一处
 
 将终端 `Feedback:` 打印路径中的 `feedback.txt` 全文一次贴到下框。正常应有三个 VF 的指令统计、八批 `golden=PASS`、三条斜率和首尾漂移。A6 每轮 54 个首块、10 个后续块。每批摘要包含三轮首块 P50、首块 P10/P90、同块原版 72 行参照和后续块 P50。每个批次的 `blocks.json`（全部块、物理核、波次、两段时间、时钟频率）、原始 L4 和反汇编留在内网。如果中途出错，回填已有摘要、首条错误和批名；构建阶段出错则回填终端报错。
+设备 0，原 64 块 plan，8 批（full72-open/fence/pad8/full24/scale72/full48/scale24/full72-close）共用同一设备二进制，每批 1 预热 + 3 正式轮，**八批 golden 全过**；每块先计时诊断段、再计时原版 72 行量化（输出参与 golden）。内网输出目录：`build/swa-a6-MxF89z/t25-quant-split-3fwdcx6p/`（含各批 blocks.json、原始 L4 与反汇编）。
+
+`t25-quant-split-3fwdcx6p/feedback.txt` 全文：
 
 ```text
-待黄区粘贴 t25-quant-split-*/feedback.txt
+a6 device=0 func20=9f6792beda0ab6d888da9df5a16315434c7306f4dc32a043d4d11cbb0325ce5b first=54 later=10 us
+quant_vf instructions=158 VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=8 VSCATTER=4
+split_full_vf instructions=158 VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=8 VSCATTER=4
+split_scale_vf instructions=94 VCGMAX=0 VCGMAXV2=2 VPACKV2=2 VDIV=0 VSCATTER=4
+full72-open golden=PASS first_p50=[7.978, 7.98, 7.9815] first_p10/p90=7.9636/7.993 ref72=7.811 later_p50=7.962
+fence golden=PASS first_p50=[0.031, 0.031, 0.032] first_p10/p90=0.031/0.032 ref72=7.81 later_p50=0.031
+pad8 golden=PASS first_p50=[0.4165, 0.4165, 0.417] first_p10/p90=0.4023/0.4321 ref72=7.811 later_p50=0.4065
+full24 golden=PASS first_p50=[3.0265, 3.028, 3.027] first_p10/p90=3.01/3.041 ref72=7.81 later_p50=3.005
+scale72 golden=PASS first_p50=[2.415, 2.414, 2.414] first_p10/p90=2.412/2.416 ref72=7.8105 later_p50=2.414
+full48 golden=PASS first_p50=[5.626, 5.6245, 5.6245] first_p10/p90=5.606/5.6397 ref72=7.811 later_p50=5.609
+scale24 golden=PASS first_p50=[1.01, 1.01, 1.01] first_p10/p90=1.008/1.012 ref72=7.81 later_p50=1.01
+full72-close golden=PASS first_p50=[7.9825, 7.9795, 7.9805] first_p10/p90=7.9646/7.9987 ref72=7.81 later_p50=7.962
+first-wave ns/active-row full24-48=108.23 full48-72=98.16 scale24-72=29.25
+full72 close-open=+0.0005 us
 ```
+
+判读（供蓝区按判断顺序参考）：
+
+- **对齐**：八批 golden 全过；各批 ref72=7.8105–7.811 与历史 7.808 一致；close-open 漂移 +0.0005 µs（首尾同配置稳定）。
+- **整段分解**：A6 full72=(7.98+7.9805)/2≈7.98 vs A5 4.2553，差 +3.72 µs。其中 `pad8` 差 +0.2055（0.4165 vs 0.2110，VF 启动/补零/收尾约 2×），`fence` 差 +0.0155（0.0315 vs 0.016，空同步约 2×）；**`full72−pad8` 差 +3.517 µs（7.5635 vs 4.0465）——按行计算部分占差距的 ~95%**。
+- **斜率**：full 108.23 / 98.16 ns/行（24→48 / 48→72）vs A5 56.25 / 56.41，约 1.75–1.9×；scale 29.25 vs 18.39 ns/行，约 1.6×。两端 full 斜率有起伏（A6 24→48 段更陡），每行差 ×72 ≈ 3.6–4.0 µs 与整段分解吻合。
+- **方向**：scale 路径（转换/归约/scale 写出）1.6× 也拉开但幅度小；**差距主体在 full 独有部分——归一化限幅、FP8 转换、打包与 UB 写出**。后续 10 块 later_p50 与首块一致（如 full72 7.962 vs 7.98），结论对第二波同样成立。
 
 **蓝区拿到摘要后的判断顺序**
 
