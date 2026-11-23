@@ -24,4 +24,4 @@ t22 在 A5 用 24 个 1C2V block，A6 转换为 48 个 1C1V block。优先比较
 
 A5 开发卡 1，runtime 源码 `26b0511f3`，SWA 用例来自 `a9046d203`，PTO-ISA 为 `83b1b2b52ded9ec5d91e02532a57cd95e497ba86`。本次重建启用 DFX、ORCH、SCHED，执行 percounter L4，0 次预热、1 次回放，输出校验通过。覆盖 16 个计算任务、96 个实际执行 kernel 的 core ID、578 个 kernel 区间。96 个截断标记均为 false。
 
-本轮带插桩的 AICore 窗口为 **320.997 µs**。A5 性能基线取独立 L0 采样的 **185.173 µs**（10 轮均值）。[L0 测量与版本](../../doc/a5-results-2026-11-17.zh-CN.md)
+本轮带插桩的 AICore 窗口为 **320.997 µs**。A5 性能基线取独立 L0 采样的 **185.173 µs**（10 轮均值）。[L0 测量与版本](https://github.com/HaoZhang1024/simpler/blob/37b531376ec4434833d28c8c05a51f1b7adbe796/tests/fdwic/a6_dsv41_scheduler/doc/a5-results-2026-11-17.zh-CN.md)

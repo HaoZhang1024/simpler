@@ -17,8 +17,6 @@ import statistics
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 
-from simpler_setup.tools.hbg.execution_identity import attach_execution_identities
-
 
 def ideal_lower_bound_ms(records, deps):
     """A lower bound under fixed measured kernel durations and zero scheduling cost.
@@ -109,6 +107,8 @@ def read_case(bundle, capture):
         raise ValueError("Communication cases are excluded")
     if not result["passed"] or not result["snapshot_inputs"] or result["runtime"] != "host_build_graph":
         raise ValueError("A validated isolated HBG capture is required")
+    from simpler_setup.tools.hbg.execution_identity import attach_execution_identities  # noqa: PLC0415
+
     suite = Path(__file__).resolve().parents[1]
     workload = suite / "workloads" / metadata["flavor"] / metadata["case"] / "tasks.tsv"
     rows = [line.split() for line in workload.read_text().splitlines() if line and not line.startswith("#")]

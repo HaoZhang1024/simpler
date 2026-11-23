@@ -2,6 +2,8 @@
 
 ## 当前状态与反馈位置
 
+黄区按两项任务独立回填：[64 块 t25 的 FP8 分段](#a6-fp8-output-feedback) · [54 块整图 L2 排程下界](#a6-sync-bound-feedback)。
+
 <a id="a6-fp8-output"></a>
 
 ### 黄区当前任务 · t25 从 scale 到 FP8 输出
@@ -55,6 +57,42 @@ A5 完整诊断 72 行首尾为 4.4090 / 4.3865 µs，漂移 −0.0225 µs；各
 ```
 
 蓝区先用完整 72 行首尾漂移、各批原版参照和首波 P10/P90 核对可比性。然后逐对比较 `delta72` 和 `delta_slope = (delta72 − delta24) / 48`，计算各自的 A6−A5 差值。优先核查两种指标方向一致、差值相对波动明显的阶段，并用第二波和逐块数据复核。后续候选改动在 54 块方案上用 L0 同卡 A/B 验收。
+
+<a id="a6-sync-bound"></a>
+
+### 黄区任务 · 54 块 SWA 的整图排程下界
+
+要回答的是，固定 A6 这次每块的计算时长，保留任务依赖、54C+54V 容量和同步启动，排得最紧时整张图需要多久。沿用传瑜的同步约束求解方法，采集使用 **A6 percounter L2**。L0 单独测同一卡、同一 54 块 plan、同一套新 runtime 的 AICore wall。此前的 262.205 µs 保留作历史对照。[同步模型](../../dsv41_scheduler/production/sync_bound.py) · [L2 记录与求解入口](../analysis/swa_sync_bound.py)
+
+```text
+L0 · 1 预热 + 10 正式 → 10 个 AICore wall，单位 µs
+L2 · 1 预热 + 10 正式 → 每轮 560 个 (task_id, block_idx, subtask_slot)
+  → 按 worker、registration、epoch 对齐 kernel 开始和返回；结束点取完成发布屏障之前
+  → t25 的 10 个双 head 块和 44 个单 head 块分别保留实测时长
+  → 按 plan 中的 MIX、sync_start 和本轮 deps.json 建模，每轮求解一次
+  → 对照 L0 均值、模型下界均值、模型可行排程均值和 10 轮求解状态
+```
+
+加载已有 A6 CANN 和项目 venv，在交互分支仓库根目录执行。脚本默认使用上次的 `build/swa-a6-MxF89z/query/query` 和 `build/swa-t25-lk1vgyf9/t25-54`；目录移动时设置 `SWA_RUN` 和 `T25_RUN` 指向各自的父级实验目录。脚本安装 [固定版本 OR-Tools](../../dsv41_scheduler/production/requirements-bound.txt)，也可由现场 pip 镜像或 wheel 目录提供。它重编带 L2 记录的 runtime，复用已有 runner、kernel、plan 和输入。
+
+```bash
+git pull --ff-only https://github.com/HaoZhang1024/simpler.git a6-swa-port &&
+  DEVICE="${DEVICE:?已分配的 A6 卡号}" bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_sync_bound.sh
+```
+
+两批均须通过 golden，10 个 L2 正式轮各自核齐 16 个计算任务、560 个执行身份。模型把 kernel 时长向下取整到 100 ns，调度和通知耗时取零，允许同类型核互换。每轮默认求解 30 秒。若后继在前驱 kernel 返回前已启动，脚本会报告具体任务，蓝区复核该依赖的完成语义。
+
+<a id="a6-sync-bound-feedback"></a>
+
+#### 黄区回填 · 整图下界
+
+把终端最后打印路径的 `feedback.txt` 全文贴在这里，含版本、10 个 L0 样本、每轮求解状态、均值和差值。失败时贴 `run.log` 的首条错误和实验目录；如已完成采集，可复用同一目录离线求解。完整 `model/summary.json`、`blocks.csv`、`tasks.csv`、`edges.csv` 和每轮原始文件留在黄区。
+
+```text
+待黄区粘贴 54 块 SWA 的 L0 / L2 feedback.txt
+```
+
+`excess_us = L0 AICore wall 均值 − 模型下界均值`，百分比以模型下界为分母。下界和可行排程之间的差反映求解还剩多少不确定性。只有每轮都证明最优，才能把下界均值记为该模型的最优值。L2 插桩会影响输入时长，模型也放宽了物理核组的放置约束；可兑现的收益仍用后续 L0 同卡 A/B 衡量。
 
 <a id="a6-quant-split"></a>
 
@@ -436,7 +474,7 @@ run3 t22 {"aic": {"dispatch_n": 48, "dispatch_from_t18": [37.352, 45.094, 47.386
 | 1 · t35 同核再领一块，runtime 能省多少 | 64 块三轮中，每轮 10 个复用核的接块间隔中位数为 12.684–12.951 µs。A/B 六轮末块核的间隔为 13.465–14.422 µs，其中 claim 约 3 µs、prepare_subtask 约 2.5 µs。 | 蓝区检查 `percounter_claim_block`、`percounter_resolve`、`percounter_prepare_subtask` 的任务级字段和逐块字段。固定 t25/t35 均为 64 块、同一 plan 和 kernel，一次只改一处。用 L4 检查目标阶段和末块间隔，再用同卡 L0 A–B–B–A 和 golden 判断净收益。 |
 | 2 · t22/t28 的 MIX 分工与启动等待 | t22 在 A6 拆成 48 个 1C1V block，单个 AIV gather 64 个 key；t28 由一条 AIV 承接同组的列分片。A6 的 t18 结束到 t22 首 dispatch 已有记录。 | 蓝区按同一逻辑块核对 head、key、列分片和 C/V 交接次数。t22 启动前若要归因，需对齐同轮 t21 完成、最后到达写者发出加一、首次观察到阈值和首 dispatch；分别标 worker、sync_index 和时钟。当前摘要保留了首 dispatch；t21 完成、第 48 次加一和首次读到 48 的时间仍待对齐。核内工作量与启动前等待分开记。 |
 
-[func20 的搬运与计算](../../dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_quant_vf.cpp#L82) · [runtime 参数准备](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L306) · [runtime 取票](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1029) · [两端已有 L4 端点](swa-l4-comparison.zh-CN.md)
+[func20 的搬运与计算](../../dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_quant_vf.cpp#L82) · [runtime 参数准备](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L306) · [runtime 取票](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1029) · [两端已有 L4 端点](#l4-endpoints)
 
 ### 两端首块与同核接块
 
@@ -647,17 +685,65 @@ t22 前和 t25 末到 t35 首两个长区间合计多 71.541 µs，里面包含�
 | t25，同为 64 个向量 block | 任务跨度多 23.182 µs，其中启动分散多 18.517 µs（约 80%）；A6 末块所在的 worker 84 两块间隔为 13.962 µs | 用 t25 核对是否与 t35 共有同一条调度开销路径。worker 84 的 claim 事件占 2.900 µs，整个复用间隔还包含前块发布和下块准备 |
 | t22，48 个同步 block | 最晚可见计算前驱 t18 结束到首 dispatch 为 27.813 / 38.986 µs，差 11.173；首 kernel 开始到末 kernel 结束另多 14.290 µs | t21 完成与 t22 最后到达事件仍缺失，启动前的差值尚不能归因给 GM。蓝区先沿已有轮询、放行事件核对，并保留 kernel 内耗时差异 |
 
-L4 各取一轮，A5 此轮无预热，A6 取预热后的正式轮。上表的“启动分散”是最早到最晚 kernel **开始**的时间；该区间可与已启动 block 的执行重叠。百分比只描述各任务跨度在时间轴上的位置。整图 L0 的可回收时间须由后续单项改动测量。[三任务端点对照](swa-l4-comparison.zh-CN.md) · [逐核事件记录](../results/2026-11-19-a6-percounter-l4/README.md)
+L4 各取一轮，A5 此轮无预热，A6 取预热后的正式轮。上表的“启动分散”是最早到最晚 kernel **开始**的时间；该区间可与已启动 block 的执行重叠。百分比只描述各任务跨度在时间轴上的位置。整图 L0 的可回收时间须由后续单项改动测量。[三任务端点对照](#l4-endpoints) · [逐核事件记录](../results/2026-11-19-a6-percounter-l4/README.md)
 
 ### CntNotify 并发时延
 
 96 核硬件同步起跑时，A6 原子加零读为 1.043 µs，交换写 + DSB 为 1.046 µs；A5 分别为 16.387、16.385 µs。A6 扩展组 GM 加一 + DSB 为 1.051 µs，CntNotify INC + DSB 为 1.336 µs。微基准支持当前保留 GM；生产 t22 的 48 个写者与阈值等待仍需按上表的实际事件分析。[96 / 108 核完整回填](https://github.com/HaoZhang1024/simpler/blob/2d4396a56/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#L98-L138)
 
+<a id="l4-endpoints"></a>
+
+## 首次 L4 两端对照与离线复算
+
+单位 µs。前驱取最后结束的可见直接计算前驱。首 dispatch 和首 kernel 分别在该任务的全部 worker 上取最早值；启动分散等于最晚开始减最早开始。三项任务可与其他工作重叠。
+
+| 任务 / 前驱 | 指标 | A5 | A6 | A6 − A5 |
+| ----------- | ---- | -- | -- | ------- |
+| t22 / t18 | 前驱结束 → 首 dispatch | 27.813 | 38.986 | +11.173 |
+| t22 / t18 | 首 dispatch → 首 kernel | 1.193 | 1.074 | -0.119 |
+| t22 / t18 | 启动分散 | 10.625 | 15.572 | +4.947 |
+| t22 / t18 | 首 kernel 开始 → 末 kernel 结束 | 21.923 | 36.213 | +14.290 |
+| t25 / t22 | 前驱结束 → 首 dispatch | 4.324 | 7.097 | +2.773 |
+| t25 / t22 | 首 dispatch → 首 kernel | 1.325 | 1.782 | +0.457 |
+| t25 / t22 | 启动分散 | 12.703 | 31.220 | +18.517 |
+| t25 / t22 | 首 kernel 开始 → 末 kernel 结束 | 19.103 | 42.285 | +23.182 |
+| t35 / t29 | 前驱结束 → 首 dispatch | 3.276 | 4.185 | +0.909 |
+| t35 / t29 | 首 dispatch → 首 kernel | 1.292 | 1.685 | +0.393 |
+| t35 / t29 | 启动分散 | 6.721 | 24.013 | +17.292 |
+| t35 / t29 | 首 kernel 开始 → 末 kernel 结束 | 12.844 | 33.093 | +20.249 |
+
+| 任务 | A5 执行分布 | A6 执行分布 | 仍需定位 |
+| ---- | ----------- | ----------- | -------- |
+| t22 | 24 个 1C2V block，72 核各一次 | 48 个 1C1V block，96 核各一次 | t18 发出完成更新后还要经过依赖和会合。查 t22 第 48 次加一、首次读到 48、首 dispatch 三个点。 |
+| t25 | 64 个 AIV 各一次 | 44 个 AIV 各一次、10 个各两次；复用间隔中位 13.916 µs | 最后一块在 worker 84 上第二次执行，两块相隔 13.962 µs。 |
+| t35 | 64 个 AIV 各一次 | 44 个 AIV 各一次、10 个各两次；复用间隔中位 13.632 µs | worker 69 两块相隔 14.201 µs，第二块结束于整图末端。优先拆这段时间。 |
+
+单次 kernel 执行时长（µs），按函数分别统计：
+
+| 任务 / 函数 | A5 中位 / 最大 | A6 中位 / 最大 |
+| ----------- | -------------- | -------------- |
+| t22 / func18 | 12.803 / 19.053 | 20.854 / 30.971 |
+| t22 / func19 | 12.696 / 17.092 | 22.911 / 24.521 |
+| t25 / func20 | 6.511 / 7.760 | 11.031 / 11.352 |
+| t35 / func27 | 7.330 / 9.185 | 9.075 / 9.740 |
+
+### 用已有泳道复算
+
+从仓库根目录对同一正式轮的 Worker View trace（JSON 或 JSON.gz）和任务编号表执行：
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/analysis/compare_l4.py \
+  "${TRACE:?L4 Perfetto JSON}" "${MAP:?source-task-map.txt}" > task-comparison.json
+```
+
+两端同轮提取结果已归档。[A5 原始泳道与提取结果](../results/2026-11-19-a5-percounter-l4/) · [A6 提取结果与逐核事件](../results/2026-11-19-a6-percounter-l4/)
+
 ## 每日进展
 
 | 日期 | 已完成及证据 | 结果或仍缺的证据 | 下一步 |
 | --- | --- | --- | --- |
-| 2026-11-23 | t25 两端分段、两目标量化函数反汇编；A5 同卡完成除法对照 12 个正式轮 | 单 head 量化多 3.548 µs；A6 现场分段二进制指纹和倒数对照待收 | 54 块分组已回填，黄区执行 64 块量化对照 |
+| 2026-11-23 | 蓝区接入 54 块整图 L2 逐块采集和同步求解 | A6 下界待测 | 黄区执行[单卡命令](#a6-sync-bound)，回填[求解状态和样本](#a6-sync-bound-feedback) |
+| 2026-11-23 | t25 的 54 块整图对照、64 块量化 ABBA、现场指令和八批行数拆分均已回填 | 54 块 Device 节省 4.979 µs；诊断窗口中随 72 个有效行增加的差距为 3.5195 µs | 蓝区已完成 FP8 输出对照的 A5 基线，黄区按[十六批命令](#a6-fp8-output)执行并[一次回填](#a6-fp8-output-feedback) |
 | 2026-11-20 | 蓝区按六个连续区间复算 A5/A6 泳道，生成 t25 单变量 A/B | 64 个 head 在两种分配下各覆盖一次；已验证两份 plan 只差 t25 块数 | 黄区用上方一条命令测同卡净收益 |
 | 2026-11-20 | 黄区完成 002 硬件 SYNCALL 同口径六组重测 | CntNotify 微基准结项，保留 GM 基线 | A6 新一批 L0 已收到，蓝区分析 t35/t25 的尾块及 t22 的启动 |
 | 2026-11-19 | A5/A6 的 L4 已对齐 t22、t25、t35；A6 正式轮采到 570 个 kernel 区间，输出校验通过。蓝区已交付整理后的 A6 源码和单卡脚本 | 已定位 t22 启动差值和 t35 尾块复用。CntNotify 作业按现场反馈已启动，分支尚无这次实测时延 | 黄区先回传 probe 原始结果；蓝区核对硬件映射和读回，统计三条路径的首、中、尾时延 |

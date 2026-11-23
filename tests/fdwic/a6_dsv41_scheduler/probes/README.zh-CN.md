@@ -62,14 +62,4 @@ python "$SWA/probes/register_ranks.py" "$RAW" --workers 96 --rounds 192 \
 | 写 + DSB | GM atomic | 0.237 | 8.310 | 16.956 | 176.0 |
 | 写 + DSB | CntNotify | 0.218 | 0.747 | 1.463 | 13.1 |
 
-## 3. 用 SWA 判断值不值得改
-
-黄区 §7.10 已补采同级 L4。t22 的 AIC kernel 均值从 A5 的 13.46 增到 A6 的 22.27 µs，AIV 从 13.00 增到 23.02 µs；另报 t22 前的阶段间隙增加约 11.1 µs。先将后者的起止事件与任务表中的“最晚可见计算前驱结束 → 首 dispatch”对齐。寄存器方案首先解释启动前的等待；kernel 内的增量应逐 func 核对开始/结束事件、实际入参和 kernel 工作量。此次 A5 L4 有 32C+64V 实际执行，A6 为 54C+54V。两端整图 kernel 跨度为 321.00 和 453.49 µs，L0 的改善量取配对实测。[黄区新增的 L4 结果 §7.10](../doc/a6-result.md)
-
-**优先看 t22 的 48 次到达。** 当前 `lane_loop.h` 中，MIX 各 lane 经 SSBUF 发布 `enter_ready`，`percounter_tokens_ready` 检查同组。组内指定 lane 调 `percounter_gm_fetch_add_issue(sync_arrivals[sync_index].next, 1)` 标记本 block 到达；参与者再用 `percounter_gm_read` 观察计数等于 block 数。48 对核有 **48 次逻辑加一**，轮询次数取实测。单独做“48 个指定写者累加 + 各参与者等阈值”的小实验，用通过验证的 INC/read 与原 GM 对照，保持 SSBUF 会合与数据可见性屏障一致。重复 SET(1) 无法表示 48 次到达。[当前调度代码](../../../../src/a5/runtime/percounter/aicore/lane_loop.h) · [陈鹏的 percounter 同步路径实验](https://github.com/hw-native-sys/simpler/pull/3180)
-
-- **L4 定位。** 先复用已有正式轮，沿 t22 给出最后前驱结束、最后 block 到达、首次观察到阈值、首 dispatch、首 kernel start、末 kernel end。每一对端点标注对应 lane；缺少内部事件就写“未观测”。需要补点时单独跑诊断轮。t25/t35 均有 64 个普通 Vector block，分别给出最后结束核的复用顺序和前后 block 间隙，再看 `percounter_claim_block` 取票是否出现在这一段。A6 头尾另按 `aicpu_ready` 发布→核观察及 `exit_request` 发布→核退出测量，两者均有自己的发布者、地址分布和观测端点。[三项任务的 A5 实测与 A6 提取命令](../doc/swa-l4-comparison.zh-CN.md)
-- **判定候选是否命中。** 记录硬件映射数、实际选中 INC 的 cohort、GM 回退数、最后到达与首 dispatch 的差值。读写寄存器可能缩短会合；需要返回唯一旧票号的 claim 仍须保证唯一分配。陈鹏的静态分配针对同步宽度恰好等于 owner 数，t22 的 48 与 A6 的 54 对并不相等。传瑜的 HBG 验证逐项检查硬件映射和实际执行，并把 Host bind 单独计时，两种方法都可复用。[percounter 实验](https://github.com/hw-native-sys/simpler/pull/3180) · [HBG 映射及 trace 验证](https://github.com/hw-native-sys/simpler/pull/3157)
-- **L0 验收益。** 有可用候选时，A 为当前 GM，B 仅更改已定位的一条路径。同一张卡、同一 plan/输入/工具链和 570 个执行实例，关诊断，先做 A/A，再按 A-B-B-A 交替。每批 1 次预热 + 10 个正式样本，每批独立输出目录。反馈各批 AICore wall、Device、输出校验和 B−A 配对差，结合 A/A 波动判断；涉及资源申请时另报首次/复用 bind。陈鹏 #3180 的 A5 SWA 为 165.847→166.647 µs（+0.48%，组合改动），这是另一组基线。硬件完成名次曲线和 L4 区间只能定位要验证的路径。[SWA 运行入口](../doc/usage.zh-CN.md#黄区接续测试) · [配对和 A/A 方法](https://github.com/hw-native-sys/simpler/pull/3151)
-
-首批回传使用当前 probe 已生成的文件，保留实际版本、命令、时钟、参与核、读写路径及读回状态。蓝区从原始记录生成首、中、尾时延表，再决定下一次上板测什么。
+两端正式同址结果收在[寄存器与 GM 对照](../doc/a6-a5-comparison.zh-CN.md#寄存器gm-与同步)。t22 的依赖和启动端点随 [SWA 每日进展](../doc/a6-swa-performance-progress.zh-CN.md#l4-endpoints)更新。

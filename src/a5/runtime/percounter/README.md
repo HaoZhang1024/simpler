@@ -269,6 +269,12 @@ mean the last sibling finished or every consumer observed the task's completion.
 Earlier preparation, fanin probes, MIX rendezvous, fixed-slot acquisition, entry/idle checks and
 completion-counter publication appear on the L3/L4 Scalar lane.
 
+At L2, `scheduler_tasks.execution_blocks` exports one row per kernel call:
+`[worker_id, reg_task_id, run_epoch, block_idx, subtask_slot, kernel_end_cycles]`.
+Join the first three fields to `aicore_tasks` to recover the task ID and start
+cycle. The lane samples `kernel_end_cycles` immediately after the call and
+before the output-store barrier. The existing finish timestamp includes that barrier.
+
 Each active worker has its own **AICore Scheduler** lane, grouped by cluster
 and C/V0/V1 role. Function names are percounter's own; task IDs retain the HBG
 layout shared by the two runtimes. The standard converter nests kernel

@@ -7,7 +7,7 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
-"""Run the single-device SWA L0 benchmark using the PR runner and timing rules."""
+"""Run the single-device SWA benchmark or collect A6 per-block L2 timings."""
 
 import argparse
 import hashlib
@@ -26,12 +26,23 @@ REPO = HERE.parents[2]
 PRODUCTION = HERE.parent / "dsv41_scheduler/production"
 
 
-def summarize(output):
+def summarize(output, level=0):
+    result = json.loads((output / "rank0/result.json").read_text())
+    if level == 2:
+        if not (result["passed"] and result["validated_against_fused_prefix"]):
+            raise ValueError("L2 capture failed numerical validation")
+        return {
+            "runtime": result["runtime"],
+            "profiling_level": level,
+            "warmup": result["warmup"],
+            "rounds": result["rounds"],
+            "numerical_validation": True,
+        }
+
     sys.path.insert(0, str(PRODUCTION))
     from timing import paired_spans, summarize_replay  # noqa: PLC0415
 
     core = summarize_replay(output)
-    result = json.loads((output / "rank0/result.json").read_text())
     text = "\n".join(p.read_text() for p in sorted((output / "rank0/host").glob("host.*.log")))
     _, walls = paired_spans(text)
     if len(walls) != 1:
@@ -75,9 +86,12 @@ def parse_options():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--rounds", type=int, default=10)
+    parser.add_argument("--level", type=int, choices=(0, 2), default=0, help="Use L2 for A6 block capture")
     parser.add_argument("--device", type=int, help="Allocated device ID (required on A6 unless TASK_DEVICE is set)")
     args = parser.parse_args()
     args.runtime = args.runtime or ("percounter" if args.platform == "a6" else "both")
+    if args.level == 2 and args.platform != "a6":
+        parser.error("--level 2 is supported here only for A6 Percounter")
     if args.platform == "a6":
         if args.runtime != "percounter" or not args.a6_query:
             parser.error("A6 requires percounter and --a6-query")
@@ -166,6 +180,7 @@ def main():
         "case": "swa",
         "platform": args.platform,
         "device": device,
+        "profiling_level": args.level,
         "start_time": datetime.now(timezone.utc).isoformat(),
         "build": build,
         "runtime_sha256": {
@@ -184,13 +199,13 @@ def main():
                 str(bundle),
                 str(libraries),
                 str(destination),
-                "0",
+                str(args.level),
                 str(args.warmup),
                 str(args.rounds),
                 f"--runtime={runtime}",
             ]
             subprocess.run(command, env=environment, check=True)
-            record["results"].append(summarize(destination))
+            record["results"].append(summarize(destination, args.level))
         record["status"] = "passed"
     except Exception:
         record["status"] = "failed"
@@ -198,6 +213,13 @@ def main():
     finally:
         record["end_time"] = datetime.now(timezone.utc).isoformat()
         (output / "summary.json").write_text(json.dumps(record, indent=2) + "\n")
+    print_results(output, record)
+
+
+def print_results(output, record):
+    if record["profiling_level"] == 2:
+        print(f"L2 capture and numerical validation passed: {output}")
+        return
     print("\nruntime             AICore mean (ms)  Device mean (ms)  output check")
     for result in record["results"]:
         print(f"{result['runtime']:20} {result['aicore_mean_ms']:16.6f}  {result['device_mean_ms']:16.6f}  PASS")

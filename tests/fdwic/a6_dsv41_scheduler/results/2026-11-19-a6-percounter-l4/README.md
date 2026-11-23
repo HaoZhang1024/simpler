@@ -1,6 +1,6 @@
 # A6 L4 三任务对照反馈（t22/t25/t35，2026-11-19）
 
-按 `doc/swa-l4-comparison.zh-CN.md` 要求，用蓝区 `compare_l4.py`（git 39271d675 版，未改动）在黄区已有 A6 L4 正式轮上执行。
+按 [L4 对照方法](../../doc/a6-swa-performance-progress.zh-CN.md#l4-endpoints) 要求，用蓝区 `compare_l4.py`（git 39271d675 版，未改动）在黄区已有 A6 L4 正式轮上执行。
 
 ## ① 运行条件
 

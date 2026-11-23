@@ -265,6 +265,8 @@ def plan_sync(bundle):
 
 
 def analyze_case(bundle, capture, output, seconds=3):
+    from simpler_setup.tools.hbg.execution_identity import attach_execution_identities  # noqa: PLC0415
+
     root = Path(__file__).resolve().parents[1]
     path = root / "production/ideal_bound.py"
     spec = importlib.util.spec_from_file_location("baseline_bound", path)
@@ -305,7 +307,7 @@ def analyze_case(bundle, capture, output, seconds=3):
             }
             for r in records["aicore_tasks"]
         ]
-        helper.attach_execution_identities(records["aicore_execution_identities"], identities, "host_build_graph")
+        attach_execution_identities(records["aicore_execution_identities"], identities, "host_build_graph")
         nodes = {
             int(t["task_id"]): {"sync": flags.get(mapping[int(t["task_id"])], False), "units": []}
             for t in deps["tasks"]

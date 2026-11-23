@@ -14,7 +14,7 @@
   "comparison": "同一本地 CANN、PTO-ISA pin、编译选项；对比 .text 字节 SHA256。",
   "baseline_run_timestamps": null,
   "timestamp_note": "before 未单独保存起止时间；after-run.json 为实际捕获的 UTC 起止时间。",
-  "reproduction": "见 doc/usage.zh-CN.md 的 compile_kernels.py 和 prepare_plan.py 命令，输出目录须换新。",
+  "reproduction": "https://github.com/HaoZhang1024/simpler/blob/37b531376ec4434833d28c8c05a51f1b7adbe796/tests/fdwic/a6_dsv41_scheduler/doc/usage.zh-CN.md 中的 compile_kernels.py 和 prepare_plan.py 命令，输出目录须换新。",
   "attempts": [
     {
       "run": "a6-original",
