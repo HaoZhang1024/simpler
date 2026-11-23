@@ -4,6 +4,8 @@
 
 **11 月 23 日，两端的 t25 已用同一探针对齐。** A6 每个首块的量化比 A5 多 3.548 µs，占核内总差的约 78%。[分段结果](#1a-t25-首块分段)
 
+**黄区下一项**是从 54 块 B1 的三个正式轮识别末块，分别统计 10 个双 head 块和 44 个单 head 块。先读旧档，缺逻辑块号时只采 54 块 L4。[执行命令与回填位置](#54-块按-block_idx-分组)
+
 | 项目 | 本轮结果 | 记录 |
 | --- | --- | --- |
 | t25 单块分段 | 两端各 3 轮 golden 通过，A5 / A6 量化分别为 4.260 / 7.808 µs | [两端对照](#1a-t25-首块分段) · [A6 原始输出](#黄区任务-t25-单块分段计时) |
@@ -53,6 +55,41 @@ python tests/fdwic/a6_dsv41_scheduler/run.py --platform a6 --runtime percounter 
   --runtime-lib "$SWA_RUN/lib/a6/onboard" --build-dir "${T25_RUN:?t25 实验目录}/t25-54" \
   --output "$T25_RUN/run54-$(date +%Y%m%d-%H%M%S)" --warmup 1 --rounds 10
 ```
+
+### 54 块按 block_idx 分组
+
+| 已有 B1 三轮 L4 | 蓝区能确认的结果 |
+| --- | --- |
+| t25 的 54 次调用 | 每轮 54 个 AIV 各跑一次。任务跨度中位数 29.271 µs，范围 28.802–31.195 µs。54 块混合统计的单次调用中位数为 11.047 µs。 |
+| 单 head 块 | 逻辑块 10–53，各算同号 head。44 块的耗时等逐块身份回填。 |
+| 双 head 块 | 逻辑块 0–9，各算 head `i` 和 `i+54`。10 块的耗时及每轮最后完成的逻辑块等逐块身份回填。 |
+
+已有摘要保留了各轮的 worker 数和任务端点。此版 percounter 的 `aicore_tasks` 七列依次是 worker、任务号、核内记录序号、开始 tick、结束 tick、接收到开始的 tick 数和 epoch。任务号识别 t25，核内序号在每个 worker 上单独递增。把七列按 worker 或时长排序都无法恢复逻辑块号。[L4 写出代码](../../../../src/a5/runtime/percounter/host/profiling.cpp#L69) · [t25 按逻辑块遍历 head](../../dsv41_scheduler/kernels/pypto_lib_latest/vendor/external/o_quant_vf.cpp#L82)
+
+**第一步，离线读旧档。** 在仓库根目录执行，`T25_L4` 指向此前归档的 `t25-l4-3evzw1k0`。脚本按同轮任务映射找出 t25，以最大结束 tick 识别最后完成的 worker，保留并列。现场若已有能与该次调用对应的设备执行身份，会直接打印两组结果。
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/analysis/t25_blocks.py "${T25_L4:?B1 归档目录}/B1/rank0"
+```
+
+**第二步，仅当旧档输出 `identity=missing`（JSON 字段 `"identity": "missing"`）时补采。** 在原 A6 卡与 CANN 环境运行下列命令。`SWA_RUN` 是原 64 块基线目录，`T25_RUN` 是已有的 `swa-t25-lk1vgyf9`，`L4_LIB` 是原 L4 percounter 库。脚本校验两份 plan 仅 t25 的块数不同，复用原输入、参考输出、18 个其余 kernel 和 runtime。只测 54 块，预热 1 轮、正式 3 轮，每轮验 golden。
+
+```bash
+python tests/fdwic/a6_dsv41_scheduler/analysis/t25_phases.py \
+  "${SWA_RUN:?SWA 基线目录}/case" "${L4_LIB:?L4 运行库}" --platform a6 \
+  --a6-query "$SWA_RUN/query/query" --device "${DEVICE:?已分配卡号}" \
+  --block-plan "${T25_RUN:?原 54 块实验目录}/t25-54/bundle/plan-rank0.bin"
+```
+
+补采时 func20 在原计算和写回结束后记录逻辑块号、COREID 和一个时间戳。按本轮 L4 的物理核与 worker 映射关联，校验每个逻辑块恰好出现一次，时间戳落在对应调用内。时长取 L4 的结束减开始，包含标记写出开销。将新轮的任务跨度和旧轮并列观察扰动。旧轮的末块身份只有在旧档自身含映射时才能确认。蓝区已验证分组、并列末块的判定逻辑、错配拒绝和 54/64 两种 host 编译配置，带标记的 func20 已在蓝区用 A5 CCEC 编译。
+
+**黄区回填在下表。** 两步脚本均打印 `t25-blocks-feedback.txt` 路径。请将文件的三行原文粘在表下。每组字段为样本数、最小、中位、最大耗时，单位 µs。`tails` 列出最大结束 tick 对应的 block_idx、head、worker、起止偏移与耗时，起止偏移以本轮首块开始为零。54 块逐项明细留在同目录 `t25-blocks.json`。
+
+| 正式轮 | 旧档末 worker | 来源（旧档 / 补采） | 单 head 中位 µs | 双 head 中位 µs | 该来源的末块 block_idx / head / worker |
+| --- | --- | --- | ---: | ---: | --- |
+| 1 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| 2 | 待填 | 待填 | 待填 | 待填 | 待填 |
+| 3 | 待填 | 待填 | 待填 | 待填 | 待填 |
 
 ### 黄区任务 t25 单块分段计时
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Copyright (c) PyPTO Contributors.
 # Licensed under the CANN Open Software License Agreement Version 2.0. See LICENSE.
-"""Time the four stages of SWA func20 in the existing 64-block percounter replay."""
+"""Time 64-block SWA func20 stages or identify each call in the 54-block A6 replay."""
 
 import argparse
 import gzip
@@ -62,7 +62,7 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build_probe(case, out, isa, platform):
+def build_probe(case, out, isa, platform, block_plan=None):
     sys.path[:0] = [str(ROOT), str(ROOT / "python")]
     from simpler_setup.elf_parser import extract_text_section
     from simpler_setup.kernel_compiler import KernelCompiler
@@ -76,6 +76,10 @@ def build_probe(case, out, isa, platform):
     for filename, key in (("plan-rank0.bin", "plan_sha256"), ("callable.bin", "callable_sha256")):
         if digest(source_bundle / filename) != build[key]:
             raise ValueError(f"Prepared {filename} differs from build.json")
+    if block_plan is not None:
+        from t25_ab import split_plan, verify_plans
+        tool = case / "host/record-tool"
+        verify_plans(split_plan(tool, source_bundle / "plan-rank0.bin"), split_plan(tool, block_plan))
     source_root = SUITE / "kernels/pypto_lib_latest"
     manifest = json.loads((source_root / "manifest.json").read_bytes())
     kernel, = (k for k in manifest["kernels"] if k["func_id"] == 20)
@@ -83,7 +87,7 @@ def build_probe(case, out, isa, platform):
     host = out / "host"
     subprocess.run(["cmake", "-S", SUITE / "production", "-B", host, "-G", "Ninja", "-DCMAKE_BUILD_TYPE=Release",
                     f"-DSIMPLER_ROOT={ROOT}", f"-DDSV41_ARCH={platform}",
-                    "-DCMAKE_CXX_FLAGS=-DDSV41_T25_PHASE_PROBE"], check=True)
+                    f"-DCMAKE_CXX_FLAGS=-DDSV41_T25_PHASE_PROBE={54 if block_plan is not None else 64}"], check=True)
     subprocess.run(["cmake", "--build", host, "--target", "native-runner", "replay", "--parallel", "4"], check=True)
     sig = json.loads(subprocess.check_output([host / "native-runner", "--describe-callable", source_bundle / "callable.bin"]))
     compiler = KernelCompiler(platform)
@@ -98,7 +102,11 @@ def build_probe(case, out, isa, platform):
     if digest(source) != original["source_sha256"] or hashlib.sha256(compile_kernel(source)).hexdigest() != original["binary_sha256"]:
         raise ValueError("func20 source or rebuilt control machine code differs from the measured case")
     diag = out / source.name
-    diag.write_text(instrument(source.read_text()))
+    if block_plan is None:
+        diag.write_text(instrument(source.read_text()))
+    else:
+        from t25_blocks import mark_block
+        diag.write_text(mark_block(source.read_text()))
     binary = out / "func20.bin"
     binary.write_bytes(compile_kernel(diag))
 
@@ -119,7 +127,8 @@ def build_probe(case, out, isa, platform):
     bundle.mkdir()
     for path in source_bundle.iterdir():
         if path.name != "callable.bin":
-            (bundle / path.name).symlink_to(path, target_is_directory=path.is_dir())
+            target = block_plan if path.name == "plan-rank0.bin" and block_plan is not None else path
+            (bundle / path.name).symlink_to(target, target_is_directory=target.is_dir())
     subprocess.run([host / "native-runner", "--assemble-orchestration", assembly, host / "libreplay.so",
                     bundle / "callable.bin"], check=True)
 
@@ -162,10 +171,13 @@ def main():
     parser.add_argument("--platform", choices=["a5", "a6"], default="a6")
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--a6-query", type=Path)
+    parser.add_argument("--block-plan", type=Path, help="A6 measured t25-54 plan; collect block identity only")
     parser.add_argument("--pto-isa", type=Path, default=ROOT / "build/pto-isa")
     args = parser.parse_args()
     if args.device < 0 or (args.platform == "a6" and not args.a6_query):
         parser.error("Provide the assigned device and the A6 query executable")
+    if args.block_plan and args.platform != "a6":
+        parser.error("--block-plan requires A6")
     if "TASK_DEVICE" in os.environ:
         allocated_device(parser, args.device)
     elif args.platform == "a5":
@@ -174,7 +186,7 @@ def main():
     case = args.case.resolve()
     out = Path(tempfile.mkdtemp(prefix="t25-phases-", dir=case.parent))
     print(f"Output: {out}", flush=True)
-    build_probe(case, out, args.pto_isa.resolve(), args.platform)
+    build_probe(case, out, args.pto_isa.resolve(), args.platform, args.block_plan.resolve() if args.block_plan else None)
     dest = out / "capture"
     env = dict(os.environ, TASK_DEVICE=str(args.device), DSV41_RUNNER=str(out / "host/native-runner"), DSV41_PYTHON=sys.executable)
     subprocess.run(["bash", SUITE / "production/run.sh", out / "bundle", args.l4_lib.resolve(), dest,
@@ -184,6 +196,10 @@ def main():
     if not (result["passed"] and result["validated_against_fused_prefix"] and result["runtime"] == "percounter"
             and result["device"] == args.device and result["warmup"] == 1 and result["rounds"] == 3):
         raise ValueError("Expected three validated formal rounds")
+    if args.block_plan:
+        from t25_blocks import report
+        report(rank, require_identity=True)
+        return
     lines = [f"{args.platform} device={args.device} warmup=1 rounds=3 golden=PASS unit=us " +
              f"source={subprocess.check_output(['git', '-C', ROOT, 'rev-parse', '--short', 'HEAD'], text=True).strip()}"]
     for i in (1, 2, 3):

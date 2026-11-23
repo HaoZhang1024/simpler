@@ -150,9 +150,9 @@ extern "C" __attribute__((visibility("default"))) void aicpu_orchestration_entry
         }
 #ifdef DSV41_T25_PHASE_PROBE
         if (header.kernels[1] == 20 || header.task_id == 25) {
-            if (header.task_id != 25 || header.kernels[1] != 20 || header.block_num != 64 || record.tensors.size() != 5 ||
-                record.scalars != std::vector<uint64_t>{72, 8, 80})
-                throw std::runtime_error("Expected the 64-block SWA func20 replay");
+            if (header.task_id != 25 || header.kernels[1] != 20 || header.block_num != DSV41_T25_PHASE_PROBE ||
+                record.tensors.size() != 5 || record.scalars != std::vector<uint64_t>{72, 8, 80})
+                throw std::runtime_error("Unexpected SWA func20 probe plan");
             task.add_scalar(std::stoull(setting("DSV41_T25_STAMP_ADDRESS")));
         }
 #endif
