@@ -27,6 +27,8 @@
 #include <cstdint>
 #include <vector>
 
+#include "common/platform_config.h"
+
 namespace simpler::percounter {
 
 struct TerminalPipeline {
@@ -65,10 +67,11 @@ inline std::optional<TerminalPipeline> plan_terminal_pipeline(const Task *tasks,
     const auto live = [&](uint32_t id) {
         return !tasks[id].inline_completed;
     };
+    constexpr uint32_t full_mask = (1U << PLATFORM_CORES_PER_BLOCKDIM) - 1;
     const auto full_wave = [&](uint32_t id, bool mix) {
         const auto &t = tasks[id];
-        return live(id) && t.is_mix == mix && !t.sync_start && !t.has_predicate && t.active_mask == (mix ? 7U : 2U) &&
-               t.block_num == static_cast<int64_t>(clusters) * (mix ? 1 : 2);
+        return live(id) && t.is_mix == mix && !t.sync_start && !t.has_predicate && t.active_mask == (mix ? full_mask : 2U) &&
+               t.block_num == static_cast<int64_t>(clusters) * (mix ? 1 : PLATFORM_AIV_CORES_PER_BLOCKDIM);
     };
     // A DAG with a unique sink must end with its live sink in submission order.
     size_t live_count = task_count;
@@ -122,7 +125,7 @@ inline std::optional<TerminalPipeline> plan_terminal_pipeline(const Task *tasks,
         for (int32_t j = 0; j < tasks[id].fanin_count; ++j) {
             const uint32_t prior = static_cast<uint32_t>(tasks[id].fanin_ids[j]);
             const auto &t = tasks[prior];
-            const bool matches = mix ? (t.is_mix && t.active_mask == 7 && t.block_num >= 2 && t.block_num <= clusters &&
+            const bool matches = mix ? (t.is_mix && t.active_mask == full_mask && t.block_num >= 2 && t.block_num <= clusters &&
                                         (!require_full_sync || (t.sync_start && t.block_num == clusters))) :
                                        (!t.is_mix && !t.sync_start && t.active_mask == 2 && t.block_num == 1);
             if (!live(prior) || !matches || t.has_predicate ||

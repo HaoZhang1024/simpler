@@ -1,0 +1,408 @@
+{
+  "kernels": [
+    {
+      "func_id": 8,
+      "name": "_hc_collapse",
+      "source": "vendor/external/hc_collapse.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        3,
+        3
+      ],
+      "source_sha256": "43861b58ecf6c6beaf1730d8a082d5326ee5af92cdb506e468befff76d35785e",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 9,
+      "name": "decode_sp_zero_padding",
+      "source": "vendor/aiv/decode_sp_zero_padding.cpp",
+      "core_type": "aiv",
+      "code_name": "decode_sp_zero_padding",
+      "signature": [
+        3
+      ],
+      "source_sha256": "2afe963c103ddae3ec0380fe720e75970dd6d2c64f4cf2ad4efe5ef6de315e05",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 10,
+      "name": "qkv_quant",
+      "source": "vendor/external/qkv_quant.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        3,
+        3
+      ],
+      "source_sha256": "8b9c3abd0861b1f26a0a20c7f24659d424715b6f13c06cdc2cd76fc164c22d58",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 11,
+      "name": "_proj_q_a",
+      "source": "vendor/external/proj_q_a.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "c0bcf142c82084e96e114a7670a4ebd63e717e5ed5621604f3fe097723b3fc0d",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 12,
+      "name": "q_norm_quant",
+      "source": "vendor/external/q_norm_quant.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        3,
+        3,
+        3
+      ],
+      "source_sha256": "b608aab4fce047342711ff7ffa51068d895f4bef176db6e99eb2113a75b6347e",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 13,
+      "name": "_proj_q_b_aic",
+      "source": "vendor/external/proj_q_b.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3,
+        1,
+        1
+      ],
+      "source_sha256": "c88b65b03b8c8f7d682db8b31dc192697fcc3b3d75133e0624bf9e45ca8f4c10",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 14,
+      "name": "_proj_q_b_aiv",
+      "source": "vendor/external/proj_q_b.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3,
+        1,
+        1
+      ],
+      "source_sha256": "c88b65b03b8c8f7d682db8b31dc192697fcc3b3d75133e0624bf9e45ca8f4c10",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 15,
+      "name": "_proj_kv",
+      "source": "vendor/external/proj_kv.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "46f80d86af1cd8a1de4b67df8ae78f45df9eaa914b4a3c7c86fb72910ccefce3",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 16,
+      "name": "norm_rope_publish",
+      "source": "vendor/external/norm_rope_publish.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "b335430b873f0345e4e9d5e6ebc9af203cd37ccd0933063518489fe01ecb62e6",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 18,
+      "name": "_gather_sparse_vf_rows_aic",
+      "source": "vendor/external/sparse_gather_vf.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "43002feee2b3ac9892ad42b64d73cfe54777d01171087b710249cea36d2e1b55",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 19,
+      "name": "_gather_sparse_vf_rows_aiv",
+      "source": "vendor/external/sparse_gather_vf.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        3,
+        1,
+        1,
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "43002feee2b3ac9892ad42b64d73cfe54777d01171087b710249cea36d2e1b55",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 20,
+      "name": "_quant_o_vf",
+      "source": "vendor/external/o_quant_vf.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        3,
+        3
+      ],
+      "source_sha256": "dc39917ea67b4482a7b42804779508d352eb78d9440854dc1c692579c5021db5",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 21,
+      "name": "_o_proj_a_aic",
+      "source": "vendor/external/o_proj_a.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3,
+        3
+      ],
+      "source_sha256": "fcb6958ddbc8886ca76b2e9d616b017c05c5c18527a337a7d114a711995f20b7",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 22,
+      "name": "_o_proj_a_aiv",
+      "source": "vendor/external/o_proj_a.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3,
+        3
+      ],
+      "source_sha256": "fcb6958ddbc8886ca76b2e9d616b017c05c5c18527a337a7d114a711995f20b7",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 23,
+      "name": "_o_proj_b",
+      "source": "vendor/external/o_proj_b.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "b90a87e4c7cc53a6357786f4b7c514b6c49bf0aa05a28823a8fafe9f49e7ec46",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 24,
+      "name": "hc_rms",
+      "source": "vendor/aiv/hc_rms.cpp",
+      "core_type": "aiv",
+      "code_name": "hc_rms",
+      "signature": [
+        3,
+        1
+      ],
+      "source_sha256": "88e4796cf6ba6642b0f970402f560462e4fef126f0522eb42e556b44d0a78b67",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 25,
+      "name": "_hc_linear",
+      "source": "vendor/external/hc_linear.cpp",
+      "core_type": "aic",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "37828a7401eb92c8665f47b193185271305b5b1c084298307b27b14daaecf568",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 26,
+      "name": "_hc_sinkhorn",
+      "source": "vendor/external/hc_sinkhorn.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3,
+        3,
+        3
+      ],
+      "source_sha256": "0a7c5186b87e5c9cf03b789b419a624705741cde8a67c5e4cd317516ce5f02f7",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    },
+    {
+      "func_id": 27,
+      "name": "_hc_post",
+      "source": "vendor/external/hc_post.cpp",
+      "core_type": "aiv",
+      "external": true,
+      "signature": [
+        1,
+        1,
+        1,
+        1,
+        3
+      ],
+      "source_sha256": "7a411307ec9c7e0b40eabb0cb254c83f96a2f34586a2e60c8a1be75f4cc811ce",
+      "include_dirs": [
+        "vendor",
+        "vendor/aic",
+        "vendor/aiv",
+        "vendor/external"
+      ]
+    }
+  ],
+  "origin": "hw-native-sys/pypto-lib dev/hbg@a6a9a2d49047ce67a85857c6b15f9604a7287714, unchanged full-forward kernels"
+}

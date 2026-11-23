@@ -65,7 +65,8 @@ using PercounterContextPointer = volatile __ssbuf__ PercounterInvocationContext 
 
 inline __aicore__ PercounterContextPointer percounter_current_context() {
 #if defined(__DAV_VEC__)
-    const uint32_t lane = 1 + static_cast<uint32_t>(__cce_scalar::get_subblockid());
+    const uint32_t lane =
+        PLATFORM_AIV_CORES_PER_BLOCKDIM == 1 ? 1 : 1 + static_cast<uint32_t>(__cce_scalar::get_subblockid());
 #else
     const uint32_t lane = 0;
 #endif

@@ -1,0 +1,199 @@
+/*
+ * Copyright (c) PyPTO Contributors.
+ * This program is free software, you can redistribute it and/or modify it under the terms and conditions of
+ * CANN Open Software License Agreement Version 2.0 (the "License").
+ * Please refer to the License for details. You may not use this file except in compliance with the License.
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER EXPRESS OR IMPLIED,
+ * INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE.
+ * See LICENSE in the root of the software repository for the full text of the License.
+ * -----------------------------------------------------------------------------------------------------------
+ */
+/**
+ * @file host_regs.cpp
+ * @brief Host-side A6 AICore register address retrieval implementation
+ *
+ * HAL maps 35 physical 1C1V windows per die. The register table uses
+ * hardware core IDs: the 35 Cube entries precede the 35 Vector entries
+ * on each die. Disabled workers still occupy physical slots.
+ */
+
+#include "host/host_regs.h"
+#include "host/memory_allocator.h"
+#include "common/unified_log.h"
+#include "common/platform_config.h"
+#include "common/acl_hal_device.h"
+#include "runtime_c_api.h"
+#include "runtime/rt.h"
+#include "ascend_hal.h"  // CANN HAL API definitions
+#include <dlfcn.h>
+
+static int get_aicore_reg_info(std::vector<int64_t> &regs, int64_t device_id) {
+    // halResMap: maps one independent 2 MiB window per AICore block (A6)
+    auto halFunc = reinterpret_cast<decltype(&halResMap)>(dlsym(RTLD_DEFAULT, "halResMap"));
+
+    if (halFunc == nullptr) {
+        LOG_ERROR("halResMap not found in symbol table");
+        return PTO_RUNTIME_ERR_INTERNAL;
+    }
+
+    const int64_t phys_device_id = pto::acl_to_hal_device_id(device_id);
+
+    // A6 (PyPTO GetAicoreRegInfoForDAVID, DAV_9201): the table has
+    // 70 res_id slots x 2 sub-cores = 140 entries, indexed by coreid —
+    // die0 AIC 0..34 / die0 AIV 35..69 / die1 AIC 70..104 / die1 AIV 105..139.
+    constexpr size_t MAX_INDEX = DAV_A6::PLATFORM_MAX_PHYSICAL_CORES * PLATFORM_CORES_PER_BLOCKDIM;
+
+    struct res_map_info map_info{};
+    map_info.target_proc_type = PROCESS_CP1;
+    map_info.res_type = RES_AICORE;
+    map_info.flag = 0;
+    map_info.rsv[0] = 0;
+
+    regs.resize(MAX_INDEX);
+
+    // Map each AICore block individually.
+    //
+    // One mapping per res_id carries both sub-cores' register blocks, and on
+    // this architecture the same table is the PMU table — `KernelArgs`
+    // publishes `pmu_reg_addrs = regs`. The extent a sub-core's address
+    // addresses is its stride plus the furthest register either accessor
+    // reaches through the shared register layout.
+    constexpr uint64_t kBlockSpan = REG_MMIO_PMU_STOP_CYC1_OFFSET + sizeof(uint32_t);
+    constexpr uint64_t kAddressed = REG_AIV_FIRST_OFFSET + kBlockSpan;
+    static_assert(kAddressed <= REG_AICORE_MAP_SIZE, "the requested AICore mapping cannot hold both sub-core blocks");
+    uint32_t cores_below_addressed = 0;
+    uint32_t smallest_len = 0;
+    for (uint32_t res_id = 0; res_id < DAV_A6::PLATFORM_MAX_PHYSICAL_CORES; res_id++) {
+        map_info.res_id = res_id;
+        uint64_t map_addr = 0;
+        uint32_t len = REG_AICORE_MAP_SIZE;
+
+        auto ret = halFunc(static_cast<uint32_t>(phys_device_id), &map_info, &map_addr, &len);
+        if (ret != 0) {
+            LOG_ERROR("halResMap failed for res_id %u (rc=%d)", res_id, ret);
+            return ret;
+        }
+        if (res_id == 0 || len < smallest_len) smallest_len = len;
+        if (len < kAddressed) cores_below_addressed++;
+
+        // PyPTO DAV_9201 layout: die-interleaved coreid table.
+        // dieBase = die*70; AIC at dieBase+local, AIV at dieBase+35+local.
+        const uint32_t die_idx = res_id / PLATFORM_AICORE_PER_DIE;
+        const uint32_t local_idx = res_id % PLATFORM_AICORE_PER_DIE;
+        const uint32_t die_base = die_idx * (PLATFORM_AICORE_PER_DIE * PLATFORM_CORES_PER_BLOCKDIM);
+        const uint32_t aic_index = die_base + local_idx;
+        const uint32_t aiv_index = die_base + PLATFORM_AICORE_PER_DIE + local_idx * (PLATFORM_CORES_PER_BLOCKDIM - 1);
+        regs[aic_index] = static_cast<int64_t>(map_addr);
+        regs[aiv_index] = static_cast<int64_t>(map_addr + REG_AIV_FIRST_OFFSET);
+    }
+
+    // One line per table build, which is once per device.
+    if (cores_below_addressed > 0) {
+        LOG_WARN(
+            "halResMap reports as little as 0x%x bytes per AICore where this layout addresses up to 0x%llx "
+            "(AIV offset 0x%llx, block 0x%llx) on %u of %u res_ids; the reported length is the driver's to "
+            "define, so every address is published as before",
+            smallest_len, (unsigned long long)kAddressed, (unsigned long long)REG_AIV_FIRST_OFFSET,
+            (unsigned long long)kBlockSpan, cores_below_addressed, DAV_A6::PLATFORM_MAX_PHYSICAL_CORES
+        );
+    } else {
+        LOG_INFO(
+            "halResMap reports at least 0x%x bytes per AICore, covering the 0x%llx this layout addresses", smallest_len,
+            (unsigned long long)kAddressed
+        );
+    }
+
+    return 0;
+}
+
+/**
+ * Propagates HAL failure: the AICPU init/deinit handshake dereferences these
+ * addresses via write_reg/read_reg, so any placeholder fill would deadlock
+ * the next task on a stream-sync timeout instead of failing prepare cleanly.
+ */
+static int get_aicore_regs(std::vector<int64_t> &regs, uint64_t device_id) {
+    int rt = get_aicore_reg_info(regs, device_id);
+    if (rt != 0) {
+        LOG_ERROR("get_aicore_reg_info failed: %d", rt);
+        return rt;
+    }
+    LOG_DEBUG("get_aicore_regs: Retrieved %zu register addresses", regs.size());
+    return 0;
+}
+
+int init_aicore_register_addresses(uint64_t *runtime_regs_ptr, uint64_t device_id, MemoryAllocator &allocator) {
+    if (runtime_regs_ptr == nullptr) {
+        LOG_ERROR("init_aicore_register_addresses: Invalid parameters");
+        return PTO_RUNTIME_ERR_INTERNAL;
+    }
+
+    // Step 1: Get register addresses from HAL
+    std::vector<int64_t> host_regs;
+    int rc = get_aicore_regs(host_regs, device_id);
+    if (rc != 0) {
+        LOG_ERROR("Failed to get AICore register addresses: %d", rc);
+        return rc;
+    }
+
+    // Retain the caller-owned block from an earlier failed release.
+    // Reuse it after validating ownership and capacity below, so allocating
+    // a replacement cannot overwrite the only handle to the old block.
+    size_t regs_size = host_regs.size() * sizeof(int64_t);
+    void *reg_ptr = reinterpret_cast<void *>(*runtime_regs_ptr);
+    const bool reusing_retained = reg_ptr != nullptr;
+    if (reusing_retained) {
+        // Require an allocation owned by this allocator, starting at reg_ptr,
+        // with enough capacity for this upload. This prevents an out-of-bounds
+        // copy; it does not validate device or register-kind identity.
+        void *base = nullptr;
+        size_t retained_size = 0;
+        if (!allocator.owning_allocation(reg_ptr, &base, &retained_size) || base != reg_ptr ||
+            retained_size < regs_size) {
+            LOG_ERROR(
+                "init_aicore_register_addresses: retained table 0x%llx is %zu bytes but this attempt needs %zu",
+                static_cast<unsigned long long>(*runtime_regs_ptr), retained_size, regs_size
+            );
+            return PTO_RUNTIME_ERR_INTERNAL;
+        }
+    }
+    if (!reusing_retained) {
+        reg_ptr = allocator.alloc(regs_size);
+        if (reg_ptr == nullptr) {
+            LOG_ERROR("Failed to allocate device memory for register addresses");
+            return PTO_RUNTIME_ERR_INTERNAL;
+        }
+        // The address is recorded before the copy, and cleared on failure only
+        // when the release succeeded: a caller that has to retry a teardown
+        // needs the address of a block whose free failed, and `MemoryAllocator`
+        // is not a reportable owner — its finalize() clears the tracking map
+        // even when rtFree fails.
+        *runtime_regs_ptr = reinterpret_cast<uint64_t>(reg_ptr);
+    }
+
+    int ret = rtMemcpy(reg_ptr, regs_size, host_regs.data(), regs_size, RT_MEMCPY_HOST_TO_DEVICE);
+    if (ret != 0) {
+        LOG_ERROR("Failed to copy register addresses to device (rc=%d)", ret);
+        if (reusing_retained) {
+            // Already the caller's to release, and its previous release failed;
+            // retrying that belongs to teardown, not to preparation.
+            return PTO_RUNTIME_ERR_INTERNAL;
+        }
+        if (allocator.free(reg_ptr) == 0) {
+            *runtime_regs_ptr = 0;
+        } else {
+            LOG_ERROR(
+                "init_aicore_register_addresses: release of the rolled-back table failed; retaining 0x%llx for the "
+                "caller to retry",
+                static_cast<unsigned long long>(*runtime_regs_ptr)
+            );
+        }
+        return PTO_RUNTIME_ERR_INTERNAL;
+    }
+
+    LOG_DEBUG(
+        "Successfully initialized register addresses: %zu addresses at device 0x%llx", host_regs.size(),
+        *runtime_regs_ptr
+    );
+
+    return 0;
+}

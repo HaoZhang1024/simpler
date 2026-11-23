@@ -18,7 +18,6 @@ from collections import Counter, defaultdict, deque
 from graphlib import TopologicalSorter
 from pathlib import Path
 
-from simpler_setup.tools.hbg.execution_identity import attach_execution_identities
 
 
 def ideal_lower_bound_ms(records, deps):
@@ -181,6 +180,8 @@ def read_case(bundle, capture):
             }
             for row in records["aicore_tasks"]
         ]
+        from simpler_setup.tools.hbg.execution_identity import attach_execution_identities
+
         attach_execution_identities(records["aicore_execution_identities"], tasks, "host_build_graph")
         expected = {
             (tid, block, lane)

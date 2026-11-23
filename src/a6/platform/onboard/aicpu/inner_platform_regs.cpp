@@ -1,0 +1,1 @@
+../../../../a5/platform/onboard/aicpu/inner_platform_regs.cpp

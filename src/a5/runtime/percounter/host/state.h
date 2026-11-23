@@ -303,7 +303,7 @@ inline StateSelection select_percounter_state(
             if (notifications.owner != nullptr) runtime->retain_pending_resource(std::move(notifications.owner));
         }
         const auto mapped = [&](size_t index) {
-            return index < notify_addresses.size() && a5_cnt_notify_increment_address(notify_addresses[index]) != 0;
+            return index < notify_addresses.size() && scheduler_notification_increment_address(notify_addresses[index]) != 0;
         };
         uint64_t mapped_sync = 0;
         for (size_t index = 0; index < sync_cohort_count; ++index)

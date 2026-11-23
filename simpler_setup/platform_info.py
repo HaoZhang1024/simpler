@@ -15,6 +15,7 @@ and runtime/variant discovery logic.
 
 import importlib.util
 from pathlib import Path
+from typing import Optional
 
 from .environment import PROJECT_ROOT
 
@@ -23,12 +24,13 @@ PLATFORM_MAP: dict[str, tuple[str, str]] = {
     "a2a3sim": ("a2a3", "sim"),
     "a5": ("a5", "onboard"),
     "a5sim": ("a5", "sim"),
+    "a6": ("a6", "onboard"),
     "wsesim": ("wse", "sim"),
 }
 
 _REVERSE_MAP: dict[tuple[str, str], str] = {v: k for k, v in PLATFORM_MAP.items()}
 
-ARCHS = ("a2a3", "a5", "wse")
+ARCHS = ("a2a3", "a5", "a6", "wse")
 TARGETS = ("host", "aicpu", "aicore")
 
 
@@ -55,11 +57,14 @@ def to_platform(arch: str, variant: str) -> str:
     return _REVERSE_MAP[key]
 
 
-def discover_runtimes(arch: str) -> list[str]:
+def discover_runtimes(arch: str, *, runtime_base: Optional[Path] = None) -> list[str]:
     """Return sorted list of runtime names that have a build_config.py."""
-    runtime_base = PROJECT_ROOT / "src" / arch / "runtime"
+    if runtime_base is None:
+        runtime_base = PROJECT_ROOT / "src" / arch / "runtime"
     if not runtime_base.is_dir():
         return []
+    if arch == "a6":
+        return ["percounter"] if (runtime_base / "percounter" / "build_config.py").is_file() else []
     return sorted(d.name for d in runtime_base.iterdir() if d.is_dir() and (d / "build_config.py").exists())
 
 

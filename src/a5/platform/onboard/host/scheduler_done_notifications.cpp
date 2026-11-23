@@ -57,13 +57,13 @@ public:
             check(rc, "create");
             check(aclrtCntNotifyGetId(notification.handle, &notification.mapping.resId), "get id");
             map(notification.mapping, notification.address, notification.mapped);
-            if (required_ && a5_cnt_notify_increment_address(notification.address) == 0)
+            if (required_ && scheduler_notification_increment_address(notification.address) == 0)
                 throw std::runtime_error("HBG requires an aligned CntNotify SET slot");
             if (counter_) {
                 // A5 CntNotify owns a 32-byte register slot. Its ADD register
                 // is offset 8 from the mapped SET/read base and shares the SET
                 // mapping and handle lifetime; it has no independent unmap.
-                notification.add_address = a5_cnt_notify_increment_address(notification.address);
+                notification.add_address = scheduler_notification_increment_address(notification.address);
             }
         }
         size_t unavailable_counters = 0;

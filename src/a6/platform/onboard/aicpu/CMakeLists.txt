@@ -1,0 +1,1 @@
+../../../../a5/platform/onboard/aicpu/CMakeLists.txt

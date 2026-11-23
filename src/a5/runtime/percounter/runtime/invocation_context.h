@@ -15,6 +15,8 @@
 #include <cstdint>
 #include <type_traits>
 
+#include "common/platform_config.h"
+
 struct GlobalContext {
     // Meaningful for cooperative AIV kernels: left = 0, right = 1.
     int32_t sub_block_id;
@@ -42,7 +44,7 @@ static_assert(std::is_standard_layout_v<LocalContext> && std::is_trivially_copya
 
 namespace simpler::percounter {
 
-inline constexpr uint32_t PERCOUNTER_CONTEXT_SSBUF_OFFSET = 2816;
+inline constexpr uint32_t PERCOUNTER_CONTEXT_SSBUF_OFFSET = PLATFORM_SSBUF_SIZE == 2048 ? 1920 : 2816;
 inline constexpr uint32_t PERCOUNTER_CONTEXT_SSBUF_STRIDE = 64;
 
 struct PercounterInvocationContext {

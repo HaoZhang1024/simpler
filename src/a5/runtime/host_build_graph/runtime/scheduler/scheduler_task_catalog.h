@@ -34,7 +34,7 @@ struct SchedulerTaskCatalogOrder {
     uint32_t required_floor[PLATFORM_CORES_PER_BLOCKDIM]{};
     uint32_t next_mix_ref{UINT32_MAX};
 };
-static_assert(sizeof(SchedulerTaskCatalogOrder) == 24);
+static_assert(sizeof(SchedulerTaskCatalogOrder) == (3 + PLATFORM_CORES_PER_BLOCKDIM) * sizeof(uint32_t));
 static_assert(
     std::is_standard_layout_v<SchedulerTaskCatalogOrder> && std::is_trivially_copyable_v<SchedulerTaskCatalogOrder>
 );

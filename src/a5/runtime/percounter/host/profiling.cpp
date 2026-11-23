@@ -210,7 +210,7 @@ bool export_profile(const ProfileOwner &owner) {
         });
         if (!first_stream) streams << ',';
         first_stream = false;
-        streams << "{\"platform\":\"a5\",\"producer\":\"aicore\",\"scheduler_id\":" << worker
+        streams << "{\"platform\":\"" << SIMPLER_PLATFORM_NAME << "\",\"producer\":\"aicore\",\"scheduler_id\":" << worker
                 << ",\"worker_id\":" << worker << ",\"core_type\":\"" << (header.core_type == 0 ? "aic" : "aiv")
                 << "\",\"physical_core_id\":" << header.physical_core_id
                 << ",\"cluster_index\":" << header.cluster_index << ",\"cluster_lane\":" << header.cluster_lane

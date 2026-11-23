@@ -45,8 +45,10 @@
 #define PERCOUNTER_SSBUF
 #endif
 
-constexpr uint32_t PERCOUNTER_SSBUF_REGION_OFFSET = 2 * 1024;
-constexpr uint32_t PERCOUNTER_SSBUF_REGION_SIZE = 1024;
+// The low SSBUF addresses are reserved for callable kernels and KFC.
+static_assert(PLATFORM_SSBUF_SIZE == 2048 || PLATFORM_SSBUF_SIZE == 3072);
+constexpr uint32_t PERCOUNTER_SSBUF_REGION_OFFSET = PLATFORM_SSBUF_SIZE == 2048 ? 1792 : 2048;
+constexpr uint32_t PERCOUNTER_SSBUF_REGION_SIZE = PLATFORM_SSBUF_SIZE - PERCOUNTER_SSBUF_REGION_OFFSET;
 static_assert(PERCOUNTER_SSBUF_REGION_OFFSET + PERCOUNTER_SSBUF_REGION_SIZE == PLATFORM_SSBUF_SIZE);
 
 // A CPU reader can overlap record reuse even when it discards the snapshot.

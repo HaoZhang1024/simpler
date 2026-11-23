@@ -558,7 +558,7 @@ inline bool build_tables(
             const uint32_t chain = plan.task_chains[id];
             if (chain >= external.completion_notify_count) continue;
             const uint64_t set = external.completion_notify[chain];
-            if (a5_cnt_notify_increment_address(set) == 0) continue;
+            if (scheduler_notification_increment_address(set) == 0) continue;
             counters[id].completion_notify_address = set;
             counters[id].completion_notify_target = plan.thresholds[id];
         }
@@ -765,7 +765,7 @@ inline bool build_tables(
             if (task.active_mask == 0) node.duration = 0;
         }
     }
-    const auto schedule = make_resource_order(order_tasks, clusters);
+    const auto schedule = make_resource_order(order_tasks, clusters, PLATFORM_AIV_CORES_PER_BLOCKDIM);
     if (!schedule) return fail(BuildStatus::INVALID_ARGUMENT, -1, -1);
     const auto &global_order = schedule->tasks;
     std::vector<uint32_t> position(task_count);
@@ -966,7 +966,7 @@ inline bool build_tables(
         // that cohort keeps the GM arrival sectors, as does an unmapped one.
         // Publishing only the addresses that pass leaves the device's own
         // alias rule total over this table.
-        sync_notify[cohort] = a5_cnt_notify_increment_address(set) == 0 ? 0 : set;
+        sync_notify[cohort] = scheduler_notification_increment_address(set) == 0 ? 0 : set;
     }
     control->metadata_offset = layout.metadata_offset;
     control->metadata_ready_offset = layout.metadata_ready_offset;

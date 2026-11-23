@@ -45,7 +45,7 @@ inline constexpr uint64_t SCHEDULER_STATE_ALIGNMENT = 64;
 // AIC/AIV scalar atomicAdd/ld_dev probes support this separation for layout;
 // it is not a scalar ordering guarantee. See the data-layout contract.
 inline constexpr uint64_t SCHEDULER_GM_ATOMIC_SECTOR_BYTES = 128;
-inline constexpr uint64_t SCHEDULER_WORKER_CAPACITY = 108;
+inline constexpr uint64_t SCHEDULER_WORKER_CAPACITY = PLATFORM_MAX_CORES;
 inline constexpr uint32_t SCHEDULER_EXECUTION_TOKEN_COUNT = 1;
 inline constexpr uint32_t SCHEDULER_CLUSTER_MIX_EXECUTION = SCHEDULER_EXECUTION_TOKEN_COUNT;
 inline constexpr uint32_t SCHEDULER_MIX_MEMBER_COUNT = 1;
@@ -63,7 +63,7 @@ inline __aicore__ uint16_t scheduler_trace_source_index(uint32_t index) {
 }
 enum class SchedulerExecutionEngine : uint32_t { AIC = 0, AIV = 1 };
 inline constexpr uint32_t SCHEDULER_EXECUTION_ENGINE_COUNT = 2;
-inline constexpr uint32_t SCHEDULER_CLUSTER_CAPACITY = SCHEDULER_WORKER_CAPACITY / 3;
+inline constexpr uint32_t SCHEDULER_CLUSTER_CAPACITY = PLATFORM_MAX_BLOCKDIM;
 inline constexpr uint32_t SCHEDULER_ACTIVITY_CAPACITY = 1024;
 inline constexpr uint64_t SCHEDULER_PROFILING_TASK_TIMING_LEVEL = 1;
 inline constexpr uint64_t SCHEDULER_PROFILING_SCHEDULE_TIMING_LEVEL = 2;

@@ -1972,7 +1972,7 @@ bool create_scheduler_state(
                 throw std::runtime_error("incomplete CntNotify allocation");
             if (onboard) {
                 for (size_t i = 0; i < count; ++i) {
-                    const uint64_t increment = a5_cnt_notify_increment_address(out.addresses[i]);
+                    const uint64_t increment = scheduler_notification_increment_address(out.addresses[i]);
                     if (increment == 0 || (purpose == SchedulerNotificationPurpose::HBG_REQUIRED_COMPLETION_COUNTER &&
                                            out.add_addresses[i] != increment))
                         throw std::runtime_error("missing or invalid CntNotify slot at index " + std::to_string(i));

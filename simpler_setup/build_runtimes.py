@@ -239,6 +239,7 @@ def build_all(
     if tokens:
         logger.info(f"Building with sanitizers: {tokens} (host targets only)")
 
+    platforms_requested = platforms is not None
     if platforms is None:
         platforms = detect_buildable_platforms()
 
@@ -300,6 +301,8 @@ def build_all(
         try:
             builder = RuntimeBuilder(platform=platform)
         except (ValueError, FileNotFoundError) as e:
+            if platforms_requested:
+                raise
             logger.warning(f"  {platform}: cannot initialize builder: {e}")
             return
 

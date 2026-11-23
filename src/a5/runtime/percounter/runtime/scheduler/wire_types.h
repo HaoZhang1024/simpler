@@ -54,7 +54,7 @@ inline constexpr uint32_t PERCOUNTER_NO_SYNC = UINT32_MAX;
 
 // Payload and publication generation have one writer: the cluster's AIV0.
 // Each participant exclusively writes its own entry and idle tokens.
-struct alignas(64) PercounterMixSignal {
+struct alignas(PLATFORM_SSBUF_SIZE == 2048 ? 8 : 64) PercounterMixSignal {
     volatile uint64_t entry;
     volatile uint32_t global_order_id;
     volatile uint32_t active_mask;
@@ -75,17 +75,25 @@ struct alignas(64) PercounterMixSignal {
     volatile uint64_t fanin_pending;
     volatile uint64_t fanin_target;
 };
-static_assert(sizeof(PercounterMixSignal) == 128);
+static_assert(sizeof(PercounterMixSignal) == (PLATFORM_SSBUF_SIZE == 2048 ? 104 : 128));
 static_assert(std::is_trivially_copyable_v<PercounterMixSignal> && std::is_standard_layout_v<PercounterMixSignal>);
 
 inline constexpr uint32_t PERCOUNTER_TERMINAL_MAX_STEPS = 6;
 inline constexpr uint32_t PERCOUNTER_TERMINAL_MAX_PREREQUISITES = 8;
+
+inline constexpr uint32_t PERCOUNTER_TERMINAL_GRANTS =
+    PLATFORM_SSBUF_SIZE == 2048 ? 1 : PERCOUNTER_TERMINAL_MAX_STEPS;
 
 struct alignas(64) PercounterSsbufRegion {
     PercounterMixSignal mix[PERCOUNTER_PENDING_CAPACITY];
     volatile uint32_t mix_floor_rank;
     volatile uint32_t publish_sequence;
     volatile uint32_t publication_closed;
+#ifdef PLATFORM_PERCOUNTER_COMPACT_SSBUF
+    volatile uint32_t terminal_ready[PLATFORM_CORES_PER_BLOCKDIM];
+    volatile uint32_t terminal_grant[PERCOUNTER_TERMINAL_GRANTS];
+    PercounterInvocationContextSlot contexts[PLATFORM_CORES_PER_BLOCKDIM];
+#else
     uint8_t reserved
         [PERCOUNTER_CONTEXT_SSBUF_OFFSET - PERCOUNTER_SSBUF_REGION_OFFSET -
          PERCOUNTER_PENDING_CAPACITY * sizeof(PercounterMixSignal) - 12];
@@ -93,6 +101,7 @@ struct alignas(64) PercounterSsbufRegion {
     volatile uint32_t terminal_ready[PLATFORM_CORES_PER_BLOCKDIM];
     volatile uint32_t terminal_grant[PERCOUNTER_TERMINAL_MAX_STEPS];
     uint8_t tail_reserved[64 - sizeof(terminal_ready) - sizeof(terminal_grant)];
+#endif
 };
 static_assert(sizeof(PercounterSsbufRegion) == PERCOUNTER_SSBUF_REGION_SIZE);
 static_assert(
@@ -229,7 +238,7 @@ struct PercounterSyncNotify {
  * The ADD command register of a mapped slot. A5 CntNotify owns a 32-byte
  * register slot whose ADD alias sits 8 bytes above its SET/read base; the Host
  * publishes an address only when that alias is valid, so every nonzero entry
- * has one. This is the same rule `a5_cnt_notify_increment_address` applies on
+ * has one. This is the same rule `scheduler_notification_increment_address` applies on
  * the Host, which is why the table need not carry the result.
  */
 inline __aicore__ uint64_t percounter_notify_add_address(uint64_t read_address) {

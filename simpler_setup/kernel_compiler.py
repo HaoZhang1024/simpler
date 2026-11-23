@@ -24,6 +24,7 @@ from simpler import env_manager
 
 from .compile_paths import compiler_visible_path
 from .environment import PROJECT_ROOT
+from .platform_info import parse_platform
 from .pto_isa import ensure_pto_isa_root, read_pto_isa_pin
 from .toolchain import (
     Aarch64GxxToolchain,
@@ -205,18 +206,10 @@ class KernelCompiler:
         self.platform = platform
         self.project_root = PROJECT_ROOT
 
-        # Map platform to architecture directory
-        if platform in ("a2a3", "a2a3sim"):
-            self.platform_dir = self.project_root / "src" / "a2a3" / "platform"
-        elif platform in ("a5", "a5sim"):
-            self.platform_dir = self.project_root / "src" / "a5" / "platform"
-        elif platform == "wsesim":
-            self.platform_dir = self.project_root / "src" / "wse" / "platform"
-        else:
-            raise ValueError(f"Unknown platform: {platform}")
+        arch, variant = parse_platform(platform)
+        self.platform_dir = self.project_root / "src" / arch / "platform"
 
-        # Create toolchain objects based on platform
-        if platform in ("a2a3", "a5"):
+        if variant == "onboard":
             env_manager.ensure("ASCEND_HOME_PATH")
             self.ccec = CCECToolchain(platform)
             self.aarch64 = Aarch64GxxToolchain()
@@ -288,16 +281,7 @@ class KernelCompiler:
         Returns:
             List of include directory paths, in search order.
         """
-        # Map platform to runtime architecture
-        if self.platform in ("a2a3", "a2a3sim"):
-            arch = "a2a3"
-        elif self.platform in ("a5", "a5sim"):
-            arch = "a5"  # Phase 2: A5 uses A5 runtime
-        elif self.platform == "wsesim":
-            arch = "wse"
-        else:
-            arch = "a2a3"
-
+        arch, _ = parse_platform(self.platform)
         runtime_dir = str(self.project_root / "src" / arch / "runtime" / runtime_name / "runtime")
         runtime_common_dir = str(self.project_root / "src" / arch / "runtime" / runtime_name / "common")
         common_dir = str(self.project_root / "src" / "common" / "task_interface")
@@ -322,13 +306,13 @@ class KernelCompiler:
         headers (e.g. ``intrinsic.h``) can pull shared platform headers like
         ``common/dma_workspace.h`` regardless of what the call site passes.
         """
-        platform_dirs = [str(self.platform_dir / "include")] if self.platform == "wsesim" else []
+        platform_dirs = [str(self.platform_dir / "include")] if self.platform in ("wsesim", "a5", "a5sim", "a6") else []
         include_dirs = platform_dirs + [
             str(Path(__file__).resolve().parent / "incore"),
             str(self.project_root / "src" / "common" / "platform" / "include"),
         ]
-        if self.platform in ("a5", "a5sim"):
-            include_dirs.append(str(self.project_root / "src" / "a5" / "runtime"))
+        if self.platform in ("a5", "a5sim", "a6"):
+            include_dirs.append(str(self.platform_dir.parent / "runtime"))
         return include_dirs
 
     def _incore_feature_defines(self) -> list[str]:
@@ -368,16 +352,7 @@ class KernelCompiler:
         Returns:
             (include_dirs, source_files) — both as absolute paths, or ([], [])
         """
-        # Map platform to runtime architecture
-        if self.platform in ("a2a3", "a2a3sim"):
-            arch = "a2a3"
-        elif self.platform in ("a5", "a5sim"):
-            arch = "a5"  # Phase 2: A5 uses A5 runtime
-        elif self.platform == "wsesim":
-            arch = "wse"
-        else:
-            arch = "a2a3"
-
+        arch, _ = parse_platform(self.platform)
         config_path = self.project_root / "src" / arch / "runtime" / runtime_name / "build_config.py"
         if not config_path.is_file():
             return [], []
@@ -753,7 +728,8 @@ class KernelCompiler:
             {
                 "a2a3": ToolchainType.CCEC,
                 "a2a3sim": ToolchainType.HOST_GXX_15,
-                "a5": ToolchainType.CCEC,  # Phase 1: A5 uses same as A2A3
+                "a5": ToolchainType.CCEC,
+                "a6": ToolchainType.CCEC,
                 "a5sim": ToolchainType.HOST_GXX_15,  # Phase 1: A5sim uses same as A2A3sim
                 "wsesim": ToolchainType.HOST_GXX_15,
             },

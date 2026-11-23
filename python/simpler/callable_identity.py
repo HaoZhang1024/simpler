@@ -86,6 +86,8 @@ def _platform_arch(platform: str) -> str:
         return "a2a3"
     if platform in ("a5", "a5sim"):
         return "a5"
+    if platform == "a6":
+        return "a6"
     if platform == "wsesim":
         return "wse"
     if not platform:

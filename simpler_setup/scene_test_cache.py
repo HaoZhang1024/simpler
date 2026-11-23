@@ -237,7 +237,7 @@ def compile_incore_artifact_key(
     metadata: Mapping[str, Any], source: str | Path, include_dirs: Iterable[str | Path]
 ) -> str:
     """Return a content key for one independently compiled incore artifact."""
-    if metadata.get("platform") in ("a2a3", "a5"):
+    if metadata.get("platform") in ("a2a3", "a5", "a6"):
         from .elf_parser import ELF_TEXT_POLICY_VERSION  # noqa: PLC0415
 
         metadata = {**metadata, "text_extraction_policy": ELF_TEXT_POLICY_VERSION}

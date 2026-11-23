@@ -17,8 +17,8 @@
  * supervises progress, while AICore lanes resolve dependencies and dispatch.
  *
  * Startup and retirement are the runtime's: the lane reports through the
- * handshake, waits for the AICPU's READY and the DATA_MAIN_BASE release, and
- * after EXIT answers the COND nonce exactly as the resident executor does.
+ * handshake, starts on the platform's release signal, and answers the
+ * AICPU's retirement nonce after its last operation.
  *
  * Header-only because aicore_executor.cpp is compiled by name into unit tests.
  */
@@ -118,6 +118,9 @@ struct LaneConfig {
     PERCOUNTER_SSBUF PercounterSsbufRegion *ssbuf;
     uint32_t segment_begin[PERCOUNTER_LIST_COUNT];
     uint32_t segment_count[PERCOUNTER_LIST_COUNT];
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+    __gm__ AicoreTeardownControl *teardown_gate;
+#endif
 };
 
 inline __aicore__ void percounter_publish_stream_records(ChipSwimlaneAicoreLocalState *profile) {
@@ -409,8 +412,12 @@ inline __aicore__ void percounter_publish_completion(
 
 /** True when the lane should stop: EXIT is signalled or some lane has failed. */
 inline __aicore__ bool percounter_should_stop(const LaneConfig &cfg) {
-    return static_cast<uint32_t>(read_reg(RegId::DATA_MAIN_BASE)) == AICORE_EXIT_SIGNAL ||
-           percounter_gm_read(cfg.control->lane_error) != 0;
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+    const bool exit_requested = percounter_gm_read(cfg.teardown_gate->exit_request) != 0;
+#else
+    const bool exit_requested = static_cast<uint32_t>(read_reg(RegId::DATA_MAIN_BASE)) == AICORE_EXIT_SIGNAL;
+#endif
+    return exit_requested || percounter_gm_read(cfg.control->lane_error) != 0;
 }
 
 struct PercounterSlot {
@@ -737,7 +744,7 @@ inline __aicore__ bool percounter_clear_mix_signal(const LaneConfig &cfg, uint64
         percounter_ssbuf_store_field(&cfg.ssbuf->publication_closed, uint32_t{0});
         percounter_ssbuf_store_release(&cfg.ssbuf->publish_sequence, 0);
         if (cfg.control->terminal.step_count != 0) {
-            for (uint32_t phase = 0; phase < PERCOUNTER_TERMINAL_MAX_STEPS; ++phase)
+            for (uint32_t phase = 0; phase < PERCOUNTER_TERMINAL_GRANTS; ++phase)
                 percounter_ssbuf_store_field(&cfg.ssbuf->terminal_grant[phase], uint32_t{0});
             for (uint32_t role = 0; role < PLATFORM_CORES_PER_BLOCKDIM; ++role)
                 percounter_ssbuf_store_field(&cfg.ssbuf->terminal_ready[role], uint32_t{0});
@@ -1732,13 +1739,13 @@ inline __aicore__ bool percounter_run_terminal(const LaneConfig &cfg, Percounter
         if (percounter_should_stop(cfg)) return false;
         const uint32_t id = plan->steps[phase];
         const auto metadata = percounter_metadata(cfg, id);
-        const bool mix = metadata.active_mask == 7;
+        const bool mix = metadata.active_mask == (1U << PLATFORM_CORES_PER_BLOCKDIM) - 1;
         const uint32_t blocks = metadata.block_num;
         const bool singleton = !mix && blocks == 1;
         if (!mix && (cfg.cluster_lane == 0 || (singleton && (cfg.cluster_lane != 1 || cfg.cluster_index != 0))))
             continue;
         const uint32_t role = mix ? cfg.cluster_lane : 1;
-        uint32_t block = singleton ? 0 : cfg.cluster_index * 2 + cfg.cluster_lane - 1;
+        uint32_t block = singleton ? 0 : cfg.cluster_index * PLATFORM_AIV_CORES_PER_BLOCKDIM + cfg.cluster_lane - 1;
         if (mix) {
             // Spread narrower waves across the topology in cluster order.
             const uint32_t limit = ((cfg.cluster_index + 1) * blocks) / cfg.cluster_count;
@@ -1762,13 +1769,14 @@ inline __aicore__ bool percounter_run_terminal(const LaneConfig &cfg, Percounter
         // predecessor still runs on other lanes.
         if (mix) percounter_ssbuf_store_release(&group[cfg.cluster_lane], token);
 
-        auto &grant = cfg.ssbuf->terminal_grant[phase];
+        auto &grant = cfg.ssbuf->terminal_grant[PERCOUNTER_TERMINAL_GRANTS == 1 ? 0 : phase];
         if (cfg.cluster_lane == 1) {
             const bool sync = mix && metadata.sync_index != PERCOUNTER_NO_SYNC;
             PercounterSyncNotify notify{0, 0};
             if (mix) {
                 for (uint32_t iteration = 0;
-                     percounter_ssbuf_load_field(group) < token || percounter_ssbuf_load_field(group + 2) < token;
+                     percounter_ssbuf_load_field(group) < token ||
+                     (PLATFORM_AIV_CORES_PER_BLOCKDIM == 2 && percounter_ssbuf_load_field(group + 2) < token);
                      ++iteration)
                     if (!percounter_terminal_poll(cfg, state, iteration)) return false;
                 percounter_memory_barrier();
@@ -1788,9 +1796,9 @@ inline __aicore__ bool percounter_run_terminal(const LaneConfig &cfg, Percounter
                      ++iteration)
                     if (!percounter_terminal_poll(cfg, state, iteration)) return false;
             }
-            percounter_ssbuf_store_release(&grant, uint32_t{1});
+            percounter_ssbuf_store_release(&grant, token);
         } else {
-            for (uint32_t iteration = 0; percounter_ssbuf_load_field(&grant) == 0; ++iteration)
+            for (uint32_t iteration = 0; percounter_ssbuf_load_field(&grant) < token; ++iteration)
                 if (!percounter_terminal_poll(cfg, state, iteration)) return false;
             percounter_memory_barrier();
         }
@@ -1837,7 +1845,10 @@ inline __aicore__ void percounter_lane_loop(LaneConfig &cfg) {
 }
 
 inline __aicore__ AicoreWorkWindow
-run_percounter_lane(__gm__ PercounterControl *control, int block_idx, CoreType core_type) {
+run_percounter_lane(
+    __gm__ PercounterControl *control, int block_idx, CoreType core_type,
+    __gm__ AicoreTeardownControl *teardown_gate = nullptr
+) {
     // The caller invalidates the data cache after observing AICPU READY.
     // Configuration is immutable after that publication; use cached loads here.
     // Progress, dependency and exit words retain their bypass/atomic accesses.
@@ -1857,6 +1868,11 @@ run_percounter_lane(__gm__ PercounterControl *control, int block_idx, CoreType c
     }
 
     LaneConfig cfg{};
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+    cfg.teardown_gate = teardown_gate;
+#else
+    (void)teardown_gate;
+#endif
     PercounterScalarTrace scalar{};
     PercounterScalarBinding scalar_binding;
     uint32_t task_count = 0;
@@ -1989,17 +2005,42 @@ run_percounter_lane(__gm__ PercounterControl *control, int block_idx, CoreType c
     return cfg.work_window;
 }
 
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+inline __aicore__ bool percounter_wait_for_gm_release(
+    __gm__ Handshake *handshake, __gm__ PercounterControl *control, uint64_t timeout_cycles
+) {
+    // The teardown tail belongs to the AICPU. READY or startup abort proves
+    // that its previous nonce has been cleared for this launch.
+    const uint64_t ready_wait_start = get_sys_cnt_aicore();
+    bool timed_out = false;
+    while (true) {
+        percounter_observe_cache_line(handshake);
+        const uint32_t mode = handshake->aicpu_ready;
+        if (mode == SCHEDULER_RUNTIME_MODE_PERCOUNTER) {
+            return !timed_out;
+        }
+        if (mode == AICORE_EXIT_SIGNAL) return false;
+        if (!timed_out && scheduler_watchdog_expired(ready_wait_start, get_sys_cnt_aicore(), timeout_cycles)) {
+            percounter_gm_compare_exchange(
+                control->lane_error, uint64_t{0}, static_cast<uint64_t>(SchedulerGraphResult::TIMEOUT)
+            );
+            timed_out = true;
+        }
+        SPIN_WAIT_HINT();
+    }
+}
+#endif
+
 /**
  * A percounter AICore, from its report to the COND nonce acknowledgement.
  *
  * The same startup and retirement as the resident executor, minus the
  * scheduler bootstrap: the host already built every table, so a lane goes from
- * READY straight to the register release and into its loop.
+ * READY to execution through its platform release gate.
  */
 inline __aicore__ void percounter_aicore_execute(__gm__ Runtime *runtime, int block_idx, CoreType core_type) {
-    __gm__ Handshake *handshake =
-        (__gm__ Handshake *)(&reinterpret_cast<__gm__ RuntimeSharedState *>(runtime->dev.shared_state_addr)
-                                  ->workers[block_idx]);
+    auto *shared = reinterpret_cast<__gm__ RuntimeSharedState *>(runtime->dev.shared_state_addr);
+    auto *handshake = &shared->workers[block_idx];
     __gm__ PercounterControl *control =
         reinterpret_cast<__gm__ PercounterControl *>(runtime->dev.scheduler_bootstrap.worker_context_base);
     percounter_observe_cache_line(handshake);
@@ -2027,6 +2068,10 @@ inline __aicore__ void percounter_aicore_execute(__gm__ Runtime *runtime, int bl
     percounter_observe_data_cache(reinterpret_cast<__gm__ void *>(control));
     const uint64_t timeout_cycles = percounter_gm_read(control->scheduler_timeout_cycles);
     bool released = false;
+#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
+    released = percounter_wait_for_gm_release(handshake, control, timeout_cycles);
+    if (released) percounter_observe_data_cache(reinterpret_cast<__gm__ void *>(control));
+#else
     uint32_t signal = static_cast<uint32_t>(read_reg(RegId::DATA_MAIN_BASE));
     const uint64_t ready_wait_start = get_sys_cnt_aicore();
     while (handshake->aicpu_ready != SCHEDULER_RUNTIME_MODE_PERCOUNTER && signal != AICORE_EXIT_SIGNAL) {
@@ -2057,9 +2102,11 @@ inline __aicore__ void percounter_aicore_execute(__gm__ Runtime *runtime, int bl
         }
         released = signal == AICPU_IDLE_TASK_ID;
     }
+#endif
     if (released) {
         write_reg(RegId::COND, AICORE_IDLE_VALUE);
-        const auto work_window = run_percounter_lane(control, block_idx, core_type);
+        const auto work_window =
+            run_percounter_lane(control, block_idx, core_type, &shared->teardown_gates[block_idx]);
         handshake->work_start_cycle = work_window.start_cycle;
         handshake->work_end_cycle = work_window.end_cycle;
         dcci(handshake, SINGLE_CACHE_LINE, CACHELINE_OUT);
@@ -2071,10 +2118,12 @@ inline __aicore__ void percounter_aicore_execute(__gm__ Runtime *runtime, int bl
     // supervisor has its own progress watchdog, so this wait needs none. EXIT
     // is published only after the return gate is reset, so wait for it before
     // acknowledging, and complete the preceding GM writes first.
+#ifndef PLATFORM_PERCOUNTER_GM_LIFECYCLE
     wait_for_aicpu_exit_signal();
+#endif
     OUT_OF_ORDER_STORE_BARRIER();
     acknowledge_aicore_cond_nonce_and_wait(
-        &reinterpret_cast<__gm__ RuntimeSharedState *>(runtime->dev.shared_state_addr)->teardown_gates[block_idx]
+        &shared->teardown_gates[block_idx]
     );
 }
 
