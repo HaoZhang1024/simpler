@@ -139,6 +139,31 @@ python tests/fdwic/a6_dsv41_scheduler/analysis/t25_phases.py \
 
 **黄区回填在下表。** 两步脚本均打印 `t25-blocks-feedback.txt` 路径。请将文件的三行原文粘在表下。每组字段为样本数、最小、中位、最大耗时，单位 µs。`tails` 列出最大结束 tick 对应的 block_idx、head、worker、起止偏移与耗时，起止偏移以本轮首块开始为零。54 块逐项明细留在同目录 `t25-blocks.json`。
 
+两步完成。第一步旧档读出三轮均 `identity=missing`（旧 percounter 记录无法恢复逻辑块号），按文档约定转第二步，用带逻辑块标记的 func20 在原 A6 卡（设备 0）补采，三轮 `identity=observed`，每轮 54 个逻辑块各出现一次，warmup=1 + 3 正式轮，golden 全过（result.json: passed=true, numerical_validation=true）。补采轮 span 29.257–31.178 µs，与旧轮 28.802–31.195 µs 并列扰动小。
+
+| 正式轮 | 旧档末 worker | 来源（旧档 / 补采） | 单 head 中位 µs | 双 head 中位 µs | 该来源的末块 block_idx / head / worker |
+| ------ | ------------- | ------------------- | --------------: | --------------: | -------------------------------------- |
+| 1      | 54            | 补采                |          11.701 |          21.805 | 8 / [8, 62] / 98                       |
+| 2      | 105           | 补采                |          11.674 |          21.934 | 8 / [8, 62] / 90                       |
+| 3      | 90            | 补采                |           11.75 |          21.973 | 6 / [6, 60] / 84                       |
+
+补采 `t25-blocks-feedback.txt` 三行原文（内网输出目录：`build/swa-a6-MxF89z/t25-phases-jj11ycyr/capture/rank0/`）：
+
+```text
+run1 {"span_us": 31.096, "tails": [{"worker": 98, "block_idx": 8, "heads": [8, 62], "start_us": 9.358, "end_us": 31.096, "duration_us": 21.738}], "identity": "observed", "single": {"n": 44, "min_us": 11.389, "median_us": 11.701, "max_us": 12.013}, "double": {"n": 10, "min_us": 21.65, "median_us": 21.805, "max_us": 22.285}}
+run2 {"span_us": 31.178, "tails": [{"worker": 90, "block_idx": 8, "heads": [8, 62], "start_us": 9.259, "end_us": 31.178, "duration_us": 21.919}], "identity": "observed", "single": {"n": 44, "min_us": 11.384, "median_us": 11.674, "max_us": 12.152}, "double": {"n": 10, "min_us": 21.629, "median_us": 21.934, "max_us": 22.317}}
+run3 {"span_us": 29.257, "tails": [{"worker": 84, "block_idx": 6, "heads": [6, 60], "start_us": 7.456, "end_us": 29.257, "duration_us": 21.801}], "identity": "observed", "single": {"n": 44, "min_us": 11.383, "median_us": 11.75, "max_us": 12.032}, "double": {"n": 10, "min_us": 21.655, "median_us": 21.973, "max_us": 22.331}}
+```
+
+旧档第一步 `t25-blocks-feedback.txt` 三行原文（内网：`build/swa-t25-lk1vgyf9/t25-l4-3evzw1k0/B1/rank0/`，identity 均为 missing）：
+
+```text
+run1 {"span_us": 29.271, "tails": [{"worker": 54, "block_idx": null, "heads": [], "start_us": 8.007, "end_us": 29.271, "duration_us": 21.264}], "identity": "missing"}
+run2 {"span_us": 31.195, "tails": [{"worker": 105, "block_idx": null, "heads": [], "start_us": 9.89, "end_us": 31.195, "duration_us": 21.305}], "identity": "missing"}
+run3 {"span_us": 28.802, "tails": [{"worker": 90, "block_idx": null, "heads": [], "start_us": 17.796, "end_us": 28.802, "duration_us": 11.006}], "identity": "missing"}
+```
+
+要点：补采三轮末块均为双 head 块（21.7–21.9 µs）；单 head 中位 11.67–11.75 µs（比原 L4 混合中位 11.047 高约 0.65 µs，与文档所述含标记写出开销一致）；双 head 21.8–22.0 µs（两 head 合计比两个单块省约 1.5 µs）；旧档 run1/run2 末块时长 ~21.3 µs 疑似同为双 head，run3 末块 11.0 µs 疑似单 head。逐块明细保留在内网两处 `t25-blocks.json`
 | 正式轮 | 旧档末 worker | 来源（旧档 / 补采） | 单 head 中位 µs | 双 head 中位 µs | 该来源的末块 block_idx / head / worker |
 | --- | --- | --- | ---: | ---: | --- |
 | 1 | 待填 | 待填 | 待填 | 待填 | 待填 |
