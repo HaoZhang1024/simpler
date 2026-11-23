@@ -62,7 +62,24 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def build_probe(case, out, isa, platform, block_plan=None):
+def reciprocal_quant(header):
+    # The divisor is the normal FP32 power of two with biased exponent nonzero.
+    # Its reciprocal has biased exponent 254 - nonzero. Keep the zero mask.
+    anchor = "vshls((RegTensor<int32_t>&)divisor, nonzero, 23, all, MODE_ZEROING);"
+    if header.count(anchor) != 1:
+        raise ValueError("Expected the scale exponent in func20")
+    header = header.replace(anchor, """vmuls(nonzero, nonzero, -1, all, MODE_ZEROING);
+                vadds(nonzero, nonzero, 254, all, MODE_ZEROING);
+                vshls((RegTensor<int32_t>&)divisor, nonzero, 23, all, MODE_ZEROING);""")
+    for lane in range(4):
+        call = f"vdiv(x{lane}, x{lane}, divisor, all, MODE_ZEROING);"
+        if header.count(call) != 1:
+            raise ValueError(f"Expected one scale division for x{lane}")
+        header = header.replace(call, call.replace("vdiv", "vmul"))
+    return header
+
+
+def build_probe(case, out, isa, platform, block_plan=None, reciprocal=False):
     sys.path[:0] = [str(ROOT), str(ROOT / "python")]
     from simpler_setup.elf_parser import extract_text_section
     from simpler_setup.kernel_compiler import KernelCompiler
@@ -102,6 +119,11 @@ def build_probe(case, out, isa, platform, block_plan=None):
     if digest(source) != original["source_sha256"] or hashlib.sha256(compile_kernel(source)).hexdigest() != original["binary_sha256"]:
         raise ValueError("func20 source or rebuilt control machine code differs from the measured case")
     diag = out / source.name
+    if reciprocal:
+        if block_plan is not None:
+            raise ValueError("The reciprocal comparison uses the 64-block phase probe")
+        header = source.with_suffix(".hpp")
+        (out / header.name).write_text(reciprocal_quant(header.read_text()))
     if block_plan is None:
         diag.write_text(instrument(source.read_text()))
     else:
@@ -172,12 +194,15 @@ def main():
     parser.add_argument("--device", type=int, required=True)
     parser.add_argument("--a6-query", type=Path)
     parser.add_argument("--block-plan", type=Path, help="A6 measured t25-54 plan; collect block identity only")
+    parser.add_argument("--quant-reciprocal", action="store_true", help="64-block probe using exact power-of-two reciprocals")
     parser.add_argument("--pto-isa", type=Path, default=ROOT / "build/pto-isa")
     args = parser.parse_args()
     if args.device < 0 or (args.platform == "a6" and not args.a6_query):
         parser.error("Provide the assigned device and the A6 query executable")
     if args.block_plan and args.platform != "a6":
         parser.error("--block-plan requires A6")
+    if args.block_plan and args.quant_reciprocal:
+        parser.error("--quant-reciprocal uses the original 64-block plan")
     if "TASK_DEVICE" in os.environ:
         allocated_device(parser, args.device)
     elif args.platform == "a5":
@@ -186,7 +211,8 @@ def main():
     case = args.case.resolve()
     out = Path(tempfile.mkdtemp(prefix="t25-phases-", dir=case.parent))
     print(f"Output: {out}", flush=True)
-    build_probe(case, out, args.pto_isa.resolve(), args.platform, args.block_plan.resolve() if args.block_plan else None)
+    build_probe(case, out, args.pto_isa.resolve(), args.platform, args.block_plan.resolve() if args.block_plan else None,
+                reciprocal=args.quant_reciprocal)
     dest = out / "capture"
     env = dict(os.environ, TASK_DEVICE=str(args.device), DSV41_RUNNER=str(out / "host/native-runner"), DSV41_PYTHON=sys.executable)
     subprocess.run(["bash", SUITE / "production/run.sh", out / "bundle", args.l4_lib.resolve(), dest,
@@ -200,7 +226,8 @@ def main():
         from t25_blocks import report
         report(rank, require_identity=True)
         return
-    lines = [f"{args.platform} device={args.device} warmup=1 rounds=3 golden=PASS unit=us " +
+    variant = " reciprocal" if args.quant_reciprocal else ""
+    lines = [f"{args.platform}{variant} device={args.device} warmup=1 rounds=3 golden=PASS unit=us " +
              f"source={subprocess.check_output(['git', '-C', ROOT, 'rev-parse', '--short', 'HEAD'], text=True).strip()}"]
     for i in (1, 2, 3):
         row = summarize(rank / f"run{i}", 54 if args.platform == "a6" else 64)

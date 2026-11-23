@@ -1,0 +1,130 @@
+{
+  "A1": [
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.178,
+      "rotate": 0.371,
+      "quant": 4.282,
+      "store": 0.559,
+      "inner": 6.431,
+      "outer_L4": 7.23
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.189,
+      "rotate": 0.37,
+      "quant": 4.277,
+      "store": 0.569,
+      "inner": 6.445,
+      "outer_L4": 7.234
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.181,
+      "rotate": 0.37,
+      "quant": 4.245,
+      "store": 0.557,
+      "inner": 6.378,
+      "outer_L4": 7.229
+    }
+  ],
+  "B1": [
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.193,
+      "rotate": 0.443,
+      "quant": 4.21,
+      "store": 0.561,
+      "inner": 6.405,
+      "outer_L4": 7.215
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.169,
+      "rotate": 0.441,
+      "quant": 4.205,
+      "store": 0.555,
+      "inner": 6.348,
+      "outer_L4": 7.219
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.179,
+      "rotate": 0.442,
+      "quant": 4.205,
+      "store": 0.565,
+      "inner": 6.388,
+      "outer_L4": 7.306
+    }
+  ],
+  "B2": [
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.175,
+      "rotate": 0.442,
+      "quant": 4.207,
+      "store": 0.562,
+      "inner": 6.41,
+      "outer_L4": 7.211
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.179,
+      "rotate": 0.441,
+      "quant": 4.216,
+      "store": 0.56,
+      "inner": 6.391,
+      "outer_L4": 7.232
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.182,
+      "rotate": 0.444,
+      "quant": 4.213,
+      "store": 0.566,
+      "inner": 6.421,
+      "outer_L4": 7.261
+    }
+  ],
+  "A2": [
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.168,
+      "rotate": 0.369,
+      "quant": 4.279,
+      "store": 0.564,
+      "inner": 6.399,
+      "outer_L4": 7.261
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.178,
+      "rotate": 0.37,
+      "quant": 4.261,
+      "store": 0.557,
+      "inner": 6.373,
+      "outer_L4": 7.241
+    },
+    {
+      "first": 64,
+      "later": 0,
+      "load": 1.187,
+      "rotate": 0.37,
+      "quant": 4.29,
+      "store": 0.566,
+      "inner": 6.434,
+      "outer_L4": 7.223
+    }
+  ]
+}

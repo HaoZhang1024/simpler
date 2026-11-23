@@ -7,11 +7,22 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from t25_phases import SUITE, instrument, summarize
+from t25_phases import SUITE, instrument, reciprocal_quant, summarize
 from t25_blocks import analyze, mark_block
 
 
 class PhaseTest(unittest.TestCase):
+    def test_quant_reciprocal(self):
+        header = (SUITE / "kernels/pypto_lib_latest/vendor/external/o_quant_vf.hpp").read_text()
+        alt = reciprocal_quant(header)
+        self.assertNotIn("vdiv(", alt)
+        self.assertEqual(alt.count(", divisor, all, MODE_ZEROING);"), 4)
+        self.assertEqual(alt.count(", floor_mask, all, MODE_ZEROING);"), 4)
+        for exponent in range(1, 248):
+            divisor = struct.unpack("<f", struct.pack("<I", exponent << 23))[0]
+            inverse = struct.unpack("<f", struct.pack("<I", (254-exponent) << 23))[0]
+            self.assertEqual(divisor * inverse, 1.0)
+
     def test_54_block_identity_and_tail(self):
         src = (SUITE / "kernels/pypto_lib_latest/vendor/external/o_quant_vf.cpp").read_text()
         self.assertIn("row[3] = get_block_num(args);", mark_block(src))
