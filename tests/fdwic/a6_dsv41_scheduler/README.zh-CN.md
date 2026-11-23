@@ -1,6 +1,6 @@
 # A6 单卡 SWA · percounter
 
-**黄区当前任务是 A6 t25 的量化对照。** 使用原始 64 块 plan，每块计算 1 个 head。交接页顶部有一段可直接执行的 Bash 命令，以及粘贴结果的位置。[执行命令与回填位置](doc/a6-swa-performance-progress.zh-CN.md#a6-quant-abba)
+**黄区当前只需离线提取 t25 的实际量化指令。** 四批时延已回填。用已有 A1、B1 产物各提取一次 `quant_vf<80>`，将脚本打印的两批摘要贴回交接页。[执行命令](doc/a6-swa-performance-progress.zh-CN.md#a6-quant-asm) · [结果回填位置](doc/a6-swa-performance-progress.zh-CN.md#a6-quant-asm-feedback)
 
 同为 64 块时，A6 首块量化比 A5 多 3.548 µs。日常运行沿用 54 块 replay，A6 同卡 L0 AICore 平均节省 4.870 µs。54 块的逐块采集已结束，补采三轮的末块均为双 head 块。[量化分段](doc/a6-swa-performance-progress.zh-CN.md#1a-t25-首块分段) · [54 块结果](doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
 
