@@ -13,6 +13,8 @@
 
 ## 当前任务 · A6 percounter 的 IPC 启动与退出
 
+本轮沿用 HBG 实卡确认的 IPC0/IPC4 映射和已有的 CntNotify 测量。待验证的是 percounter 切换后的连续运行、输出正确性，以及相对 GM 版的整图时延。旧 GM 版在同卡运行一组，作为本轮 L0 对照。[寄存器实测与适用范围](a6-a5-comparison.zh-CN.md#寄存器gm-与同步)
+
 进入个人 fork 的 `percounter` 分支根目录，加载原 A6 CANN 环境，使用已分配的设备 0。脚本分别从原版 GM 提交 `be6e23f0e` 和当前 IPC 提交构建 percounter 和 dispatcher，复用原 trial 的 t25=54 计划、runner、callable 和输入。同卡、同工具链，两组各预热 1 轮、正式 10 轮，采无打点 L0。
 
 ```bash

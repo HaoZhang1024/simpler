@@ -75,13 +75,11 @@ A6 由上报的物理核号取资源和子窗口。例如 V 核 68 位于 die0�
 | AICore → AICPU，回送本轮退出确认值 | 核写 `COND`，AICPU 从该子核窗口 `+0x5108` 读回 | HBG 的核用 `set_ipc_reg_4(value)` 写 IPC4，CP1 从同一子核窗口 `+0x5520` 以 64 位读回 |
 | CntNotify SET / INC | 同址 SET 读写已测，INC 别名为 SET+0x08 | 同址 SET 读写和 INC 已测，现场 INC 别名为 SET+0x20 |
 
-A6 的偏移从目标子核基址起算。每个 HAL 资源窗为 2 MiB，C 用窗首，V 用窗首 + 1 MiB。同事的 HBG 迁移基线在 54C + 54V 上完成启动和退出，30 个可写缓冲区通过校验。早期核端仍写旧 COND 时，CP1 在 `+0x5520` 收不到回执；核端改写 IPC4 后握手通过。[HBG 的窗口、寄存器指令和实卡对照](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L169-L194)
-
 | 哪次测试 | 已确认的结果 | 测量范围 |
 | --- | --- | --- |
 | 黄区早期 percounter，A6 沿用 A5 的两组地址与核侧指令 | AICPU 写 `+0xD0` 后能自行回读 `0x7ffffffd`，AIC 读 `DATA_MAIN_BASE` 未看到同值，启动等待超时。反向的 `set_cond()` 与 `+0x5108` 也未打通 | 旧组合的跨端连通性。[现场报告](https://github.com/HaoZhang1024/simpler/blob/cf78bd31a/tests/fdwic/a6_dsv41_scheduler/doc/a6-result.md#L30-L37) |
-| 同事 HBG，A6 IPC0 / IPC4 | 两个方向都已在上述 SWA 基线跑通；CP1 侧偏移和核侧指令都随平台切换 | 启动与退出的功能验证。[实卡记录与产物指令](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L182-L194) |
-| CntNotify SET / INC 与 GM 同址访问 | A6 的 INC 别名经 SET 读回终值校验；96 核和 108 核的逐名次时延见下表 | 多核对同一计数地址的并发访问。IPC0 发命令至 IPC4 收回执的单次往返时延尚缺独立测量 |
+| A6 HBG SWA 迁移基线（`a6-migrate-case`），IPC0 / IPC4 | 核端写旧 COND 时，CP1 在 `+0x5520` 收不到回执。改写 IPC4 后，54C + 54V 全部完成启动与退出，30 个可写缓冲区通过校验 | 实卡已验证命令和回执双向连通，单次 IPC 往返时延未单独测量。[实卡记录与产物指令](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L182-L194) |
+| CntNotify SET / INC 与 GM 同址访问 | A6 的 INC 别名经 SET 读回终值校验；96 核和 108 核的逐名次时延见下表 | 多核对同一计数地址的并发访问 |
 | 本分支 percounter，A6 IPC0 / IPC4 | 蓝区已在 A6 核侧产物核对读 IPC0、写 IPC4，CP1 产物核对 64 位加载和存储，CPU 用例核对两个窗口偏移和高低 32 位 | A6 percounter 实卡功能、连续运行与 L0 GM/IPC 整图对照由黄区回填。[命令与结果位置](a6-swa-performance-progress.zh-CN.md#ipc-lifecycle) |
 
 **当前 percounter 协议。** AICPU 在 GM 发布本轮 READY 和拓扑后，通过 IPC0 放行或发 EXIT。核结束后，从 GM 取本轮退出确认值并写 IPC4。AICPU 核对回执、关闭窗口并回读，再在 GM 允许核返回。C 核与 V 核在 t22 内仍用 SSBUF 传递 `fanin_ready`。本页已有的 A6 AICore **239.870 µs** 和 Device **305.495 µs** 来自迁移初期的 GM 启动与退出检查版本。[核侧寄存器访问](../../../../src/a5/platform/onboard/aicore/inner_kernel.h) · [AICPU 确认与放行](../../../../src/a6/platform/shared/aicpu/platform_regs.cpp)
