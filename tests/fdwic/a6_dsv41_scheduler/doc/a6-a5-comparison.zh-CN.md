@@ -59,12 +59,15 @@ A6 现场 query 还报告 8 个 AICPU、L1 512 KiB、L0A/L0B 各 64 KiB、L0C 25
 
 ## 寄存器、GM 与同步
 
-| 通路 | A5 | A6 的实测和 runtime 选择 |
+| 控制方向或操作 | A5 | A6 实卡验证的通路 |
 | --- | --- | --- |
-| DATA_MAIN_BASE，0xD0 | percounter 通过寄存器传启动和退出信号 | AICPU 写后可从 MMIO 回读，AIC 侧 SPR 未观察到同值。启动及退出分别走 GM 的 `aicpu_ready`、`exit_request` |
-| COND，0x5108 | A5 上有寄存器交互路径，具体角色取决于 runtime | 现场探针中 AIC set_cond 与 AICPU MMIO 未互通；GM-only 探针跳过该偏移 |
+| AICPU → AICore，放行或发送 EXIT | AICPU 写目标子核窗口 `+0xD0`，核读 `DATA_MAIN_BASE` | HBG 的 AICPU（CP1）以 64 位写目标子核窗口 `+0x5500`，核用 `get_ipc_reg_0()` 读 IPC0 |
+| AICore → AICPU，回送本轮退出确认值 | 核写 `COND`，AICPU 从该子核窗口 `+0x5108` 读回 | HBG 的核用 `set_ipc_reg_4(value)` 写 IPC4，CP1 从同一子核窗口 `+0x5520` 以 64 位读回 |
 | CntNotify SET / INC | 同址 SET 读写已测，INC 别名为 SET+0x08 | 同址 SET 读写和 INC 已测，现场 INC 别名为 SET+0x20 |
-| IPC，0x5500 / 0x5520 | HBG 通路 | 本例 percounter 未使用，现场记录未验证 |
+
+A6 的偏移从目标子核基址起算。每个 HAL 资源窗为 2 MiB，C 用窗首，V 用窗首 + 1 MiB。同事的 HBG 迁移基线在 54C + 54V 上完成启动和退出，30 个可写缓冲区通过校验。早期核端仍写旧 COND 时，CP1 在 `+0x5520` 收不到回执；核端改写 IPC4 后握手通过。[HBG 的窗口、寄存器指令和实卡对照](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L169-L194)
+
+本分支 A6 percounter 使用 GM 的 `handshake->aicpu_ready` 放行、`teardown_gate->exit_request` 检查退出。移植时沿用 A5 地址的探针测到，AICPU 写 `+0xD0` 后可自行回读，AIC 侧未读到同值；反向的 `set_cond` 与 `+0x5108` 也未打通。HBG 的结果补齐了 A6 上可用的寄存器映射；percounter 的整图时延仍取自 GM 版本。[percounter 原始实测](https://github.com/HaoZhang1024/simpler/blob/cf78bd31a/tests/fdwic/a6_dsv41_scheduler/doc/a6-result.md#L30-L37) · [启动检查](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L2042-L2067) · [退出检查](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L423-L429)
 
 ### CntNotify 与 GM 同址测试
 
