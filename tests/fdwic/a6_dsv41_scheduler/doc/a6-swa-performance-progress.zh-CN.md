@@ -1,0 +1,291 @@
+# A6 percounter SWA 性能分析与每日进展
+
+## 当前交接 · 2026-11-24
+
+| 负责方 | 当前状态 | 下一步 |
+| --- | --- | --- |
+| 蓝区 | 已复核 t22 的 C、V0 提交时延 | 设计 V0 首次观察到同一 block、同一 generation 的 `fanin_ready` 打点，区分观察前与提交前的时间 |
+| 黄区 | 已完成集成版采集和三项离线分析 | 本轮已收齐。蓝区准备好下一批代码后，在本页新增执行命令、验收项和回填框 |
+
+本页按最近完成的任务在前排列。每节保留可从仓库根目录执行的命令和当批原始 JSON。硬件配置、CntNotify 测量、整图基线和瓶颈结论见 [A6 与 A5 性能对比](a6-a5-comparison.zh-CN.md)。
+
+<a id="t22-entry-roles"></a>
+
+## 已完成 · t22 按 C、V0 核对提交时延
+
+分析脚本 `f8f756c29` 复用设备 0 的集成版 trial。黄区核对了十轮共 480 个 block 的领取者、依赖就绪发布者和各 lane 的实际 worker，返回码为 0。[对比结论](a6-a5-comparison.zh-CN.md#t22-entry-roles)
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-entry-roles
+```
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "rounds": 10,
+  "blocks_checked": 480,
+  "critical_roles": ["V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0"],
+  "critical_lane_us": 1.661,
+  "critical_block_us": {
+    "C": 0.879,
+    "V0": 1.661
+  },
+  "all_blocks_raw_us": {
+    "C": 0.916,
+    "V0": 1.469
+  },
+  "critical_block_raw_us": {
+    "C": 0.879,
+    "V0": 1.661
+  },
+  "critical_block_v0_raw_kernel_overlap_us": 0.0
+}
+```
+
+<a id="t22-release"></a>
+
+## 已完成 · t22 按最后一次提交拆分同步等待
+
+分析脚本 `9662196b6` 读取同一批十轮 L2。每个 block 的 `inputs_ready` 唯一，48 块 × 2 lane × 10 轮共 960 条逐 lane 记录。完整 CSV 留在 trial 内，黄区回填以下 JSON。[对比结论](a6-a5-comparison.zh-CN.md#t22-release)
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-release "$trial/t22-release-lanes.csv" > "$trial/t22-release.json" &&
+cat "$trial/t22-release.json"
+```
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "lane_rows": 960,
+  "mean_us": {
+    "before_last_commit_us": 2.001,
+    "after_last_commit_us": 2.575,
+    "first_ready_minus_last_commit_us": 1.725,
+    "last_ready_minus_last_commit_us": 3.235
+  },
+  "last_lane_columns": [
+    "block", "lane", "worker", "previous_task", "previous_block",
+    "prev_end_to_commit_us", "inputs_ready_to_commit_us"
+  ],
+  "rounds": [
+    {"round": 1, "last_commit_lanes": [[47, 1, 65, 18, 23, 7.07, 1.804]], "critical_block_worker": [12, 78], "before_last_commit_us": 4.288, "after_last_commit_us": 2.735, "first_ready_minus_last_commit_us": 1.682, "last_ready_minus_last_commit_us": 3.193},
+    {"round": 2, "last_commit_lanes": [[39, 1, 93, 18, 11, 6.469, 2.167]], "critical_block_worker": [11, 65], "before_last_commit_us": 0.578, "after_last_commit_us": 3.526, "first_ready_minus_last_commit_us": 2.609, "last_ready_minus_last_commit_us": 4.055},
+    {"round": 3, "last_commit_lanes": [[47, 0, 3, 18, 3, 7.053, 1.367]], "critical_block_worker": [13, 107], "before_last_commit_us": 1.104, "after_last_commit_us": 2.795, "first_ready_minus_last_commit_us": 1.507, "last_ready_minus_last_commit_us": 3.137},
+    {"round": 4, "last_commit_lanes": [[47, 0, 47, 18, 23, 7.254, 1.383]], "critical_block_worker": [18, 56], "before_last_commit_us": 0.621, "after_last_commit_us": 1.816, "first_ready_minus_last_commit_us": 1.726, "last_ready_minus_last_commit_us": 3.121},
+    {"round": 5, "last_commit_lanes": [[47, 1, 81, 18, 19, 7.239, 2.121]], "critical_block_worker": [9, 59], "before_last_commit_us": 4.046, "after_last_commit_us": 2.483, "first_ready_minus_last_commit_us": 1.638, "last_ready_minus_last_commit_us": 2.821},
+    {"round": 6, "last_commit_lanes": [[47, 0, 15, 18, 11, 6.182, 1.331]], "critical_block_worker": [23, 85], "before_last_commit_us": 0.866, "after_last_commit_us": 2.211, "first_ready_minus_last_commit_us": 1.764, "last_ready_minus_last_commit_us": 3.704},
+    {"round": 7, "last_commit_lanes": [[47, 1, 65, 18, 19, 6.621, 1.845]], "critical_block_worker": [11, 85], "before_last_commit_us": 2.804, "after_last_commit_us": 2.425, "first_ready_minus_last_commit_us": 0.962, "last_ready_minus_last_commit_us": 2.502},
+    {"round": 8, "last_commit_lanes": [[45, 1, 99, 18, 21, 6.336, 1.94]], "critical_block_worker": [27, 97], "before_last_commit_us": 1.023, "after_last_commit_us": 2.748, "first_ready_minus_last_commit_us": 1.85, "last_ready_minus_last_commit_us": 3.466},
+    {"round": 9, "last_commit_lanes": [[43, 1, 73, 18, 29, 6.235, 1.844]], "critical_block_worker": [7, 77], "before_last_commit_us": 3.53, "after_last_commit_us": 3.079, "first_ready_minus_last_commit_us": 1.97, "last_ready_minus_last_commit_us": 3.382},
+    {"round": 10, "last_commit_lanes": [[39, 1, 105, 18, 27, 6.158, 1.927]], "critical_block_worker": [11, 77], "before_last_commit_us": 1.15, "after_last_commit_us": 1.928, "first_ready_minus_last_commit_us": 1.538, "last_ready_minus_last_commit_us": 2.966}
+  ]
+}
+```
+
+<a id="offline-l2"></a>
+
+## 已完成 · 十轮 L2 任务收益与派发间隔
+
+分析脚本 `691f09b21` 用 trial 自带的 Python 和 OR-Tools 在 CPU 上运行。十轮 L2 的设备、构建产物、关键链和固定分核结果与保存的模型一致。16 项任务 × 10 轮全部完成，返回码为 0，耗时约 90 秒。[任务结果与计算口径](a6-a5-comparison.zh-CN.md#task-gains)
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py "$trial"
+```
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "pto_isa_commit": "45435c0624c1d0d056bf38aa60d4f56dc0ef3b6b",
+  "baseline_us": 197.15,
+  "actual_chain_kernel_us": {
+    "8": 10.357,
+    "9": 1.241,
+    "12": 11.32,
+    "16": 10.025,
+    "17": 15.523,
+    "18": 20.945,
+    "19": 0,
+    "20": 0,
+    "22": 23.575,
+    "25": 20.932,
+    "28": 30.636,
+    "29": 32.12,
+    "31": 1.452,
+    "33": 0,
+    "34": 0,
+    "35": 17.433
+  },
+  "gain_us_if_task_10pct_shorter": {
+    "29": [3.2, 3.2],
+    "28": [3.1, 3.1],
+    "22": [2.44, 2.44],
+    "18": [2.13, 2.13],
+    "25": [2.13, 2.13],
+    "35": [1.74, 1.74],
+    "17": [1.57, 1.57],
+    "8": [1.15, 1.15],
+    "12": [1.14, 1.14],
+    "16": [1.05, 1.05],
+    "9": [0.12, 0.12],
+    "19": [0.0, 0.0],
+    "20": [0.0, 0.0],
+    "31": [0.0, 0.0],
+    "33": [0.0, 0.0],
+    "34": [0.0, 0.0]
+  },
+  "t25_mean_of_round_p50_us": {
+    "1": 10.691,
+    "2": 20.924
+  },
+  "t25_last_blocks_by_round": [
+    [6], [8], [8], [8], [6], [4], [6], [6], [2], [8]
+  ],
+  "t22_mean_us": {
+    "before_owner_claim_us": 0.0,
+    "in_owner_claim_us": 0.094,
+    "after_owner_claim_us": 7.956,
+    "claim_end_spread_us": 56.529,
+    "first_dispatch_minus_last_claim_us": 4.863
+  },
+  "t22_chain_hits_by_round": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  "t22_detailed_hits_by_round": [1, 1, 1, 1, 1, 1, 1, 1, 1, 1],
+  "t22_after_claim_breakdown_us": {
+    "to_inputs_ready_us": 1.426,
+    "to_entry_commit_us": 1.661,
+    "to_ready_us": 4.576,
+    "ready_to_dispatch_us": 0.293
+  }
+}
+```
+
+<a id="integrated"></a>
+
+## 已完成 · 集成版 A6 实卡采集
+
+首次下载集成分支
+
+```bash
+git clone --single-branch --branch percounter https://github.com/HaoZhang1024/simpler.git simpler-percounter
+cd simpler-percounter
+```
+
+加载黄区 A6 CANN 和 Python 3.11 环境后，在分配到设备 0 的 checkout 根目录执行。
+
+```bash
+DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_integrated_comparison.sh
+```
+
+运行提交 `76c7c288b`，输出目录 `build/swa-integrated-758Yr8/`。设备为 Ascend960DT_966B7，CANN 9.3.0（1022），CCEC clang 15.0.5（2026-10-20）。L0、L2 各预热 1 轮、正式 10 轮，参考输出通过，每轮 560 次 kernel 执行，10 轮模型均求得最优解。黄区在 trial venv 内隔离了共享环境的 editable 安装，复核 `simpler`、`simpler_setup` 均从 trial 的 `src/` 导入。
+
+```json
+{
+  "platform": "a6",
+  "case": "swa",
+  "device": 0,
+  "runtime_sha256": {
+    "dispatcher/libsimpler_aicpu_dispatcher.so": "9be46d5ef764b7e6267c402eef340039265bed4d67c967898e3e8494f61179a2",
+    "onboard/percounter/libhost_runtime.so": "8b4c01158bfd7c5978bd27ae44a9d62e0beee06e89e7936386acee6ecc62d1a6",
+    "onboard/percounter/libaicpu_kernel.so": "26699e7009ba4a46af12a55dbd3747116ea6ef769e582076b7365d8ce8fa5c9d",
+    "onboard/percounter/aicore_kernel.o": "dded49cda5599c73f6ddcddf38ce9297a8548f6b406ac8a34f1872edb185fedc"
+  },
+  "t25_block_num": 54,
+  "capacities": {"aic": 54, "aiv": 54},
+  "capture_level": 2,
+  "quantum_ns": 100,
+  "time_limit_seconds_per_round": 30.0,
+  "executions_per_round": 560,
+  "aicore_wall_l0_mean_us": 239.8697,
+  "aicore_wall_l0_min_us": 231.522,
+  "aicore_wall_l0_median_us": 239.8925,
+  "device_l0_mean_us": 305.49519999999995,
+  "lower_bound_mean_us": 197.15,
+  "fixed_order_mean_us": 198.73,
+  "fixed_order_valid_rounds": 10,
+  "l2_kernel_span_mean_us": 246.6253,
+  "l2_chain_gap_mean_us": 51.0665,
+  "l2_top_chain_gaps": [
+    {"task": 22, "mean_us": 8.3914, "before_dispatch_mean_us": 8.0501, "after_dispatch_mean_us": 0.3413000000000011},
+    {"task": 9, "mean_us": 7.933400000000002, "before_dispatch_mean_us": 7.516799999999999, "after_dispatch_mean_us": 0.4166000000000025},
+    {"task": 35, "mean_us": 7.2052, "before_dispatch_mean_us": 6.707000000000001, "after_dispatch_mean_us": 0.49819999999999853}
+  ],
+  "feasible_mean_us": 197.15,
+  "all_optimal": true,
+  "excess_us": 42.71969999999999,
+  "excess_percent_of_bound": 21.668627948262742,
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "aicore_l0_samples_us": [
+    248.208,
+    244.50900000000001,
+    242.94199999999998,
+    242.684,
+    240.90800000000002,
+    238.877,
+    238.862,
+    231.522,
+    236.96200000000002,
+    233.223
+  ],
+  "critical_chain_by_source_task": {
+    "22": {"rounds_present": 10, "gap_us": 8.3914, "gap_before_dispatch_us": 8.0501, "gap_after_dispatch_us": 0.34130000000000005},
+    "9": {"rounds_present": 10, "gap_us": 7.933400000000002, "gap_before_dispatch_us": 7.516799999999999, "gap_after_dispatch_us": 0.41659999999999997},
+    "35": {"rounds_present": 10, "gap_us": 7.2052, "gap_before_dispatch_us": 6.707000000000001, "gap_after_dispatch_us": 0.49820000000000003}
+  }
+}
+```
+
+## 构建、复现与验收
+
+A6 工作负载冻结了 19 个 kernel 注册及源码依赖、输入和参考输出。[设备源码](../kernels/) · [冻结数据](../fixtures/)
+
+| Component | A6 contract |
+| --- | --- |
+| Replay | 16 compute tasks. t22 uses 48 C+V blocks with synchronized start. t28 uses 32 C+V blocks. |
+| Resources | A 64-block vector task uses up to 54 AIVs in its first wave. The 54-block t25 comparison changes only the recorded block count. |
+| Lifecycle | AICPU publishes READY in shared memory. AICore checks the per-worker shutdown gate. Dependency counters use the GM path. |
+| SSBUF | Runtime uses bytes 1792–2047. The AIC and AIV callable context slots start at 1920 and 1984. Rebuild the runtime and callable together. |
+| Profiling | L0 records whole-run timing. Native percounter L2 records each block's kernel start, return and scheduler finish. |
+
+Use Linux, the A6 CANN environment, CCEC, a host C++ compiler, CMake, Ninja and a Python environment with the Simpler build dependencies. From the repository root, prepare PTO-ISA at the revision selected by this checkout.
+
+```bash
+git clone https://github.com/hw-native-sys/pto-isa.git build/pto-isa
+git -C build/pto-isa checkout --detach "$(cat pto_isa.pin)"
+```
+
+With the allocated A6 card in `DEVICE`, run the integrated check. This builds
+the runtime, query tool, runner and SWA kernels from this checkout into a new
+output directory.
+
+```bash
+bash tests/fdwic/a6_dsv41_scheduler/test_a6_swa.sh "$DEVICE"
+```
+
+Check the device query, reference output validation and all ten measured rounds.
+The default replay uses 64 t25 blocks and 570 executions. For the 54-block
+comparison and the scheduling bound, run the following entry point. It builds a
+matching callable, captures L0 and L2 and checks all 560 executions per L2 round.
+
+```bash
+DEVICE="$DEVICE" bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_sync_bound.sh
+```
+
+Record the commit, device, CANN and compiler versions, output validation and
+AICore/device timing from `test.log`. For the bound include `model/summary.json`
+and `model/l0.csv` from the output directory printed at startup. Compare the same
+block count, input and profiling level across revisions.
+
+代码基线为 `922b55003`。蓝区在 CANN 9.3.0 下构建了 A5 和 A6 的
+percounter runtime、replay、runner 和 SWA callable。A6 的 64-block 与
+54-block 版本分别生成 570 和 560 次执行。5 个 C++ 测试目标和 9 项 SWA 离线测试通过。
+A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发现。
+剩余的 `kernel.cpp` 生成的设备 bitcode 在两种 LLVM 读取器中均解析失败。
+
+早期的 t25 分段、CntNotify 测量及移植执行记录可按批次查阅。[旧分支交接记录](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md)
