@@ -44,7 +44,7 @@ constexpr int PLATFORM_CORES_PER_BLOCKDIM = 2;
 constexpr int PLATFORM_AIC_CORES_PER_BLOCKDIM = 1;
 constexpr int PLATFORM_AIV_CORES_PER_BLOCKDIM = 1;
 constexpr uint32_t PLATFORM_SSBUF_SIZE = 2 * 1024;
-#define PLATFORM_PERCOUNTER_GM_LIFECYCLE 1
+#define SIMPLER_PLATFORM_A6 1
 #define PLATFORM_PERCOUNTER_COMPACT_SSBUF 1
 
 /**
@@ -487,9 +487,9 @@ constexpr int PLATFORM_SCOPE_STATS_TIMEOUT_SECONDS = 30;
 // Register Communication Configuration
 // =============================================================================
 
-// Per-core SPR offsets. Percounter uses GM for lifecycle notifications.
-constexpr uint32_t REG_SPR_DATA_MAIN_BASE_OFFSET = 0xD0;
-constexpr uint32_t REG_SPR_COND_OFFSET = 0x5108;
+// Logical command and acknowledgement registers in the target sub-core's MMIO window.
+constexpr uint32_t REG_SPR_DATA_MAIN_BASE_OFFSET = 0x5500;  // IPC0, CP1 to AICore
+constexpr uint32_t REG_SPR_COND_OFFSET = 0x5520;            // IPC4, AICore to CP1
 constexpr uint32_t REG_SPR_CTRL_OFFSET = 0x0;
 
 // Exit signal for AICore shutdown
@@ -677,11 +677,11 @@ constexpr RegId reg_index(RegId base, int i) { return static_cast<RegId>(static_
 
 /**
  * DAV_A6 register layout is sparse with three non-contiguous regions:
- * - Page 0: 0x0000-0x0FFF  (AICore SPR low: CTRL at 0x0, DATA_MAIN_BASE at 0xD0)
+ * - Page 0: 0x0000-0x0FFF  (CTRL at 0x0)
  * - Page 2: 0x2400-0x43FF  (PMU MMIO: CNT*_IDX 0x2500-0x2524, CTRL_1 0x2400,
  *                            CTRL_0 0x4200, CNT0-9 0x4210-0x4254, TOTAL 0x4260-64,
  *                            START/STOP_CYC 0x42A0-0x42AC)
- * - Page 1: 0x5000-0x5FFF  (AICore SPR high: COND at 0x5108)
+ * - Page 1: 0x5000-0x5FFF  (IPC0 at 0x5500, IPC4 at 0x5520)
  *
  * To save memory, we allocate three separate pages per core instead of
  * a single 24KB block.

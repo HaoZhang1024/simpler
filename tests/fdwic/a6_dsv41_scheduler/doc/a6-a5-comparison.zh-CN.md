@@ -123,7 +123,14 @@ A6 现场 query 还报告 8 个 AICPU、L1 512 KiB、L0A/L0B 各 64 KiB、L0C 25
 
 A6 的偏移从目标子核基址起算。每个 HAL 资源窗为 2 MiB，C 用窗首，V 用窗首 + 1 MiB。同事的 HBG 迁移基线在 54C + 54V 上完成启动和退出，30 个可写缓冲区通过校验。早期核端仍写旧 COND 时，CP1 在 `+0x5520` 收不到回执；核端改写 IPC4 后握手通过。[HBG 的窗口、寄存器指令和实卡对照](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L169-L194)
 
-本分支 A6 percounter 使用 GM 的 `handshake->aicpu_ready` 放行、`teardown_gate->exit_request` 检查退出。移植时沿用 A5 地址的探针测到，AICPU 写 `+0xD0` 后可自行回读，AIC 侧未读到同值；反向的 `set_cond` 与 `+0x5108` 也未打通。HBG 的结果补齐了 A6 上可用的寄存器映射；percounter 的整图时延仍取自 GM 版本。[percounter 原始实测](https://github.com/HaoZhang1024/simpler/blob/cf78bd31a/tests/fdwic/a6_dsv41_scheduler/doc/a6-result.md#L30-L37) · [启动检查](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L2042-L2067) · [退出检查](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L423-L429)
+| 哪次测试 | 已确认的结果 | 测量范围 |
+| --- | --- | --- |
+| 黄区早期 percounter，A6 沿用 A5 的两组地址与核侧指令 | AICPU 写 `+0xD0` 后能自行回读 `0x7ffffffd`，AIC 读 `DATA_MAIN_BASE` 未看到同值，启动等待超时。反向的 `set_cond()` 与 `+0x5108` 也未打通 | 旧组合的跨端连通性。[现场报告](https://github.com/HaoZhang1024/simpler/blob/cf78bd31a/tests/fdwic/a6_dsv41_scheduler/doc/a6-result.md#L30-L37) |
+| 同事 HBG，A6 IPC0 / IPC4 | 两个方向都已在上述 SWA 基线跑通；CP1 侧偏移和核侧指令都随平台切换 | 启动与退出的功能验证。[实卡记录与产物指令](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L182-L194) |
+| CntNotify SET / INC 与 GM 同址访问 | A6 的 INC 别名经 SET 读回终值校验；96 核和 108 核的逐名次时延见下表 | 多核对同一计数地址的并发访问。IPC0 发命令至 IPC4 收回执的单次往返时延尚缺独立测量 |
+| 本分支 percounter，A6 IPC0 / IPC4 | 蓝区已在 A6 核侧产物核对读 IPC0、写 IPC4，CP1 产物核对 64 位加载和存储，CPU 用例核对两个窗口偏移和高低 32 位 | A6 percounter 实卡功能、连续运行与 L0 GM/IPC 整图对照由黄区回填。[命令与结果位置](a6-swa-performance-progress.zh-CN.md#ipc-lifecycle) |
+
+**当前 percounter 协议。** AICPU 在 GM 发布本轮 READY 和拓扑后，通过 IPC0 放行或发 EXIT。核结束后，从 GM 取本轮退出确认值并写 IPC4。AICPU 核对回执、关闭窗口并回读，再在 GM 允许核返回。C 核与 V 核在 t22 内仍用 SSBUF 传递 `fanin_ready`。本页已有的 A6 AICore **239.870 µs** 和 Device **305.495 µs** 来自迁移初期的 GM 启动与退出检查版本。[核侧寄存器访问](../../../../src/a5/platform/onboard/aicore/inner_kernel.h) · [AICPU 确认与放行](../../../../src/a6/platform/shared/aicpu/platform_regs.cpp)
 
 ### CntNotify 与 GM 同址测试
 

@@ -4,14 +4,30 @@
 
 | 负责方 | 当前状态 | 下一步 |
 | --- | --- | --- |
-| 蓝区 | 已在 A5 设备 4 验证 V0 首次观察打点，并完成 A6 runtime 交叉编译 | 收到 A6 回填后，按同角色比较首次观察前、后的时延 |
-| 黄区 | 原集成版采集与离线分析已完成 | 在已分配的设备 0 执行下面的一条命令，回填末行 JSON |
+| 蓝区 | 已接入 IPC0 命令和 IPC4 回执，构建 A5/A6 目标并检查 A6 产物。IPC 位宽与偏移、启动中止、退出确认、返回放行四组 CPU 测试通过 | 从同卡 GM/IPC 的 L0 样本核对功能和整图时延 |
+| 黄区 | 已有设备 0 的准备产物和历史 GM 数据 | 先执行 IPC 对照命令，把最后一行 JSON 填入本节 |
 
 本页按最近完成的任务在前排列。每节保留可从仓库根目录执行的命令和当批原始 JSON。硬件配置、CntNotify 测量、整图基线和瓶颈结论见 [A6 与 A5 性能对比](a6-a5-comparison.zh-CN.md)。
 
+<a id="ipc-lifecycle"></a>
+
+## 当前任务 · A6 percounter 的 IPC 启动与退出
+
+进入个人 fork 的 `percounter` 分支根目录，加载原 A6 CANN 环境，使用已分配的设备 0。脚本分别从原版 GM 提交 `be6e23f0e` 和当前 IPC 提交构建 percounter 和 dispatcher，复用原 trial 的 t25=54 计划、runner、callable 和输入。同卡、同工具链，两组各预热 1 轮、正式 10 轮，采无打点 L0。
+
+```bash
+git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_ipc_lifecycle.sh
+```
+
+**黄区在这里回填。** 两组都应正常返回、通过数值校验，并且各有 10 个 AICore / Device 样本。将末行 JSON 填入下框，完整结果保存在脚本打印的目录中的 `feedback.json`。若某组失败，填组名（gm 或 ipc）、首条错误和 `run.log` 中最后完成的步骤。`ipc_minus_gm_us` 是整图差值，负数表示 IPC 版更快。
+
+```text
+待回填 A6 GM / IPC 的 feedback.json
+```
+
 <a id="t22-observe"></a>
 
-## 当前任务 · V0 首次观察到输入就绪
+## 前一批 · V0 首次观察到输入就绪
 
 加载原 A6 CANN 环境，在 `percounter` 根目录使用已有的 `build/swa-integrated-758Yr8`。脚本复用原 trial 的 Python、PTO-ISA、query、runner、plan、callable 和输入，只构建诊断 runtime。在同一张已分配的卡上依次采原版、诊断版 L2，各预热 1 轮、测 10 轮。
 

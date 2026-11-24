@@ -12,19 +12,11 @@ simpler_ut_add_target(NAME test_percounter_resource_order
     INCLUDES ${SIMPLER_SRC}/a5/runtime/percounter/host
     LABEL no_hardware TIMEOUT 20)
 
-# Exercise the A6 GM publication contract on CPU with the host instruction shims.
-simpler_ut_add_target(NAME test_a6_percounter_gm_startup
-    SOURCES test_a6_gm_startup.cpp ${SIMPLER_SRC}/common/platform/sim/aicpu/cache_ops.cpp
+# Exercise the actual CP1 MMIO accessors against aligned host memory.
+simpler_ut_add_target(NAME test_a6_percounter_ipc_registers
+    SOURCES test_a6_ipc_registers.cpp ${SIMPLER_SRC}/a5/platform/onboard/aicpu/inner_platform_regs.cpp
     ARCH a5 RUNTIME percounter
     INCLUDES_BEFORE ${SIMPLER_SRC}/a6/platform/include
-    INCLUDES
-        ${SIMPLER_SRC}/a5/runtime/percounter/runtime
-        ${SIMPLER_SRC}/a5/runtime/percounter/aicore
-        ${SIMPLER_SRC}/a5/runtime/host_build_graph/runtime
-        ${SIMPLER_SRC}/a5/runtime/host_build_graph/common
-        ${SIMPLER_SRC}/common/host_build_graph
-        ${SIMPLER_SRC}/a5/platform/sim/aicore
-    DEFINES __CPU_SIM
     LABEL no_hardware TIMEOUT 20)
 
 set(percounter_wire_header "${SIMPLER_SRC}/a5/runtime/percounter/runtime/scheduler/wire_types.h")

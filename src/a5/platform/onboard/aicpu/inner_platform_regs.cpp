@@ -12,9 +12,7 @@
  * @file inner_platform_regs.cpp
  * @brief AICPU register read/write for real hardware (a5)
  *
- * halResMap maps each AICore as 3MB of contiguous MMIO. Hardware offsets
- * (e.g. DATA_MAIN_BASE=0xD0, COND=0x5108) are applied directly to the
- * virtual address with no remapping.
+ * Each core uses its own MMIO window within the HAL resource.
  *
  * Ordering: read_reg / write_reg emit only the volatile MMIO load/store.
  * ARM64 Device-nGnRnE memory orders accesses within the same region; cross
@@ -38,9 +36,21 @@ uint32_t reg_load_acquire(const volatile uint32_t *p) { return *p; }
 
 void reg_store_release(volatile uint32_t *p, uint32_t v) { *p = v; }
 
-uint64_t read_reg(uint64_t reg_base_addr, RegId reg) { return static_cast<uint64_t>(*get_reg_ptr(reg_base_addr, reg)); }
+uint64_t read_reg(uint64_t reg_base_addr, RegId reg) {
+#if defined(SIMPLER_PLATFORM_A6)
+    if (reg == RegId::DATA_MAIN_BASE || reg == RegId::COND)
+        return *reinterpret_cast<volatile uint64_t *>(reg_base_addr + reg_offset(reg));
+#endif
+    return *get_reg_ptr(reg_base_addr, reg);
+}
 
 void write_reg(uint64_t reg_base_addr, RegId reg, uint64_t value) {
+#if defined(SIMPLER_PLATFORM_A6)
+    if (reg == RegId::DATA_MAIN_BASE || reg == RegId::COND) {
+        *reinterpret_cast<volatile uint64_t *>(reg_base_addr + reg_offset(reg)) = value;
+        return;
+    }
+#endif
     *get_reg_ptr(reg_base_addr, reg) = static_cast<uint32_t>(value);
 }
 

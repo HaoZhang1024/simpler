@@ -19,6 +19,8 @@ out=$(mktemp -d "$root/build/t22-observation-XXXXXX")
 echo "Observation directory: $out"
 git clone -q --local "$root" "$out/src"
 cd "$out/src"
+# Keep both sides of the earlier V0 observation experiment on the GM lifecycle.
+git checkout -q --detach 7da06ce4f11f914b6dafc43ca567b8d126271c80
 mkdir -p build
 git clone -q --local "$trial/src/build/pto-isa" build/pto-isa
 git -C build/pto-isa checkout -q --detach "$(cat pto_isa.pin)"

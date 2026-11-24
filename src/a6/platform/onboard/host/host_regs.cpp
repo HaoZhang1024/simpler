@@ -21,6 +21,7 @@
 #include "host/memory_allocator.h"
 #include "common/unified_log.h"
 #include "common/platform_config.h"
+#include <algorithm>
 #include "common/acl_hal_device.h"
 #include "runtime_c_api.h"
 #include "runtime/rt.h"
@@ -58,7 +59,8 @@ static int get_aicore_reg_info(std::vector<int64_t> &regs, int64_t device_id) {
     // publishes `pmu_reg_addrs = regs`. The extent a sub-core's address
     // addresses is its stride plus the furthest register either accessor
     // reaches through the shared register layout.
-    constexpr uint64_t kBlockSpan = REG_MMIO_PMU_STOP_CYC1_OFFSET + sizeof(uint32_t);
+    constexpr uint64_t kBlockSpan =
+        std::max(REG_SPR_COND_OFFSET + sizeof(uint64_t), REG_MMIO_PMU_STOP_CYC1_OFFSET + sizeof(uint32_t));
     constexpr uint64_t kAddressed = REG_AIV_FIRST_OFFSET + kBlockSpan;
     static_assert(kAddressed <= REG_AICORE_MAP_SIZE, "the requested AICore mapping cannot hold both sub-core blocks");
     uint32_t cores_below_addressed = 0;

@@ -66,9 +66,13 @@ __aicore__ inline void wait_for_post_close_release(__gm__ uint32_t *release) {
 __aicore__ inline uint64_t read_reg(RegId reg) {
     switch (reg) {
     case RegId::DATA_MAIN_BASE: {
+#if defined(SIMPLER_PLATFORM_A6)
+        return get_ipc_reg_0();
+#else
         uint32_t val;
         __asm__ volatile("MOV %0, DATA_MAIN_BASE\n" : "=l"(val));
         return static_cast<uint64_t>(val);
+#endif
     }
     case RegId::CTRL:
         return static_cast<uint64_t>(get_ctrl());
@@ -98,8 +102,12 @@ __aicore__ inline void wait_for_aicpu_exit_signal() {
  * to DATA_MAIN_BASE, which the SPR-write port rejects).
  */
 __aicore__ inline uint32_t read_dmb_high32() {
+#if defined(SIMPLER_PLATFORM_A6)
+    const uint64_t v = get_ipc_reg_0();
+#else
     uint64_t v;
     __asm__ volatile("MOV %0, DATA_MAIN_BASE\n" : "=l"(v));
+#endif
     return static_cast<uint32_t>(v >> 32);
 }
 
@@ -112,7 +120,11 @@ __aicore__ inline uint32_t read_dmb_high32() {
 __aicore__ inline void write_reg(RegId reg, uint64_t value) {
     switch (reg) {
     case RegId::COND:
+#if defined(SIMPLER_PLATFORM_A6)
+        set_ipc_reg_4(value);
+#else
         set_cond(static_cast<uint32_t>(value));
+#endif
         break;
     case RegId::CTRL:
         set_ctrl(value);
@@ -153,7 +165,7 @@ __aicore__ inline void acknowledge_aicore_cond_nonce_and_wait(__gm__ AicoreTeard
     while (true) {
         const uint32_t request = static_cast<uint32_t>(ld_dev(&control->exit_request, 0));
         if (request == AICORE_EXIT_NONCE_0 || request == AICORE_EXIT_NONCE_1) {
-            set_cond(request);
+            write_reg(RegId::COND, request);
             break;
         }
         SPIN_WAIT_HINT();

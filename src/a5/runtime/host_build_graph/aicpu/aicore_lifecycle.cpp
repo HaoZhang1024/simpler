@@ -24,7 +24,6 @@
 #include <cinttypes>
 #include <cstring>
 
-#include "aicpu/abort_aicore_startup.h"
 #include "aicpu/args_dump_aicpu.h"
 #include "aicpu/aicpu_device_config.h"
 #include "aicpu/device_run_result_base_aicpu.h"
@@ -446,12 +445,6 @@ int32_t AicoreLifecycle::release_partition(Runtime *runtime, int32_t thread_idx,
     const int32_t lo = static_cast<int32_t>((static_cast<int64_t>(thread_idx) * core_count_) / aicpu_thread_num_);
     const int32_t hi = static_cast<int32_t>((static_cast<int64_t>(thread_idx + 1) * core_count_) / aicpu_thread_num_);
     if (!start_execution) {
-#ifdef PLATFORM_PERCOUNTER_GM_LIFECYCLE
-        for (int32_t i = lo; i < hi; ++i) {
-            if (cores_[i].reg_addr != 0) publish_aicore_startup_abort(&runtime->get_workers()[i]);
-        }
-        wmb();
-#endif
         return finish_shutdown_partition(thread_idx, runtime);
     }
     AicpuThreadLifecycleTrace *trace = thread_lifecycle_trace(thread_idx);
