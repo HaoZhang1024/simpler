@@ -1,61 +1,5 @@
 # A6 与 A5 单卡 percounter SWA 性能对比
-## 背景与动机
 
-- 蓝区在 t22-entry-roles 判读中确认：A6 关键 lane 十轮全为 V0、同 block V0 提交比 A5 慢 +0.541 µs、全量 480 块 V0 普遍慢 +0.121 µs 而 **C 列两端完全一致（0.916/0.916）**，且 `lane_loop.h` 两端 Git 文件对象相同——差异只能来自硬件结构或地址路径。
-- 黄区沿此线索在 percounter @f8f756c29 的 a5/a6 平台树上做了寄存器与地址的逐文件比对，结论：**两端在"AICore MMIO 寄存器表"和"调度完成通知寄存器（CntNotify）"两处存在实质差异，且第二处直接命中 t22 的同步路径**。以下为证据与行号，供蓝区核验与归因。
-
-## 差异一：AICore MMIO 寄存器映射（host_regs）
-
-| 项             | A5（DAV_3510）                                               | A6（Ascend960DT_966B7）                                      |
-| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
-| 子核步进       | 0x100000（1M）                                               | 0x100000（相同）                                             |
-| 块映射窗口     | 0x300000（3M，1 AIC + 2 AIV）                                | **0x200000（2M，1 AIC + 1 AIV）**，注释标 halResMap len 实测（onboard-001） |
-| AIV 偏移       | AIV0 = +1M，AIV1 = +2M                                       | 仅 AIV = +1M（注释标 **inferred**），无第二 AIV              |
-| HAL res_id 数  | 36（2 die × 18 块）                                          | **70（2 die × 35 块）**，每槽独立 2 MiB 窗口                 |
-| core ID 表布局 | 每 die 内 [AIC×18][AIV 交错对（AIV0_0,AIV0_1,AIV1_0,…）]，共 36×3=108 项 | **dieBase = die×70：die0 AIC 0–34 / die0 AIV 35–69 / die1 AIC 70–104 / die1 AIV 105–139，共 70×2=140 项**；Cube 在块基址、Vector 在块内 +1M |
-| 拓扑备注       | —                                                            | "Disabled workers still occupy physical slots"（物理 70 块 > 可用 54C+54V） |
-
-- 两端的这张表都兼作 PMU 表（`KernelArgs.pmu_reg_addrs = regs`），AICPU 侧 `platform_regs.h` 接口一致（仅注释差异）。
-- 位置：`src/a6/platform/include/host/host_regs.h:30-51`、`src/a6/platform/onboard/host/host_regs.cpp:14-18（70 槽）、40-44（140 项表）、66-71（die 交错布局）`；A5 对应 `src/a5/platform/onboard/host/host_regs.cpp`。
-
-## 差异二：CntNotify 完成通知寄存器（与 t22 同步路径直接相关）
-
-**A5 机制**（`src/a5/platform/onboard/host/scheduler_done_notifications.cpp:60-90`）：
-
-- 通过 `aclrtCntNotifyCreate` / `RT_RES_TYPE_STARS_CNT_NOTIFY_RECORD`（CP1）取得 **32 字节寄存器槽**；
-- SET/读基址即映射地址，**ADD（INC）别名寄存器在基址 +0x08**，共享同一映射与句柄生命周期；
-- 仅当 SET 地址非 0 且 32B 对齐时别名有效（`src/a5/platform/include/host/scheduler_notification_address.h:15-17`）；
-- `COMPLETION_COUNTER` / `HBG_REQUIRED_COMPLETION_COUNTER` 用 ADD 做**硬件寄存器原子加**；槽耗尽时剩余节点回落 GM（LOG_WARN "remaining nodes use GM"）。
-
-**A6 现状**（`src/a6/platform/include/host/scheduler_notification_address.h:15-16`）：
-
-- `scheduler_notification_increment_address` 恒返 0，头文件注释明确："**A6 uses GM completion counters. No increment alias is mapped on this platform.**"
-- A6 平台树**没有** scheduler_done_notifications.cpp，`DeviceRunner` 也不提供 `acquire_scheduler_notifications` → `state.h:299` 取不到地址，`notify_addresses` 为空；
-- 后果（a5 runtime 共享代码中的降级分支，A6 全部命中）：
-  - `src/a5/runtime/percounter/host/region_plan.h:561`：`counters[id].completion_notify_address` 一律不设置 → 完成计数全走 **GM 计数器**；
-  - `region_plan.h:969`：`sync_notify[cohort]` 全为 0 → **所有同步 cohort（含 t22 的 MIX fanin 到齐）全走 GM arrival sectors**，而非 CntNotify 寄存器 ADD；
-  - 设备侧共享规则 `percounter_notify_add_address(read) = read + 8`（`src/a5/runtime/percounter/runtime/scheduler/wire_types.h:235-247`）在 A6 因 read 恒 0 而不生效。
-
-## 与实测数据的对应
-
-- A5 上同步 cohort 的到齐计数/读取可走 CntNotify 寄存器窗口；A6 一律 GM 原子写 + GM 读。这与下列已回填观察同向：
-  - t22-entry-roles：同 block V0 +0.541 µs、全量 V0 +0.121 µs、C 列 0.916/0.916 完全一致——C 的依赖检查路径两端等价，V0 的读就绪/提交路径独有退化；
-  - t22-release：末 commit → 末 ready 两端差 +0.807 µs、首个到末个 ready 跨度 +0.438 µs——放行观察窗整体变宽；
-  - V0 原始窗口零 kernel 重叠（0.0）——纯等待/协调开销，非算子占用。
-- 因此**候选机制**：A6 上 V0 观测 `fanin_ready`/写 `enter_ready`/检查全组放行的路径经 GM，跨核可见性比 A5 的寄存器窗口慢。这与 #3180（减少返回型 GM 原子）的优化方向一致——该优化的前提正是 A6 无寄存器别名可用。
-- 另注：922b55003（1C1V 适配）同时改动了 a5 的 `scheduler_notification_address.h`（1 行）、`scheduler_done_notifications.cpp`（4 行）和 `tests/ut/cpp/a5/platform/test_scheduler_notification_cache.cpp`（12 行），把 A6 的"无别名"规则接入了共享校验与测试。
-
-## 建议蓝区核验项
-
-1. **A6 是否真的没有 CntNotify INC 别名**：当前结论来自代码注释与恒 0 实现。建议对照 A6 HAL/驱动文档确认 `STARS_CNT_NOTIFY_RECORD` 资源在 A6 的存在性、槽大小与 ADD 偏移是否仍为 32B/+0x08——若别名存在但未被映射，这是一个直接的优化入口。
-2. **GM 路径可见性实测**：A6 簇内 C→V0 的 GM 标志可见延迟（写后读）与 A5 寄存器窗口对比，可定量解释 V0 的 +0.12~0.54 µs；黄区此前在测量分支做过同地址访问实验（`results/002-hbg-same-address-access/`、`probes/same_address/`），数据可复用。
-3. **AIV +1M 偏移为 inferred**：host_regs.h 中 A6 的 `REG_AIV_FIRST_OFFSET` 标注推断值，建议以 A6 手册核实（当前 MMIO 派发路径工作正常，仅影响对地址布局的把握）。
-4. 若确认 GM-only 为设计约束：优化空间集中在减少 V0 路径的 GM 往返（fanin 可见性、cohort 放行检查、本地通知），与蓝区"提交后放行保留为候选"的判断一致。
-
-## 代码基线与方式
-
-- 基线：simpler-percounter @f8f756c29（含 922b55003 1C1V 适配后的完整 a5/a6 平台树）；纯代码比对，未新增上板实验；分析对象与已回填数据（trial `swa-integrated-758Yr8`，source_commit 76c7c288b）同源。
-- 比对范围：`src/a5/platform` vs `src/a6/platform` 全树（docs/sim 仅 A5 有），重点 host_regs、scheduler_notification_address、scheduler_done_notifications、device_runner、region_plan、wire_types。
 ## 集成版整图与调度下限
 
 同一 SWA 切口、参考输出校验通过。A5 在设备 4（Ascend950DT_9582，32C+64V）运行 t25=64，A6 在设备 0（Ascend960DT_966B7，54C+54V）运行 t25=54。两端均使用 CANN 9.3.0 和 PTO-ISA `45435c062`，每种采样级别各 1 轮预热、10 轮正式。A5 每轮 578 次 kernel 执行，A6 每轮 560 次。[A5 集成版采集配置与十轮明细](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-a5-comparison.zh-CN.md#集成版-a5-swa-对照基线) · [A6 集成版原始回填](a6-swa-performance-progress.zh-CN.md#integrated)
@@ -112,6 +56,16 @@ A6 在固定 worker 和核上顺序的情况下，实测与模型相差 **41.140
 A6 现场 query 还报告 8 个 AICPU、L1 512 KiB、L0A/L0B 各 64 KiB、L0C 256 KiB、每 AIV 的 UB 376 KiB 和 L2 128 MiB。驱动为 7.12.T0.0.B280，ascendhal 为 7.35.23。[A6 查询原文](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/results/2026-11-17-a6-environment/device-query.txt) · [A5 环境和逐轮统计](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/results/2026-11-17-a5/summary.json)
 
 拓扑直接改变本例的工作分配。t22 在 A5 提交 24 个 1C2V block，A6 拆成 48 个 1C1V block，各处理一半 head 并各自 gather 完整 KV。t28 在两端都提交 32 块，A6 的一个 V 分两次处理原先两个 V 的列。原始 t25 发 64 块时，A5 的 64 个 AIV 各接一块，A6 有 10 个 AIV 需要再接一块。改发 54 块后，同样的 64 个 head 由 44 个单 head 块和 10 个双 head 块覆盖。[plan 转换](../prepare_plan.py) · [逐块身份和尾块](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#54-块按-block_idx-分组)
+
+### Host 如何找到同一物理核的寄存器窗口
+
+| 地址表（按物理核号索引） | A5 | A6 |
+| --- | --- | --- |
+| 每个 HAL 资源窗 | 3 MiB：C 在窗首，V0 在 +1 MiB，V1 在 +2 MiB | 2 MiB：C 在窗首，V 在 +1 MiB |
+| 每 die 的核号排列 | 18 个 C，随后 18 对 V；两 die 共 36 个资源、108 项 | 35 个 C，随后 35 个 V。die0 为 C 0–34、V 35–69，die1 为 C 70–104、V 105–139；共 70 个资源、140 项 |
+| 本例实际使用 | 32C + 64V | 54C + 54V；硬件编号为屏蔽核保留位置 |
+
+A6 由上报的物理核号取资源和子窗口。例如 V 核 68 位于 die0、资源 33，CP1 在该资源窗首加 1 MiB 后，再加 IPC 偏移。A6 的参考实现与 HBG 实卡握手为该布局提供了依据。两端也向 PMU 接口传递这张基址表，本节的实卡结果覆盖启动与退出。[A5 地址表](../../../../src/a5/platform/onboard/host/host_regs.cpp) · [A6 地址表](../../../../src/a6/platform/onboard/host/host_regs.cpp) · [A6 参考映射与设备验证](https://github.com/mihudaner/simpler/blob/392fae8b8efa15dc65cff15e6ce1f764ecd60d9a/tests/fdwic/a6_dsv41_scheduler/doc/a6-migration.zh-CN.md#L165-L184)
 
 ## 寄存器、GM 与同步
 
@@ -193,6 +147,12 @@ A6 无 fence 的三条路径在回填精度下读数相同，合列一行。CntN
 
 同为 96 核，GM 原子加零读的末名从 A5 的 **16.387 µs** 降到 A6 的 **1.043 µs**，CntNotify SET 读分别为 **1.199 / 1.225 µs**。在 A6 的完成计数对照中，GM 原子加一后 DSB 为 **1.051 µs**，CntNotify INC 后 DSB 为 **1.336 µs**。这组结果支持 SWA 继续使用 GM 完成计数；t22 等待第 48 个 block 到达的时间另看生产泳道。[t22 的 L4 端点](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-swa-performance-progress.zh-CN.md#l4-endpoints)
 
+### SWA 实际用了哪条计数通路
+
+A5 Host 按同步组优先的顺序申请 CntNotify。有效 SET 地址按 32 字节对齐，ADD 别名为 SET + 0x08；槽位不足的项使用 GM。原集成版 L0 和 V0 实验的原版 L2 都记录了 `planned_chains=4 mapped_chains=4 eligible_tasks=16 mapped_tasks=16 mapped_sync=2 sync_cohorts=2`。L2 的 1 轮预热与 10 轮正式记录一致：这批 SWA 的两个同步组（含 t22）都取得了硬件计数器。[A5 分配与部分回退](../../../../src/a5/platform/onboard/host/scheduler_done_notifications.cpp) · [Host 映射计数的生成](../../../../src/a5/runtime/percounter/host/state.h)
+
+A6 实卡探针已用 SET + 0x20 自增并从 SET 读回正确终值。本分支 A6 的 `scheduler_notification_increment_address()` 仍返回 0，Host 据此把 `completion_notify_address` 和 `sync_notify` 留为 0。任务完成走 GM 计数，跨 block 的同步起跑走分区 GM 到齐计数。若以后接入硬件计数，Host 的资源申请、映射和设备端由 SET 推导 ADD 的偏移都要配套；当前 IPC 改动只覆盖启动和退出。[A6 平台选择](../../../../src/a6/platform/include/host/scheduler_notification_address.h) · [Host 生成计数表](../../../../src/a5/runtime/percounter/host/region_plan.h) · [设备端 ADD 别名](../../../../src/a5/runtime/percounter/runtime/scheduler/wire_types.h) · [黄区源码比对原文](https://github.com/HaoZhang1024/simpler/blob/32885a2c1/tests/fdwic/a6_dsv41_scheduler/doc/a6-a5-comparison.zh-CN.md#背景与动机)
+
 <a id="task-gains"></a>
 
 ## 任务对整图下限的影响
@@ -261,11 +221,13 @@ A5 十轮的末块为 62 号（7 轮）或 60 号（3 轮）。A6 当前计划�
 - **谁最晚提交。** A6 的 V lane 占 7/10 轮，C lane 占 3/10 轮。47 号块出现 6 轮，39 号块 2 轮，43、45 号块各 1 轮。A5 十轮都是 C lane。两端最晚提交者在同一 worker 上执行的上一项 kernel 都是 t18。在 A6，这十轮从该 worker 的 t18 结束到对应 block 的 `inputs_ready` 平均 4.889 µs。这个间隔包含前驱和调度工作，凭这两个打点还无法归因给 t18。
 - **放行过程。** A6 全组首个 `ready` 晚了 0.369 µs，从首个到末个 `ready` 又多花 0.438 µs。两者相加，末个 `ready` 晚了 0.807 µs。`entry_commit` 打点在写入 `enter_ready` 之前，之后还要检查组内到齐、上报 block、检查全组放行和读取本地通知。这些操作共同落在观测窗口里。[MIX 同步路径](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1625-L1682)
 
+**计数路径从哪一步开始影响 t22。** 两端的 C 都在簇内 SSBUF 发布 `fanin_ready`，V0 从 SSBUF 读；每个参与核记录 `entry_commit` 后把自己的 `enter_ready` 写回 SSBUF。本 block 的参与核到齐后，C 才调用 `percounter_start_arrive()` 计入跨 block 的同步组，并用 `percounter_start_ready()` 检查全组。A5 本批用 CntNotify，A6 用 GM 分区计数。它们的直接差异落在**提交后的放行**：末次提交到末次 ready 的差为 +0.807 µs，关键 lane 整段等待的差为 −0.218 µs，二者取的起止点不同。提交前同角色 V0 的 +0.541 µs 仍只定位到 C 打点至 V0 提交的窗口，两端同一份源码也可能因核角色、block 数和当时的候选状态走不同分支。[簇内就绪与提交](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1653-L1675) · [跨 block 到齐与检查](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1426-L1466)
+
 <a id="t22-entry-roles"></a>
 
 ### 同一关键 block 的 C、V0 提交
 
-**同一 block 内发生了什么。** V0 领取 MIX block 并发布任务记录。C 是 t22 的最低参与 lane，检查输入依赖，在写入共享的 `fanin_ready` 之前记录 `inputs_ready`。各 lane 选中该任务、满足顺序条件并准备好函数地址后，各自记录 `entry_commit`，随后写自己的 `enter_ready`。V0 还负责发布 MIX 顺序的下界。两个打点之间既可能跨核，又跨过候选选择和顺序检查；现有记录没有单列 V0 首次读到 `fanin_ready` 的时刻。[领取与发布](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1012-L1052) · [C 检查依赖](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L958-L1006) · [各核选择与提交](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1504-L1629)
+**同一 block 内发生了什么。** V0 领取 MIX block 并发布任务记录。C 是 t22 的最低参与 lane，检查输入依赖，在写入共享的 `fanin_ready` 之前记录 `inputs_ready`。各 lane 选中该任务、满足顺序条件并准备好函数地址后，各自记录 `entry_commit`，随后写自己的 `enter_ready`。V0 还负责发布 MIX 顺序的下界。两个打点之间既可能跨核，又跨过候选选择和顺序检查；这批原版记录没有单列 V0 首次读到 `fanin_ready` 的时刻。[领取与发布](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1012-L1052) · [C 检查依赖](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L958-L1006) · [各核选择与提交](../../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1504-L1629)
 
 | t22 输入就绪 → 提交，十轮均值（µs） | A5 · 每轮 24 块 1C2V | A6 · 每轮 48 块 1C1V | A6 − A5 |
 | --- | ---: | ---: | ---: |
