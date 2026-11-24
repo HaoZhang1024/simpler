@@ -192,3 +192,28 @@ def test_t22_release_splits_critical_wait_at_group_last_commit(monkeypatch):
     assert len(result["last_commit_lanes"]) == 2
     with pytest.raises(ValueError, match="duplicate t22 checkpoint"):
         release(rows, events + [events[-1]], chain)
+
+
+def test_entry_roles_separates_raw_kernel_overlap_and_critical_window(monkeypatch):
+    pytest.importorskip("ortools")
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent / "analysis"))
+    tool = importlib.import_module("t22_release")
+    row = importlib.import_module("swa_sync_bound").KernelExecution
+    rows = [
+        row(1, 18, 10, 0, 1, "aiv", 5, 12, 800, 1250, 10**9, 4, 790, 1270),
+        row(1, 22, 14, 0, 0, "aic", 0, 18, 1700, 2100, 10**9, 4, 1650, 2110),
+        row(1, 22, 14, 0, 1, "aiv", 5, 19, 1750, 2150, 10**9, 4, 1680, 2160),
+    ]
+    events = [dict(task_id=14, block_index=0, cluster_lane=lane, worker_id=worker, kind=kind, cycles=stamp)
+              for lane, worker, kind, stamp in [(1, 5, "claim", 700), (0, 0, "inputs_ready", 1100),
+                                                 (0, 0, "entry_commit", 1300), (1, 5, "entry_commit", 1600)]]
+    chain = [dict(task=22, block=0, worker=5, prior_kernel_end_cycles=1350, dispatch_cycles=1680)]
+    report = tool.entry_roles_summary([tool.entry_roles_round(rows, events, chain)])
+    assert report["critical_roles"] == ["V0"]
+    assert report["critical_lane_us"] == 0.25
+    assert report["critical_block_us"] == {"C": 0.0, "V0": 0.25}
+    assert report["critical_block_raw_us"] == report["all_blocks_raw_us"] == {"C": 0.2, "V0": 0.5}
+    assert report["critical_block_v0_raw_kernel_overlap_us"] == 0.15
+    events[1]["worker_id"] = 5
+    with pytest.raises(ValueError, match="publisher or claimer"):
+        tool.entry_roles_round(rows, events, chain)

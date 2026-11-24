@@ -114,3 +114,89 @@ def release_summary(rounds):
         ],
         "rounds": rounds,
     }
+
+
+def entry_roles_round(rows, events, chain):
+    """Use one critical block and one clipping window for every role in that round."""
+    mix = [r for r in rows if r.source_task == 22]
+    (tid,) = {r.task_id for r in mix}
+    (hz,) = {r.clock_hz for r in mix}
+    (step,) = [s for s in chain if s["task"] == 22]
+    (critical,) = [r for r in mix if (r.block_idx, r.worker) == (step["block"], step["worker"])]
+    role_names = ("C", "V0", "V1")
+    marks = {}
+    for e in events:
+        if int(e["task_id"]) != tid or e["kind"] not in ("inputs_ready", "claim", "entry_commit"):
+            continue
+        key = (e["block_index"], e["kind"], e["cluster_lane"])
+        if key in marks:
+            raise ValueError(f"Duplicate t22 role checkpoint {key}")
+        marks[key] = (e["worker_id"], e["cycles"])
+
+    units = {(r.block_idx, r.subtask_slot): r for r in mix}
+    blocks = {r.block_idx for r in mix}
+    roles = {r.subtask_slot for r in mix}
+    if roles not in ({0, 1}, {0, 1, 2}) or len(units) != len(mix) or len(mix) != len(blocks) * len(roles):
+        raise ValueError("Incomplete t22 MIX role set")
+    if len(marks) != len(mix) + 2 * len(blocks):
+        raise ValueError("Incomplete t22 role checkpoints")
+
+    all_blocks = {role_names[k]: [] for k in roles}
+    critical_block = {}
+    critical_block_raw = {}
+    us = 1e6 / hz
+    for block in blocks:
+        publisher, ready = marks[block, "inputs_ready", 0]
+        claimer, _ = marks[block, "claim", 1]
+        if publisher != units[block, 0].worker or claimer != units[block, 1].worker:
+            raise ValueError(f"Unexpected t22 publisher or claimer at block {block}")
+        for role in roles:
+            row = units[block, role]
+            worker, commit = marks[block, "entry_commit", role]
+            if worker != row.worker or not 0 < ready <= commit <= row.dispatch_cycles:
+                raise ValueError(f"Invalid t22 entry for block {block}, role {role}")
+            name = role_names[role]
+            all_blocks[name].append((commit - ready) * us)
+            if block != critical.block_idx:
+                continue
+            critical_block_raw[name] = (commit - ready) * us
+            start = max(ready, step["prior_kernel_end_cycles"])
+            end = min(commit, step["dispatch_cycles"])
+            critical_block[name] = max(0, end - start) * us
+            if role == 1:
+                # Use the raw window. The chain clips out time before the preceding kernel ends.
+                v0_busy = (
+                    sum(
+                        max(0, min(commit, r.kernel_end_cycles) - max(ready, r.start_cycles))
+                        for r in rows
+                        if r.worker == worker
+                    )
+                    * us
+                )
+    return {
+        "round": critical.iteration,
+        "critical_role": role_names[critical.subtask_slot],
+        "critical_block_raw_us": critical_block_raw,
+        "critical_block_us": critical_block,
+        "all_blocks_raw_us": {k: mean(v) for k, v in all_blocks.items()},
+        "critical_block_v0_raw_kernel_overlap_us": v0_busy,
+        "blocks": len(blocks),
+    }
+
+
+def entry_roles_summary(rounds):
+    def role_means(field):
+        return {k: round(mean(r[field][k] for r in rounds), 3) for k in rounds[0][field]}
+
+    return {
+        "rounds": len(rounds),
+        "blocks_checked": sum(r["blocks"] for r in rounds),
+        "critical_roles": [r["critical_role"] for r in rounds],
+        "critical_lane_us": round(mean(r["critical_block_us"][r["critical_role"]] for r in rounds), 3),
+        "critical_block_us": role_means("critical_block_us"),
+        "all_blocks_raw_us": role_means("all_blocks_raw_us"),
+        "critical_block_raw_us": role_means("critical_block_raw_us"),
+        "critical_block_v0_raw_kernel_overlap_us": round(
+            mean(r["critical_block_v0_raw_kernel_overlap_us"] for r in rounds), 3
+        ),
+    }

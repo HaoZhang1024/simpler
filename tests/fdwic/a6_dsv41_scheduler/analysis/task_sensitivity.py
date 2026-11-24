@@ -26,7 +26,7 @@ from swa_sync_bound import (
     read_round,
     solve_model,
 )
-from t22_release import release_round, release_summary
+from t22_release import entry_roles_round, entry_roles_summary, release_round, release_summary
 
 
 def sensitivity(nodes, edges, rows, capacities, baseline, seconds):
@@ -163,7 +163,9 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run", type=Path, help="Integrated trial directory or its completed SWA run")
     parser.add_argument("--seconds", type=float, default=30, help="Time limit per variant solve")
-    parser.add_argument(
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--t22-entry-roles", action="store_true", help="Compare C and V entry on the same t22 blocks")
+    mode.add_argument(
         "--t22-release",
         type=Path,
         metavar="LANES.csv",
@@ -195,6 +197,9 @@ def main():
         if placement["chain"] != ref["chain"] or placement["fixed_order_us"] != ref["fixed_order_us"]:
             raise ValueError("Capture differs from saved model")
         raw = read_json(folder / "chip_swimlane_records.json")
+        if args.t22_entry_roles:
+            rounds.append(entry_roles_round(rows, raw["percounter_task_events"]["records"], placement["chain"]))
+            continue
         if args.t22_release:
             detail, records = release_round(rows, raw["percounter_task_events"]["records"], placement["chain"])
             rounds.append(detail)
@@ -206,6 +211,9 @@ def main():
         for step in placement["chain"]:
             kernel_time[step["task"]] += step["kernel_us"]
         rounds.append({"t25": t25, "t22": t22, "gains": gains, "chain_kernel": kernel_time})
+    if args.t22_entry_roles:
+        print(json.dumps({"source_commit": build["source_commit"], **entry_roles_summary(rounds)}))
+        return
     if args.t22_release:
         with args.t22_release.open("w", newline="", encoding="utf-8") as output:
             writer = csv.DictWriter(output, fieldnames=lanes[0].keys())

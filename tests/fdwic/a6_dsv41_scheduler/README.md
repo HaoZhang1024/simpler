@@ -1,5 +1,37 @@
 # A6 percounter SWA
 
+<a id="t22-entry-roles"></a>
+
+## t22 输入就绪到各核提交 · 蓝区结果与黄区离线核验
+
+**同一 block 内发生了什么。** V0 领取 MIX block 并发布任务记录。C 是 t22 的最低参与 lane，检查输入依赖，在写入共享的 `fanin_ready` 之前记录 `inputs_ready`。各 lane 选中该任务、满足顺序条件并准备好函数地址后，各自记录 `entry_commit`，随后写自己的 `enter_ready`。V0 还负责发布 MIX 顺序的下界。两个打点之间既可能跨核，又跨过候选选择和顺序检查；现有记录没有单列 V0 首次读到 `fanin_ready` 的时刻。[领取与发布](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1012-L1052) · [C 检查依赖](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L958-L1006) · [各核选择与提交](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1504-L1629)
+
+| 从 C 记录输入就绪起算，十轮均值（µs） | A5 · 24 块 1C2V | A6 · 48 块 1C1V |
+| --- | ---: | ---: |
+| 每轮实际关键 lane，按该轮关键链窗口截取 | 0.692（十轮 V1） | 1.661（按回填 worker 映射为 V0） |
+| 同一批关键 block，取各自 **V0** 提交 | 1.120 | 1.661（待脚本按角色交叉核对） |
+| 同一批关键 block，取各自 **C** 提交 | 0.801 | 待回填 |
+| 所有 t22 block 的原始间隔，按 C / V0 / V1 分组 | 0.916 / 1.348 / 0.667 | 待回填 C / V0 |
+
+蓝区逐轮核过 A5 的 240 个 block。关键 block 上，从 C 打点到 V0 提交的原始窗口与 V0 上已记录的 kernel 执行重叠为 0。A5 同一批 block 内，V0 比 V1 平均晚提交 **0.428 µs**。将比较角色统一为 V0 后，两端各自关键 block 的差值是 **0.541 µs**（1.661 − 1.120）。这个拆分描述采样中选中的核；两端 block 数和关键 block 会变，不能据此估算更换调度策略的整图收益。A6 的测试提交 `76c7c288b` 复用 A5 runtime，`lane_loop.h` 与 A5 归档基线 `922b55003` 的 Git 文件对象相同。
+
+**黄区操作。** 在 `percounter` 根目录，用已有 trial 执行一次。脚本只在 CPU 上读十轮 L2，按事件的 worker 和 lane 核验领取者、输入就绪发布者和提交者。
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-entry-roles
+```
+
+**黄区回填位置。** 将末行 JSON 放入下框。预期 `rounds=10`、`blocks_checked=480`、`critical_lane_us=1.661`。执行失败时填轮次与首条报错。
+
+```text
+待回填 A6 t22-entry-roles JSON
+```
+
+**蓝区判读。** 先用所有 block 的原始间隔判断 V0 的差异是否普遍。再比较同一关键 block 的 C、V0 两列；两列一起变慢时查共同的候选选择和提交准备，差异集中在 V0 时查 V0 读就绪标志、承担协调工作和等待顺序条件的路径。`critical_block_v0_raw_kernel_overlap_us` 单列这段原始时间内 V0 还在执行 kernel 的部分。`critical_block_us` 按关键链窗口截取，`critical_block_raw_us` 保留原始间隔。逐核间隔可以重叠，分别对照。
+
 <a id="t22-release"></a>
 
 ## 已完成 · t22 最后一条 lane 提交前后的等待
@@ -433,4 +465,4 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 t22、t9 和 t35 每轮在关键链上 dispatch 前的间隔贡献分别为 11.933、9.053 和 7.323 µs。
 优先核对 t22 的 48-block MIX 同步放行，其次观察同核接块。不同插桩版本之间的整图改善以 L0 对照。
 
-[t22 同步等待的十轮结果与蓝区判读](#t22-release)。
+本轮黄区执行和回填见 [t22 提交角色核验](#t22-entry-roles)，上一轮结果见 [t22 同步等待](#t22-release)。
