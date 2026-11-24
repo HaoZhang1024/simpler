@@ -5,9 +5,34 @@
 | 负责方 | 当前状态 | 下一步 |
 | --- | --- | --- |
 | 蓝区 | 已接入 IPC0 命令和 IPC4 回执，构建 A5/A6 目标并检查 A6 产物。IPC 位宽与偏移、启动中止、退出确认、返回放行四组 CPU 测试通过 | 从同卡 GM/IPC 的 L0 样本核对功能和整图时延 |
-| 黄区 | 已有设备 0 的准备产物和历史 GM 数据 | 先执行 IPC 对照命令，把最后一行 JSON 填入本节 |
+| 黄区 | 已有设备 0 的集成版产物 | 采集 [SWA L1](#swa-l1)。[GM/IPC 的 L0 对照](#ipc-lifecycle) 有独立的回填位置 |
 
 本页按最近完成的任务在前排列。每节保留可从仓库根目录执行的命令和当批原始 JSON。硬件配置、CntNotify 测量、整图基线和瓶颈结论见 [A6 与 A5 性能对比](a6-a5-comparison.zh-CN.md)。
+
+<a id="swa-l1"></a>
+
+## A6 集成版 SWA 的 L1 核内时间
+
+在 `percounter` 分支根目录加载原 A6 CANN 环境，分配原设备 0 后执行。脚本复用 `build/swa-integrated-758Yr8` 中的 GM runtime、runner、t25=54 计划、callable 和输入，直接采 L1。预热 1 轮、正式 10 轮，逐轮校验输出和每个任务的 AIC/AIV 调用数，每轮合计 560 次。
+
+```bash
+git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_l1.sh
+```
+
+**黄区回填位置**　把命令最后一行 JSON 粘到下面。完整的十轮样本在命令打印目录的 `L1/summary.json`。如执行失败，在同一处填首条错误。
+
+```text
+待回填 A6 SWA L1 的 feedback.json
+```
+
+| 十轮均值 | 如何读数 | A5 对照 |
+| --- | --- | ---: |
+| `critical_chain_kernel_us` | 从最后结束的调用回溯，每步取本核上一项与图上前驱中最晚结束的调用，只累加链上的 L1 窗口 | 113.697 µs |
+| `first_to_last_us` | 从最早开始到最后结束的整段时间 | 166.056 µs |
+| `any_kernel_active_us` / `no_kernel_active_us` | 上述时间内，至少一个核在 kernel 窗口内 / 全部核都在窗口外。跨核重叠只计一次 | 144.335 / 21.721 µs |
+| `aic_core_us` / `aiv_core_us` | 各 AIC / AIV 的 kernel 时间分别累加，单位为核·µs | 1912.357 / 3336.011 核·µs |
+
+L1 窗口从业务 kernel 调用前计到返回后的写屏障完成，包含调用内部计算、访存和等待。A5 对照取自同一集成基线的设备 4、t25=64、任务 `task_20261124_165608_158205029729`，10 轮均通过数值校验，每轮 578 次调用。两端核内时间差用同一行的 A6 值减 A5 值。
 
 <a id="ipc-lifecycle"></a>
 

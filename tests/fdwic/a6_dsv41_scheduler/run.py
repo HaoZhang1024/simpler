@@ -7,7 +7,7 @@
 # INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY, OR FITNESS FOR A PARTICULAR PURPOSE.
 # See LICENSE in the root of the software repository for the full text of the License.
 # -----------------------------------------------------------------------------------------------------------
-"""Run the single-device SWA benchmark or collect A6 per-block L2 timings."""
+"""Run the single-device SWA benchmark, L1 kernel intervals, or A6 per-block L2 capture."""
 
 import argparse
 import hashlib
@@ -27,6 +27,16 @@ PRODUCTION = HERE.parent / "dsv41_scheduler/production"
 
 
 def summarize(output, level=0):
+    if level == 1:
+        sys.path.insert(0, str(HERE / "analysis"))
+        from swa_l1 import summarize_l1  # noqa: PLC0415
+
+        return {
+            "runtime": "percounter",
+            "profiling_level": 1,
+            "numerical_validation": True,
+            **summarize_l1(output / "rank0"),
+        }
     result = json.loads((output / "rank0/result.json").read_text())
     if level == 2:
         if not (result["passed"] and result["validated_against_fused_prefix"]):
@@ -86,7 +96,9 @@ def parse_options():
     parser.add_argument("--output", type=Path, required=True)
     parser.add_argument("--warmup", type=int, default=1)
     parser.add_argument("--rounds", type=int, default=10)
-    parser.add_argument("--level", type=int, choices=(0, 2), default=0, help="Use L2 for A6 block capture")
+    parser.add_argument(
+        "--level", type=int, choices=(0, 1, 2), default=0, help="L1 kernel timings or A6 L2 block capture"
+    )
     parser.add_argument("--device", type=int, help="Allocated device ID (required on A6 unless TASK_DEVICE is set)")
     args = parser.parse_args()
     if args.level == 2 and args.platform != "a6":
@@ -162,6 +174,8 @@ def main():
             str(args.warmup),
             "--rounds",
             str(args.rounds),
+            "--level",
+            str(args.level),
         ]
         subprocess.run(
             ["task-submit", "--device", "auto", "--device-num", "1", "--max-time", "300", "--run", shlex.join(command)],
@@ -218,6 +232,10 @@ def main():
 
 
 def print_results(output, record):
+    if record["profiling_level"] == 1:
+        print(json.dumps(record["results"][0]["mean"]))
+        print(f"L1 samples and validation: {output / 'summary.json'}")
+        return
     if record["profiling_level"] == 2:
         print(f"L2 capture and numerical validation passed: {output}")
         return
