@@ -5,70 +5,27 @@
 | 负责方 | 当前状态 | 下一步 |
 | --- | --- | --- |
 | 蓝区 | 已接入 IPC0 命令和 IPC4 回执，构建 A5/A6 目标并检查 A6 产物。IPC 位宽与偏移、启动中止、退出确认、返回放行四组 CPU 测试通过 | 从同卡 GM/IPC 的 L0 样本核对功能和整图时延 |
-| 黄区 | 已有设备 0 的集成版产物 | 采集 [SWA L1](#swa-l1)。[GM/IPC 的 L0 对照](#ipc-lifecycle) 有独立的回填位置 |
+| 黄区 | 设备 0 的 [SWA L1](#swa-l1) 已回填，10 轮校验通过 | [GM/IPC 的 L0 对照及回填位置](#ipc-lifecycle) |
 
 本页按最近完成的任务在前排列。每节保留可从仓库根目录执行的命令和当批原始 JSON。硬件配置、CntNotify 测量、整图基线和瓶颈结论见 [A6 与 A5 性能对比](a6-a5-comparison.zh-CN.md)。
 
 <a id="swa-l1"></a>
 
-## A6 集成版 SWA 的 L1 核内时间
+## 已完成 · A6 集成版 SWA 的 L1 核内时间
 
-在 `percounter` 分支根目录加载原 A6 CANN 环境，分配原设备 0 后执行。脚本复用 `build/swa-integrated-758Yr8` 中的 GM runtime、runner、t25=54 计划、callable 和输入，直接采 L1。预热 1 轮、正式 10 轮，逐轮校验输出和每个任务的 AIC/AIV 调用数，每轮合计 560 次。
-
-```bash
-git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_l1.sh
-```
-
-**黄区回填位置**　把命令最后一行 JSON 粘到下面。完整的十轮样本在命令打印目录的 `L1/summary.json`。如执行失败，在同一处填首条错误。
-
-## 执行结果
-
-命令（percounter @a8f5bf60f，设备 0，CANN 9.3.0）：
+A6 设备 0，CANN 9.3.0，t25=54。设备重启后，基础功能检查连续 3 次通过，并在原 trial 上完成一次 L0 预热和一次正式运行。随后使用采集脚本 `a8f5bf60f`，复用 `build/swa-integrated-758Yr8` 中的 GM runtime、runner、计划、callable 和输入。实测产物对应 Simpler `76c7c288b`、PTO-ISA `45435c062`，与原 L0 对照的设备、构建和 runtime 文件校验值一致。
 
 ```bash
 git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_l1.sh
 ```
 
-一次通过（1 预热 + 10 正式轮，逐轮数值校验与 AIC/AIV 调用数校验全过，每轮 560 次调用）。
-
-## 回填 JSON（已粘入任务文档 #swa-l1 节）
+预热 1 轮、正式 10 轮，逐轮通过数值和各任务 AIC/AIV 调用数校验，每轮 560 次。以下为脚本输出，各轮样本保存在黄区 `build/swa-l1-VWdvyt/L1/summary.json`。
 
 ```json
 {"runtime": "percounter", "profiling_level": 1, "numerical_validation": true, "device": 0, "warmup": 1, "rounds": 10, "calls_per_round": 560, "mean": {"first_to_last_us": 239.376, "critical_chain_kernel_us": 197.008, "any_kernel_active_us": 222.442, "no_kernel_active_us": 16.934, "aic_core_us": 3584.519, "aiv_core_us": 4359.864}, "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a"}
 ```
 
-完整十轮样本：`build/swa-l1-VWdvyt/L1/summary.json`（NFS 服务器 137 端）。
-
-## A6 实测 vs A5 对照（同集成基线，A5=设备 4、t25=64）
-
-| 十轮均值                 | A6 实测 (µs) | A5 对照 (µs) |    Δ=A6−A5 (µs) |
-| ------------------------ | -----------: | -----------: | --------------: |
-| critical_chain_kernel_us |      197.008 |      113.697 |     **+83.311** |
-| first_to_last_us         |      239.376 |      166.056 |         +73.320 |
-| any_kernel_active_us     |      222.442 |      144.335 |         +78.107 |
-| no_kernel_active_us      |       16.934 |       21.721 |      **−4.787** |
-| aic_core_us (核·µs)      |     3584.519 |     1912.357 | +1672.16 (+87%) |
-| aiv_core_us (核·µs)      |     4359.864 |     3336.011 | +1023.85 (+31%) |
-
-## 读数要点（供归因参考）
-
-- `first_to_last_us` 239.4 与集成版 L0 端到端 239.9 µs 吻合（L1 窗口含调用后写屏障，口径一致），交叉验证了两次采集。
-- 端到端 +73.3 µs 的差距几乎全部在**核内执行**：关键链核内 +83.3 µs，而窗口内全核空闲反而比 A5 少 4.8 µs（A6 的排程空隙不比 A5 差）。
-- 核·µs 膨胀比：AIC **+87%** vs AIV +31%——cube 侧（AIC）核内时间膨胀是 vector 侧的近 3 倍，与此前 t25 量化链（AIC 侧 VPACKV2 依赖链）及 task sensitivity 排名（t29/t28 AIC 重任务居首）方向一致。
-
-## 环境备注（影响数据有效性的插曲）
-
-- 当日下午设备 0 曾出现驱动/固件级间歇故障（软件逐字节排除：同一 trial 栈与旧栈同签名失败，独立 torch sanity 亦间歇挂死）；执行 PCI 复位触发整机宕机，19:22 重启后恢复正常（sanity 3/3、trial 栈 L0 1+1 PASS 后才采 L1）。
-- NFS /npu/machine 重启后曾失挂，已从 100.102.180.181:/home/y00954809/nfs_for_machine 重新挂载并写入 fstab；本次 L1 在恢复后的原 trial（source_commit 76c7c288b、pto_isa 45435c06）上采集，runtime sha 与 11-23 L0 基线一致
-
-| 十轮均值 | 如何读数 | A5 对照 |
-| --- | --- | ---: |
-| `critical_chain_kernel_us` | 从最后结束的调用回溯，每步取本核上一项与图上前驱中最晚结束的调用，只累加链上的 L1 窗口 | 113.697 µs |
-| `first_to_last_us` | 从最早开始到最后结束的整段时间 | 166.056 µs |
-| `any_kernel_active_us` / `no_kernel_active_us` | 上述时间内，至少一个核在 kernel 窗口内 / 全部核都在窗口外。跨核重叠只计一次 | 144.335 / 21.721 µs |
-| `aic_core_us` / `aiv_core_us` | 各 AIC / AIV 的 kernel 时间分别累加，单位为核·µs | 1912.357 / 3336.011 核·µs |
-
-L1 窗口从业务 kernel 调用前计到返回后的写屏障完成，包含调用内部计算、访存和等待。A5 对照取自同一集成基线的设备 4、t25=64、任务 `task_20261124_165608_158205029729`，10 轮均通过数值校验，每轮 578 次调用。两端核内时间差用同一行的 A6 值减 A5 值。
+A5 对照取自设备 4、t25=64、任务 `task_20261124_165608_158205029729`，10 轮均通过数值校验，每轮 578 次调用。L1 关键链核内时间为 A5 **113.697 µs**、A6 **197.008 µs**。各窗口的定义、差值和任务归因见 [A6/A5 的 L1 对比表](a6-a5-comparison.zh-CN.md#l1-comparison)。
 
 <a id="ipc-lifecycle"></a>
 
