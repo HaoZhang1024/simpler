@@ -165,6 +165,10 @@ def main():
     parser.add_argument("--seconds", type=float, default=30, help="Time limit per variant solve")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--t22-entry-roles", action="store_true", help="Compare C and V entry on the same t22 blocks")
+    mode.add_argument("--t22-observation", action="store_true", help="Split V0 entry at its first observed fanin flag")
+    parser.add_argument(
+        "--capture-l2", type=Path, help="Use another role/observation capture of the same case and device"
+    )
     mode.add_argument(
         "--t22-release",
         type=Path,
@@ -172,6 +176,8 @@ def main():
         help="Analyze t22 timestamps only and save per-lane details to this CSV",
     )
     args = parser.parse_args()
+    if args.capture_l2 and not (args.t22_entry_roles or args.t22_observation):
+        parser.error("--capture-l2 requires --t22-entry-roles or --t22-observation")
     run = args.run
     if (run / "src/build").is_dir():
         (model,) = (run / "src/build").glob("swa-a6-*/model/summary.json")
@@ -189,16 +195,33 @@ def main():
         raise ValueError("Expected the ten matching solved baseline rounds")
     rounds = []
     lanes = []
+    l2 = args.capture_l2 or run / "L2"
+    if args.capture_l2:
+        other, _ = checked_run(l2, build, 2)
+        if other["device"] != capture["device"] or other["build"] != build:
+            raise ValueError("Observation run must use the baseline device and frozen case")
+        if args.t22_entry_roles and other["runtime_sha256"] != capture["runtime_sha256"]:
+            raise ValueError("Control runtime differs from the saved baseline")
+        capture = other
     for ref in prior["rounds"]:
         print(f"Analyzing round {ref['round']}/10", file=sys.stderr, flush=True)
-        folder = run / "L2/percounter/rank0" / f"run{ref['round']}"
+        folder = l2 / "percounter/rank0" / f"run{ref['round']}"
         nodes, edges, rows, _ = read_round(folder, tasks, ref["round"])
         placement = analyze_placement(nodes, edges, rows)
-        if placement["chain"] != ref["chain"] or placement["fixed_order_us"] != ref["fixed_order_us"]:
+        if not args.capture_l2 and (
+            placement["chain"] != ref["chain"] or placement["fixed_order_us"] != ref["fixed_order_us"]
+        ):
             raise ValueError("Capture differs from saved model")
         raw = read_json(folder / "chip_swimlane_records.json")
-        if args.t22_entry_roles:
-            rounds.append(entry_roles_round(rows, raw["percounter_task_events"]["records"], placement["chain"]))
+        if args.t22_entry_roles or args.t22_observation:
+            rounds.append(
+                entry_roles_round(
+                    rows,
+                    raw["percounter_task_events"]["records"],
+                    placement["chain"],
+                    split_observation=bool(args.t22_observation),
+                )
+            )
             continue
         if args.t22_release:
             detail, records = release_round(rows, raw["percounter_task_events"]["records"], placement["chain"])
@@ -211,6 +234,17 @@ def main():
         for step in placement["chain"]:
             kernel_time[step["task"]] += step["kernel_us"]
         rounds.append({"t25": t25, "t22": t22, "gains": gains, "chain_kernel": kernel_time})
+    if args.capture_l2 or args.t22_observation:
+        print(
+            json.dumps(
+                {
+                    "case_source_commit": build["source_commit"],
+                    "runtime_sha256": capture["runtime_sha256"],
+                    **entry_roles_summary(rounds),
+                }
+            )
+        )
+        return
     if args.t22_entry_roles:
         print(json.dumps({"source_commit": build["source_commit"], **entry_roles_summary(rounds)}))
         return

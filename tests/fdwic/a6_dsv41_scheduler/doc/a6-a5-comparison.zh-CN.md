@@ -215,6 +215,8 @@ A5 十轮的末块为 62 号（7 轮）或 60 号（3 轮）。A6 当前计划�
 
 [按角色核验的原始回填](a6-swa-performance-progress.zh-CN.md#t22-entry-roles) · [同步等待的原始回填](a6-swa-performance-progress.zh-CN.md#t22-release)
 
+A5 新的同卡 L2 对照在原有 V0 提交记录中保留了首次观察到输入就绪的时刻。诊断版 240 个 block 的原始窗口平均为 1.327 µs，其中首次观察前 0.930 µs、观察后到提交 0.397 µs。本次原版全量均值为 1.312 µs。两组的关键 lane 分布有变化，A6 对照使用同样的两组采样。[本批配置、关键角色与 A6 回填](a6-swa-performance-progress.zh-CN.md#t22-observe)
+
 ## A6 实验版与集成版
 
 同卡同输入、t25=54。实验版 `a1ee04044` 使用早期 PTO-ISA pin，集成版 `76c7c288b` 使用 `45435c062` 并重建 callable。两批反映整套构建的变化。

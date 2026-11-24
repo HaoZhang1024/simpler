@@ -65,7 +65,16 @@ inline __aicore__ uint64_t percounter_observe(uint64_t counter_address) {
 /** How often a spinning lane looks at the exit register and the error word. */
 inline constexpr uint32_t PERCOUNTER_SPIN_CHECK_INTERVAL = 64;
 
-struct LaneConfig {
+template <bool Enabled>
+struct PercounterFaninObservation {};
+
+template <>
+struct PercounterFaninObservation<true> {
+    mutable uint32_t observed_generation[PERCOUNTER_PENDING_CAPACITY]{};
+    mutable uint64_t observed_cycles[PERCOUNTER_PENDING_CAPACITY]{};
+};
+
+struct LaneConfig : PercounterFaninObservation<TaskProfileCompilation<>::enabled> {
     __gm__ ChipSwimlaneActiveHead *profile_head{nullptr};
     ChipSwimlaneAicoreLocalState *profile{nullptr};
     PercounterScalarTrace *scalar{nullptr};
@@ -822,6 +831,28 @@ inline __aicore__ bool percounter_probe_fanin(
     return true;
 }
 
+// Preserve the first successful read across repeated discovery and candidate scans.
+template <typename Config>
+inline __aicore__ void percounter_capture_fanin(const Config &cfg, uint32_t index, uint32_t generation, uint32_t mask) {
+    if constexpr (TaskProfileCompilation<>::enabled) {
+        if (cfg.cluster_lane == 1 && (mask & 1U) && cfg.observed_generation[index] != generation) {
+            cfg.observed_cycles[index] = percounter_task_event_clock(cfg);
+            cfg.observed_generation[index] = generation;
+        }
+    }
+}
+
+template <typename Config>
+inline __aicore__ void percounter_mix_entry_checkpoint(const Config &cfg, const PercounterCandidate &c) {
+    if constexpr (TaskProfileCompilation<>::enabled) {
+        const uint64_t observed = cfg.cluster_lane == 1 && cfg.observed_generation[c.index] == c.generation ?
+                                      cfg.observed_cycles[c.index] : 0;
+        percounter_record_task_event(
+            cfg, PercounterTaskEventKind::EntryCommitted, c.entry, percounter_task_event_clock(cfg), observed
+        );
+    }
+}
+
 // A record remains immutable until every participant has latched its launch.
 // Nonparticipants can race reuse, so both generation reads enclose the payload.
 inline __aicore__ bool percounter_shared_candidate(const LaneConfig &cfg, uint32_t index, PercounterCandidate *out) {
@@ -843,6 +874,9 @@ inline __aicore__ bool percounter_shared_candidate(const LaneConfig &cfg, uint32
     if ((mask & (1U << cfg.cluster_lane)) == 0) return false;
     if (percounter_ssbuf_load_field(&record->enter_idle[cfg.cluster_lane]) == generation) return false;
     const uint32_t fanin_ready = percounter_ssbuf_load_acquire(&record->fanin_ready);
+    if constexpr (TaskProfileCompilation<>::enabled) {
+        if (fanin_ready == generation) percounter_capture_fanin(cfg, index, generation, mask);
+    }
     *out = {entry,     rank, generation, sequence, mask, static_cast<int32_t>(index), true, fanin_ready == generation,
             sync_index};
     return true;
@@ -1624,7 +1658,7 @@ inline __aicore__ bool percounter_select_ready(
         state->committed_generation = cohort.generation;
         if (cohort.shared) {
             if (percounter_ssbuf_load_acquire(&record->enter_ready[cfg.cluster_lane]) != cohort.generation) {
-                percounter_schedule_checkpoint(cfg, PercounterTaskEventKind::EntryCommitted, cohort.entry);
+                percounter_mix_entry_checkpoint(cfg, cohort);
                 percounter_ssbuf_store_release(&record->enter_ready[cfg.cluster_lane], cohort.generation);
 #if defined(__CCE_AICORE__)
                 if (!prefetched_mix) {

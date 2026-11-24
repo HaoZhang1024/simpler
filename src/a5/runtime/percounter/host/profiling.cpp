@@ -121,6 +121,8 @@ bool export_profile(const ProfileOwner &owner) {
                     << ",\"block_index\":" << block << ",\"block_count\":" << blocks << ",\"worker_id\":" << worker
                     << ",\"cluster_index\":" << header.cluster_index << ",\"cluster_lane\":" << header.cluster_lane;
         if (event.kind == PercounterTaskEventKind::Claim) task_events << ",\"claim_start_cycles\":" << event.detail;
+        if (event.kind == PercounterTaskEventKind::EntryCommitted && event.detail != 0)
+            task_events << ",\"fanin_observed_cycles\":" << event.detail;
         if (layout.profiling_level == 2 && event.kind == PercounterTaskEventKind::Claim)
             task_events << ",\"slot\":" << event.slot
                         << ",\"participant_mask\":" << static_cast<unsigned>(event.participant_mask)

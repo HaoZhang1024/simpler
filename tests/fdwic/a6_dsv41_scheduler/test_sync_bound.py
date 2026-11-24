@@ -214,6 +214,16 @@ def test_entry_roles_separates_raw_kernel_overlap_and_critical_window(monkeypatc
     assert report["critical_block_us"] == {"C": 0.0, "V0": 0.25}
     assert report["critical_block_raw_us"] == report["all_blocks_raw_us"] == {"C": 0.2, "V0": 0.5}
     assert report["critical_block_v0_raw_kernel_overlap_us"] == 0.15
+    with pytest.raises(ValueError, match="observation"):
+        tool.entry_roles_round(rows, events, chain, split_observation=True)
+    events[3]["fanin_observed_cycles"] = 1250
+    split = tool.entry_roles_summary([tool.entry_roles_round(rows, events, chain, split_observation=True)])
+    assert split["v0_observation"] == {
+        "critical_before_us": 0.0, "critical_after_us": 0.25, "all_before_us": 0.15, "all_after_us": 0.35
+    }
+    events[3]["fanin_observed_cycles"] = 1700
+    with pytest.raises(ValueError, match="observation"):
+        tool.entry_roles_round(rows, events, chain, split_observation=True)
     events[1]["worker_id"] = 5
     with pytest.raises(ValueError, match="publisher or claimer"):
         tool.entry_roles_round(rows, events, chain)

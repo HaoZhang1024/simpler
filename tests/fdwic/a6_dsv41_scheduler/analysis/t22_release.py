@@ -116,7 +116,7 @@ def release_summary(rounds):
     }
 
 
-def entry_roles_round(rows, events, chain):
+def entry_roles_round(rows, events, chain, *, split_observation=False):
     """Use one critical block and one clipping window for every role in that round."""
     mix = [r for r in rows if r.source_task == 22]
     (tid,) = {r.task_id for r in mix}
@@ -131,7 +131,7 @@ def entry_roles_round(rows, events, chain):
         key = (e["block_index"], e["kind"], e["cluster_lane"])
         if key in marks:
             raise ValueError(f"Duplicate t22 role checkpoint {key}")
-        marks[key] = (e["worker_id"], e["cycles"])
+        marks[key] = e
 
     units = {(r.block_idx, r.subtask_slot): r for r in mix}
     blocks = {r.block_idx for r in mix}
@@ -144,19 +144,33 @@ def entry_roles_round(rows, events, chain):
     all_blocks = {role_names[k]: [] for k in roles}
     critical_block = {}
     critical_block_raw = {}
+    raw_before, raw_after = [], []
+    split = {}
     us = 1e6 / hz
     for block in blocks:
-        publisher, ready = marks[block, "inputs_ready", 0]
-        claimer, _ = marks[block, "claim", 1]
-        if publisher != units[block, 0].worker or claimer != units[block, 1].worker:
+        inputs = marks[block, "inputs_ready", 0]
+        ready = inputs["cycles"]
+        if (
+            inputs["worker_id"] != units[block, 0].worker
+            or marks[block, "claim", 1]["worker_id"] != units[block, 1].worker
+        ):
             raise ValueError(f"Unexpected t22 publisher or claimer at block {block}")
         for role in roles:
             row = units[block, role]
-            worker, commit = marks[block, "entry_commit", role]
+            entry = marks[block, "entry_commit", role]
+            worker, commit = entry["worker_id"], entry["cycles"]
             if worker != row.worker or not 0 < ready <= commit <= row.dispatch_cycles:
                 raise ValueError(f"Invalid t22 entry for block {block}, role {role}")
             name = role_names[role]
             all_blocks[name].append((commit - ready) * us)
+            if split_observation and role == 1:
+                stamp = entry.get("fanin_observed_cycles", 0)
+                if not ready <= stamp <= commit:
+                    raise ValueError(
+                        f"Missing or unordered t22 V0 observation at round {critical.iteration}, block {block}"
+                    )
+                raw_before.append((stamp - ready) * us)
+                raw_after.append((commit - stamp) * us)
             if block != critical.block_idx:
                 continue
             critical_block_raw[name] = (commit - ready) * us
@@ -164,6 +178,10 @@ def entry_roles_round(rows, events, chain):
             end = min(commit, step["dispatch_cycles"])
             critical_block[name] = max(0, end - start) * us
             if role == 1:
+                if split_observation:
+                    cut = max(start, min(end, stamp))
+                    split["critical_before_us"] = (cut - start) * us
+                    split["critical_after_us"] = max(0, end - cut) * us
                 # Use the raw window. The chain clips out time before the preceding kernel ends.
                 v0_busy = (
                     sum(
@@ -173,7 +191,11 @@ def entry_roles_round(rows, events, chain):
                     )
                     * us
                 )
+    if split_observation:
+        split["all_before_us"] = mean(raw_before)
+        split["all_after_us"] = mean(raw_after)
     return {
+        **split,
         "round": critical.iteration,
         "critical_role": role_names[critical.subtask_slot],
         "critical_block_raw_us": critical_block_raw,
@@ -188,7 +210,7 @@ def entry_roles_summary(rounds):
     def role_means(field):
         return {k: round(mean(r[field][k] for r in rounds), 3) for k in rounds[0][field]}
 
-    return {
+    result = {
         "rounds": len(rounds),
         "blocks_checked": sum(r["blocks"] for r in rounds),
         "critical_roles": [r["critical_role"] for r in rounds],
@@ -200,3 +222,8 @@ def entry_roles_summary(rounds):
             mean(r["critical_block_v0_raw_kernel_overlap_us"] for r in rounds), 3
         ),
     }
+    if "all_before_us" in rounds[0]:
+        fields = ("critical_before_us", "critical_after_us", "all_before_us", "all_after_us")
+        result["v0_observation"] = {k: round(mean(r[k] for r in rounds), 3) for k in fields}
+        result["v0_by_round"] = [{k: round(r[k], 3) for k in ("round", *fields)} for r in rounds]
+    return result
