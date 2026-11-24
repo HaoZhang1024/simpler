@@ -21,9 +21,45 @@ git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_
 
 **黄区回填位置**　把命令最后一行 JSON 粘到下面。完整的十轮样本在命令打印目录的 `L1/summary.json`。如执行失败，在同一处填首条错误。
 
-```text
-待回填 A6 SWA L1 的 feedback.json
+## 执行结果
+
+命令（percounter @a8f5bf60f，设备 0，CANN 9.3.0）：
+
+```bash
+git pull --ff-only && DEVICE=0 bash tests/fdwic/a6_dsv41_scheduler/analysis/run_swa_l1.sh
 ```
+
+一次通过（1 预热 + 10 正式轮，逐轮数值校验与 AIC/AIV 调用数校验全过，每轮 560 次调用）。
+
+## 回填 JSON（已粘入任务文档 #swa-l1 节）
+
+```json
+{"runtime": "percounter", "profiling_level": 1, "numerical_validation": true, "device": 0, "warmup": 1, "rounds": 10, "calls_per_round": 560, "mean": {"first_to_last_us": 239.376, "critical_chain_kernel_us": 197.008, "any_kernel_active_us": 222.442, "no_kernel_active_us": 16.934, "aic_core_us": 3584.519, "aiv_core_us": 4359.864}, "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a"}
+```
+
+完整十轮样本：`build/swa-l1-VWdvyt/L1/summary.json`（NFS 服务器 137 端）。
+
+## A6 实测 vs A5 对照（同集成基线，A5=设备 4、t25=64）
+
+| 十轮均值                 | A6 实测 (µs) | A5 对照 (µs) |    Δ=A6−A5 (µs) |
+| ------------------------ | -----------: | -----------: | --------------: |
+| critical_chain_kernel_us |      197.008 |      113.697 |     **+83.311** |
+| first_to_last_us         |      239.376 |      166.056 |         +73.320 |
+| any_kernel_active_us     |      222.442 |      144.335 |         +78.107 |
+| no_kernel_active_us      |       16.934 |       21.721 |      **−4.787** |
+| aic_core_us (核·µs)      |     3584.519 |     1912.357 | +1672.16 (+87%) |
+| aiv_core_us (核·µs)      |     4359.864 |     3336.011 | +1023.85 (+31%) |
+
+## 读数要点（供归因参考）
+
+- `first_to_last_us` 239.4 与集成版 L0 端到端 239.9 µs 吻合（L1 窗口含调用后写屏障，口径一致），交叉验证了两次采集。
+- 端到端 +73.3 µs 的差距几乎全部在**核内执行**：关键链核内 +83.3 µs，而窗口内全核空闲反而比 A5 少 4.8 µs（A6 的排程空隙不比 A5 差）。
+- 核·µs 膨胀比：AIC **+87%** vs AIV +31%——cube 侧（AIC）核内时间膨胀是 vector 侧的近 3 倍，与此前 t25 量化链（AIC 侧 VPACKV2 依赖链）及 task sensitivity 排名（t29/t28 AIC 重任务居首）方向一致。
+
+## 环境备注（影响数据有效性的插曲）
+
+- 当日下午设备 0 曾出现驱动/固件级间歇故障（软件逐字节排除：同一 trial 栈与旧栈同签名失败，独立 torch sanity 亦间歇挂死）；执行 PCI 复位触发整机宕机，19:22 重启后恢复正常（sanity 3/3、trial 栈 L0 1+1 PASS 后才采 L1）。
+- NFS /npu/machine 重启后曾失挂，已从 100.102.180.181:/home/y00954809/nfs_for_machine 重新挂载并写入 fstab；本次 L1 在恢复后的原 trial（source_commit 76c7c288b、pto_isa 45435c06）上采集，runtime sha 与 11-23 L0 基线一致
 
 | 十轮均值 | 如何读数 | A5 对照 |
 | --- | --- | ---: |
