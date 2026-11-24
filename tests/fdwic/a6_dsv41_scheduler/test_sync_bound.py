@@ -162,3 +162,33 @@ def test_sensitivity_uses_matching_work_and_clips_early_claim(monkeypatch):
     nodes = {22: {"sync": True, "units": []}, 25: {"sync": False, "units": []}}
     gains = tool.sensitivity(nodes, [(22, 25)], rows, {"aic": 1, "aiv": 54}, 1.2, 5)
     assert gains[25] == pytest.approx((0.2, 0.2))
+
+
+def test_t22_release_splits_critical_wait_at_group_last_commit(monkeypatch):
+    pytest.importorskip("ortools")
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parent / "analysis"))
+    release = importlib.import_module("t22_release").release_round
+    row = importlib.import_module("swa_sync_bound").KernelExecution
+    rows = [
+        row(1, 18, 10, 3, 1, "aiv", 1, 12, 800, 1050, 10**9, 2, 790, 1060),
+        row(1, 22, 14, 0, 0, "aic", 0, 18, 1600, 1800, 10**9, 2, 1520, 1810),
+        row(1, 22, 14, 0, 1, "aiv", 1, 19, 1600, 1800, 10**9, 2, 1580, 1810),
+    ]
+    events = [dict(task_id=14, block_index=0, kind="inputs_ready", cycles=950)]
+    for worker, commit, ready in [(0, 1000, 1500), (1, 1300, 1550)]:
+        for kind, stamp in [("entry_commit", commit), ("ready", ready)]:
+            events.append(dict(task_id=14, block_index=0, worker_id=worker, kind=kind, cycles=stamp))
+    chain = [dict(task=22, block=0, worker=0, prior_kernel_end_cycles=1100, dispatch_cycles=1520)]
+    result, lanes = release(rows, events, chain)
+    assert result["before_last_commit_us"] == pytest.approx(0.2)
+    assert result["after_last_commit_us"] == pytest.approx(0.2)
+    assert result["first_ready_minus_last_commit_us"] == pytest.approx(0.2)
+    assert result["last_ready_minus_last_commit_us"] == pytest.approx(0.25)
+    assert lanes[0]["is_critical"] and lanes[1]["is_last_commit"]
+    assert lanes[1]["previous_task"] == 18 and lanes[1]["previous_block"] == 3
+    assert lanes[1]["prev_end_to_commit_us"] == pytest.approx(0.25)
+    events[1]["cycles"] = 1300
+    result, _ = release(rows, events, chain)
+    assert len(result["last_commit_lanes"]) == 2
+    with pytest.raises(ValueError, match="duplicate t22 checkpoint"):
+        release(rows, events + [events[-1]], chain)

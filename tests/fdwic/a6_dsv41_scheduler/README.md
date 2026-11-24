@@ -1,8 +1,36 @@
 # A6 percounter SWA
 
+<a id="t22-release"></a>
+
+## 黄区当前任务 · 拆开 t22 的同步等待
+
+在现有 `simpler-percounter` 根目录执行以下命令。沿用设备 0 的集成版十轮 L2，全程只读原始采样，在 CPU 上分析。
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-release "$trial/t22-release-lanes.csv" > "$trial/t22-release.json" &&
+cat "$trial/t22-release.json"
+```
+
+**黄区在这里回填**：粘贴末行 JSON。预期 `source_commit=76c7c288b…`，`lane_rows=960`（48 块 × 2 lane × 10 轮），两段关键等待均值之和约 4.576 µs。每轮列出最晚记录 `entry_commit` 的 block、lane（0=C，1=V）、worker 和该 worker 上的前一项计算任务，并列最晚者全部保留。完整逐 lane CSV 留在 trial 目录。失败时回填轮次与报错。
+
+```text
+待回填 A6 t22-release.json
+```
+
+| 十轮均值（µs） | A5 · 24 块 1C2V | A6 · 48 块 1C1V |
+| --- | ---: | ---: |
+| 关键 lane 的等待，落在全组最后一次 entry_commit 之前 | 2.821 | 待回填 |
+| 同一等待，落在最后一次 entry_commit 之后 | 1.973 | 待回填 |
+| 最后一次 entry_commit 到全组第一个 / 最后一个 ready | 1.356 / 2.428 | 待回填 |
+
+A5 十轮最晚记录提交的都是 C lane，同核上一项都是 t18。蓝区会先看 A6 最晚者是否也反复落在同一类核和前序任务上，然后比较表中前两段。第一段占主导时，沿晚到核的前序 kernel 返回、输入就绪和提交顺序查；第二段占主导时，沿 block 到达上报、全组放行检查和本地通知查。`entry_commit` 打点早于就绪标志写入，`ready` 是各 lane 的观测时间。表中前两行只划分实际关键链窗口，第三行展示整组观测范围，单独解读。[同步路径](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1619-L1682)
+
 <a id="offline-l2"></a>
 
-## 当前任务：复用集成版十轮 L2，离线复算
+## 已完成 · 集成版十轮 L2 任务收益与派发间隔
 
 在现有 `simpler-percounter` 根目录执行。输入是已完成的设备 0 实验 `build/swa-integrated-758Yr8`，使用该次 trial 内已有的 Python 和求解器。命令只用 CPU。
 
@@ -12,7 +40,7 @@ trial=build/swa-integrated-758Yr8 &&
 "$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py "$trial"
 ```
 
-**本轮黄区回填位置**：把最后打印的 JSON 放入下框；出错时填报错轮次和首条错误。预期输入为 `source_commit=76c7c288b…`、`baseline_us=197.15`。JSON 同时给出现场 PTO-ISA 提交、16 项任务的模型收益区间、实际关键链的分任务 kernel 时间、t25 单双 head 时长与末块、t22 claim 与 dispatch 之间的事件分段。区间两端一致表示模型收益已确定。
+以下是黄区已回填的结果。实验基线为 `source_commit=76c7c288b…`、`baseline_us=197.15`。结果包含现场 PTO-ISA 提交、16 项任务的模型收益区间、关键链各任务的 kernel 时间、t25 单双 head 时长与末块，以及 t22 从 claim 到 dispatch 的事件分段。
 
 ## 任务与命令
 
@@ -173,7 +201,9 @@ A5 十轮各有一个 t22 关键块。以它最后一个可见阻塞 kernel 的�
 
 **选择改动。** 缩短 A6 理想时间，优先选 A6 自己的 10% 对照排名靠前、两端工作量可解释的任务；对 t25 区分单块变慢和双 head 尾块，对 t22/t28 核对 MIX 分块的数据量。优化 runtime 时，先看 A6 t22 的 8.050 µs 集中在输入就绪前、同步放行阶段还是 ready 后，再决定改哪段。候选改动使用同卡 L0 和参考输出验收。
 
-## 黄区本轮执行与回填
+<a id="黄区本轮执行与回填"></a>
+
+## 已完成 · 集成版 A6 实卡采集
 
 以下为已完成的集成版实卡采集及原始反馈。当前离线任务使用本页顶部命令。
 
@@ -364,4 +394,4 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 t22、t9 和 t35 每轮在关键链上 dispatch 前的间隔贡献分别为 11.933、9.053 和 7.323 µs。
 优先核对 t22 的 48-block MIX 同步放行，其次观察同核接块。不同插桩版本之间的整图改善以 L0 对照。
 
-下一轮执行命令和结果填写位置见[集成版十轮 L2 离线复算](#offline-l2)。
+当前执行命令和结果填写位置见[t22 同步等待](#t22-release)。

@@ -9,6 +9,7 @@
 """Analyze a completed SWA run on CPU. Durations are scaled before quantization."""
 
 import argparse
+import csv
 import json
 import sys
 from collections import Counter, defaultdict
@@ -25,6 +26,7 @@ from swa_sync_bound import (
     read_round,
     solve_model,
 )
+from t22_release import release_round, release_summary
 
 
 def sensitivity(nodes, edges, rows, capacities, baseline, seconds):
@@ -161,6 +163,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("run", type=Path, help="Integrated trial directory or its completed SWA run")
     parser.add_argument("--seconds", type=float, default=30, help="Time limit per variant solve")
+    parser.add_argument(
+        "--t22-release",
+        type=Path,
+        metavar="LANES.csv",
+        help="Analyze t22 timestamps only and save per-lane details to this CSV",
+    )
     args = parser.parse_args()
     run = args.run
     if (run / "src/build").is_dir():
@@ -178,19 +186,38 @@ def main():
     ):
         raise ValueError("Expected the ten matching solved baseline rounds")
     rounds = []
+    lanes = []
     for ref in prior["rounds"]:
-        print(f"Solving task variants for round {ref['round']}/10", file=sys.stderr, flush=True)
+        print(f"Analyzing round {ref['round']}/10", file=sys.stderr, flush=True)
         folder = run / "L2/percounter/rank0" / f"run{ref['round']}"
         nodes, edges, rows, _ = read_round(folder, tasks, ref["round"])
         placement = analyze_placement(nodes, edges, rows)
         if placement["chain"] != ref["chain"] or placement["fixed_order_us"] != ref["fixed_order_us"]:
             raise ValueError("Capture differs from saved model")
-        t25, t22 = task_windows(rows, read_json(folder / "chip_swimlane_records.json"), placement["chain"], 54)
+        raw = read_json(folder / "chip_swimlane_records.json")
+        if args.t22_release:
+            detail, records = release_round(rows, raw["percounter_task_events"]["records"], placement["chain"])
+            rounds.append(detail)
+            lanes.extend(records)
+            continue
+        t25, t22 = task_windows(rows, raw, placement["chain"], 54)
         gains = sensitivity(nodes, edges, rows, CAPACITIES, ref["lower_bound_us"], args.seconds)
         kernel_time = Counter()
         for step in placement["chain"]:
             kernel_time[step["task"]] += step["kernel_us"]
         rounds.append({"t25": t25, "t22": t22, "gains": gains, "chain_kernel": kernel_time})
+    if args.t22_release:
+        with args.t22_release.open("w", newline="", encoding="utf-8") as output:
+            writer = csv.DictWriter(output, fieldnames=lanes[0].keys())
+            writer.writeheader()
+            writer.writerows(lanes)
+        print(
+            json.dumps(
+                {"source_commit": build["source_commit"], "lane_rows": len(lanes), **release_summary(rounds)},
+                ensure_ascii=False,
+            )
+        )
+        return
     chain_us = {task: round(mean(r["chain_kernel"][task] for r in rounds), 3) for task in sorted(tasks)}
     print(
         json.dumps(
