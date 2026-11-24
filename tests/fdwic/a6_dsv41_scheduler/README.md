@@ -16,9 +16,73 @@ cat "$trial/t22-release.json"
 
 **黄区在这里回填**：粘贴末行 JSON。预期 `source_commit=76c7c288b…`，`lane_rows=960`（48 块 × 2 lane × 10 轮），两段关键等待均值之和约 4.576 µs。每轮列出最晚记录 `entry_commit` 的 block、lane（0=C，1=V）、worker 和该 worker 上的前一项计算任务，并列最晚者全部保留。完整逐 lane CSV 留在 trial 目录。失败时回填轮次与报错。
 
-```text
-待回填 A6 t22-release.json
+- 任务：percounter 分支 9662196b6 "Add: split SWA t22 readiness at the last lane commit"——把 t22 关键等待按全组最后一次 `entry_commit` 切成两段，并逐轮列出最晚提交的 block/lane/worker/前序任务（CPU only，全程只读采样）。
+- 输入：`build/swa-integrated-758Yr8` 十轮 L2（trial 自带 `.venv` Python）。
+- 命令（在 simpler-percounter 根目录，与 README 一致）：
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-release "$trial/t22-release-lanes.csv" > "$trial/t22-release.json" &&
+cat "$trial/t22-release.json"
 ```
+
+- 执行：分析代码 @9662196b6；rc=0，10 轮分析完成。脚本内部校验通过（每块 inputs_ready 唯一、每 block×lane 的 entry_commit/ready 检查点齐全且 0<commit≤ready≤dispatch、十轮 baseline 校验同前）。
+- 预期核对：`source_commit=76c7c288b…` ✓；**`lane_rows=960`**（48 块 × 2 lane × 10 轮）✓；两段关键等待均值之和 **2.001+2.575=4.576 µs** ✓（与上轮 `to_ready_us`=4.576 完全一致）。
+
+## 回填 JSON（A6 t22-release.json）
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "lane_rows": 960,
+  "mean_us": {
+    "before_last_commit_us": 2.001,
+    "after_last_commit_us": 2.575,
+    "first_ready_minus_last_commit_us": 1.725,
+    "last_ready_minus_last_commit_us": 3.235
+  },
+  "last_lane_columns": [
+    "block", "lane", "worker", "previous_task", "previous_block",
+    "prev_end_to_commit_us", "inputs_ready_to_commit_us"
+  ],
+  "rounds": [
+    {"round": 1, "last_commit_lanes": [[47, 1, 65, 18, 23, 7.07, 1.804]], "critical_block_worker": [12, 78], "before_last_commit_us": 4.288, "after_last_commit_us": 2.735, "first_ready_minus_last_commit_us": 1.682, "last_ready_minus_last_commit_us": 3.193},
+    {"round": 2, "last_commit_lanes": [[39, 1, 93, 18, 11, 6.469, 2.167]], "critical_block_worker": [11, 65], "before_last_commit_us": 0.578, "after_last_commit_us": 3.526, "first_ready_minus_last_commit_us": 2.609, "last_ready_minus_last_commit_us": 4.055},
+    {"round": 3, "last_commit_lanes": [[47, 0, 3, 18, 3, 7.053, 1.367]], "critical_block_worker": [13, 107], "before_last_commit_us": 1.104, "after_last_commit_us": 2.795, "first_ready_minus_last_commit_us": 1.507, "last_ready_minus_last_commit_us": 3.137},
+    {"round": 4, "last_commit_lanes": [[47, 0, 47, 18, 23, 7.254, 1.383]], "critical_block_worker": [18, 56], "before_last_commit_us": 0.621, "after_last_commit_us": 1.816, "first_ready_minus_last_commit_us": 1.726, "last_ready_minus_last_commit_us": 3.121},
+    {"round": 5, "last_commit_lanes": [[47, 1, 81, 18, 19, 7.239, 2.121]], "critical_block_worker": [9, 59], "before_last_commit_us": 4.046, "after_last_commit_us": 2.483, "first_ready_minus_last_commit_us": 1.638, "last_ready_minus_last_commit_us": 2.821},
+    {"round": 6, "last_commit_lanes": [[47, 0, 15, 18, 11, 6.182, 1.331]], "critical_block_worker": [23, 85], "before_last_commit_us": 0.866, "after_last_commit_us": 2.211, "first_ready_minus_last_commit_us": 1.764, "last_ready_minus_last_commit_us": 3.704},
+    {"round": 7, "last_commit_lanes": [[47, 1, 65, 18, 19, 6.621, 1.845]], "critical_block_worker": [11, 85], "before_last_commit_us": 2.804, "after_last_commit_us": 2.425, "first_ready_minus_last_commit_us": 0.962, "last_ready_minus_last_commit_us": 2.502},
+    {"round": 8, "last_commit_lanes": [[45, 1, 99, 18, 21, 6.336, 1.94]], "critical_block_worker": [27, 97], "before_last_commit_us": 1.023, "after_last_commit_us": 2.748, "first_ready_minus_last_commit_us": 1.85, "last_ready_minus_last_commit_us": 3.466},
+    {"round": 9, "last_commit_lanes": [[43, 1, 73, 18, 29, 6.235, 1.844]], "critical_block_worker": [7, 77], "before_last_commit_us": 3.53, "after_last_commit_us": 3.079, "first_ready_minus_last_commit_us": 1.97, "last_ready_minus_last_commit_us": 3.382},
+    {"round": 10, "last_commit_lanes": [[39, 1, 105, 18, 27, 6.158, 1.927]], "critical_block_worker": [11, 77], "before_last_commit_us": 1.15, "after_last_commit_us": 1.928, "first_ready_minus_last_commit_us": 1.538, "last_ready_minus_last_commit_us": 2.966}
+  ]
+}
+```
+
+## 判读（供蓝区按 README 判断顺序参考）
+
+- **与 A5 对照（十轮均值，µs）**：
+
+| 段                                                   | A5 · 24 块 1C2V | A6 · 48 块 1C1V | A6 − A5 |
+| ---------------------------------------------------- | --------------: | --------------: | ------: |
+| 关键 lane 的等待，落在全组最后一次 entry_commit 之前 |           2.821 |       **2.001** |  −0.820 |
+| 同一等待，落在最后一次 entry_commit 之后             |           1.973 |       **2.575** |  +0.602 |
+| 最后一次 entry_commit 到全组第一个 ready             |           1.356 |           1.725 |  +0.369 |
+| 最后一次 entry_commit 到全组最后一个 ready           |           2.428 |           3.235 |  +0.807 |
+
+- **A6 第二段占主导（2.575 > 2.001），与 A5 正好相反**（A5 第一段主导 2.821 > 1.973）。按 README 判断顺序，A6 的 4.576 µs 应沿 **block 到达上报、全组放行检查、本地通知** 路径查；两端之和与上轮 `entry_commit→ready` 段（4.576）闭合一致。
+- **最晚提交者画像（10/10 轮）**：同核前一项计算任务**全部是 t18**（与 A5 完全一致）；lane 分布 **6/10 V、4/10 C**（A5 为 10/10 C——A6 1C1V 下 V lane 也成为晚到提交者）；最晚者 block 7/10 轮落在 **47 号块**（其余 39×2、45、43，均为高编号尾块）。
+- **晚到者的提交前置间隔很大**：`prev_end_to_commit_us` 6.16–7.25 µs（t18 kernel 结束→该 lane entry_commit），其中 `inputs_ready_to_commit` 仅 1.33–2.17 µs——即输入就绪后 1.3–2.2 µs 即提交，大头在 t18 返回到输入就绪之间。t18 既是 10% 敏感性第 4 名（2.13 µs）又是全部最晚提交者的前序，两端画像互相印证。
+- **ready 传播范围**：最后 commit 后全组第一个 ready +1.725 µs、最后一个 ready +3.235 µs（A5 1.356/2.428，各 +0.37/+0.81）——末 commit 后的放行观察窗比 A5 宽约 0.8 µs，与第二段增量（+0.60）同向。
+- 每轮关键块/worker（critical_block_worker）：块 7–27、worker 56–107，无固定聚集；逐 lane 明细 CSV 已留在 `build/swa-integrated-758Yr8/t22-release-lanes.csv`（960 行 + 表头）。
+
+## 备注
+
+- 原始输出：服务器 `build/swa-integrated-758Yr8/t22-release.json`（stdout 原文）与 `t22-release-lanes.csv`（逐 lane 明细）；本地镜像 `bluezone-1119/t22-release-feedback.json`。
+- 数据源仍为集成版 trial（source_commit 76c7c288b、pto-isa 45435c06）；本轮仅新增分析，未重跑设备
 
 | 十轮均值（µs） | A5 · 24 块 1C2V | A6 · 48 块 1C1V |
 | --- | ---: | ---: |
