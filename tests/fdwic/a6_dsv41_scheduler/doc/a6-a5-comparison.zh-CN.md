@@ -1,5 +1,61 @@
 # A6 与 A5 单卡 percounter SWA 性能对比
+## 背景与动机
 
+- 蓝区在 t22-entry-roles 判读中确认：A6 关键 lane 十轮全为 V0、同 block V0 提交比 A5 慢 +0.541 µs、全量 480 块 V0 普遍慢 +0.121 µs 而 **C 列两端完全一致（0.916/0.916）**，且 `lane_loop.h` 两端 Git 文件对象相同——差异只能来自硬件结构或地址路径。
+- 黄区沿此线索在 percounter @f8f756c29 的 a5/a6 平台树上做了寄存器与地址的逐文件比对，结论：**两端在"AICore MMIO 寄存器表"和"调度完成通知寄存器（CntNotify）"两处存在实质差异，且第二处直接命中 t22 的同步路径**。以下为证据与行号，供蓝区核验与归因。
+
+## 差异一：AICore MMIO 寄存器映射（host_regs）
+
+| 项             | A5（DAV_3510）                                               | A6（Ascend960DT_966B7）                                      |
+| -------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| 子核步进       | 0x100000（1M）                                               | 0x100000（相同）                                             |
+| 块映射窗口     | 0x300000（3M，1 AIC + 2 AIV）                                | **0x200000（2M，1 AIC + 1 AIV）**，注释标 halResMap len 实测（onboard-001） |
+| AIV 偏移       | AIV0 = +1M，AIV1 = +2M                                       | 仅 AIV = +1M（注释标 **inferred**），无第二 AIV              |
+| HAL res_id 数  | 36（2 die × 18 块）                                          | **70（2 die × 35 块）**，每槽独立 2 MiB 窗口                 |
+| core ID 表布局 | 每 die 内 [AIC×18][AIV 交错对（AIV0_0,AIV0_1,AIV1_0,…）]，共 36×3=108 项 | **dieBase = die×70：die0 AIC 0–34 / die0 AIV 35–69 / die1 AIC 70–104 / die1 AIV 105–139，共 70×2=140 项**；Cube 在块基址、Vector 在块内 +1M |
+| 拓扑备注       | —                                                            | "Disabled workers still occupy physical slots"（物理 70 块 > 可用 54C+54V） |
+
+- 两端的这张表都兼作 PMU 表（`KernelArgs.pmu_reg_addrs = regs`），AICPU 侧 `platform_regs.h` 接口一致（仅注释差异）。
+- 位置：`src/a6/platform/include/host/host_regs.h:30-51`、`src/a6/platform/onboard/host/host_regs.cpp:14-18（70 槽）、40-44（140 项表）、66-71（die 交错布局）`；A5 对应 `src/a5/platform/onboard/host/host_regs.cpp`。
+
+## 差异二：CntNotify 完成通知寄存器（与 t22 同步路径直接相关）
+
+**A5 机制**（`src/a5/platform/onboard/host/scheduler_done_notifications.cpp:60-90`）：
+
+- 通过 `aclrtCntNotifyCreate` / `RT_RES_TYPE_STARS_CNT_NOTIFY_RECORD`（CP1）取得 **32 字节寄存器槽**；
+- SET/读基址即映射地址，**ADD（INC）别名寄存器在基址 +0x08**，共享同一映射与句柄生命周期；
+- 仅当 SET 地址非 0 且 32B 对齐时别名有效（`src/a5/platform/include/host/scheduler_notification_address.h:15-17`）；
+- `COMPLETION_COUNTER` / `HBG_REQUIRED_COMPLETION_COUNTER` 用 ADD 做**硬件寄存器原子加**；槽耗尽时剩余节点回落 GM（LOG_WARN "remaining nodes use GM"）。
+
+**A6 现状**（`src/a6/platform/include/host/scheduler_notification_address.h:15-16`）：
+
+- `scheduler_notification_increment_address` 恒返 0，头文件注释明确："**A6 uses GM completion counters. No increment alias is mapped on this platform.**"
+- A6 平台树**没有** scheduler_done_notifications.cpp，`DeviceRunner` 也不提供 `acquire_scheduler_notifications` → `state.h:299` 取不到地址，`notify_addresses` 为空；
+- 后果（a5 runtime 共享代码中的降级分支，A6 全部命中）：
+  - `src/a5/runtime/percounter/host/region_plan.h:561`：`counters[id].completion_notify_address` 一律不设置 → 完成计数全走 **GM 计数器**；
+  - `region_plan.h:969`：`sync_notify[cohort]` 全为 0 → **所有同步 cohort（含 t22 的 MIX fanin 到齐）全走 GM arrival sectors**，而非 CntNotify 寄存器 ADD；
+  - 设备侧共享规则 `percounter_notify_add_address(read) = read + 8`（`src/a5/runtime/percounter/runtime/scheduler/wire_types.h:235-247`）在 A6 因 read 恒 0 而不生效。
+
+## 与实测数据的对应
+
+- A5 上同步 cohort 的到齐计数/读取可走 CntNotify 寄存器窗口；A6 一律 GM 原子写 + GM 读。这与下列已回填观察同向：
+  - t22-entry-roles：同 block V0 +0.541 µs、全量 V0 +0.121 µs、C 列 0.916/0.916 完全一致——C 的依赖检查路径两端等价，V0 的读就绪/提交路径独有退化；
+  - t22-release：末 commit → 末 ready 两端差 +0.807 µs、首个到末个 ready 跨度 +0.438 µs——放行观察窗整体变宽；
+  - V0 原始窗口零 kernel 重叠（0.0）——纯等待/协调开销，非算子占用。
+- 因此**候选机制**：A6 上 V0 观测 `fanin_ready`/写 `enter_ready`/检查全组放行的路径经 GM，跨核可见性比 A5 的寄存器窗口慢。这与 #3180（减少返回型 GM 原子）的优化方向一致——该优化的前提正是 A6 无寄存器别名可用。
+- 另注：922b55003（1C1V 适配）同时改动了 a5 的 `scheduler_notification_address.h`（1 行）、`scheduler_done_notifications.cpp`（4 行）和 `tests/ut/cpp/a5/platform/test_scheduler_notification_cache.cpp`（12 行），把 A6 的"无别名"规则接入了共享校验与测试。
+
+## 建议蓝区核验项
+
+1. **A6 是否真的没有 CntNotify INC 别名**：当前结论来自代码注释与恒 0 实现。建议对照 A6 HAL/驱动文档确认 `STARS_CNT_NOTIFY_RECORD` 资源在 A6 的存在性、槽大小与 ADD 偏移是否仍为 32B/+0x08——若别名存在但未被映射，这是一个直接的优化入口。
+2. **GM 路径可见性实测**：A6 簇内 C→V0 的 GM 标志可见延迟（写后读）与 A5 寄存器窗口对比，可定量解释 V0 的 +0.12~0.54 µs；黄区此前在测量分支做过同地址访问实验（`results/002-hbg-same-address-access/`、`probes/same_address/`），数据可复用。
+3. **AIV +1M 偏移为 inferred**：host_regs.h 中 A6 的 `REG_AIV_FIRST_OFFSET` 标注推断值，建议以 A6 手册核实（当前 MMIO 派发路径工作正常，仅影响对地址布局的把握）。
+4. 若确认 GM-only 为设计约束：优化空间集中在减少 V0 路径的 GM 往返（fanin 可见性、cohort 放行检查、本地通知），与蓝区"提交后放行保留为候选"的判断一致。
+
+## 代码基线与方式
+
+- 基线：simpler-percounter @f8f756c29（含 922b55003 1C1V 适配后的完整 a5/a6 平台树）；纯代码比对，未新增上板实验；分析对象与已回填数据（trial `swa-integrated-758Yr8`，source_commit 76c7c288b）同源。
+- 比对范围：`src/a5/platform` vs `src/a6/platform` 全树（docs/sim 仅 A5 有），重点 host_regs、scheduler_notification_address、scheduler_done_notifications、device_runner、region_plan、wire_types。
 ## 集成版整图与调度下限
 
 同一 SWA 切口、参考输出校验通过。A5 在设备 4（Ascend950DT_9582，32C+64V）运行 t25=64，A6 在设备 0（Ascend960DT_966B7，54C+54V）运行 t25=54。两端均使用 CANN 9.3.0 和 PTO-ISA `45435c062`，每种采样级别各 1 轮预热、10 轮正式。A5 每轮 578 次 kernel 执行，A6 每轮 560 次。[A5 集成版采集配置与十轮明细](https://github.com/HaoZhang1024/simpler/blob/99a827f41/tests/fdwic/a6_dsv41_scheduler/doc/a6-a5-comparison.zh-CN.md#集成版-a5-swa-对照基线) · [A6 集成版原始回填](a6-swa-performance-progress.zh-CN.md#integrated)
