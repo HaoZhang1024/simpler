@@ -2,19 +2,7 @@
 
 <a id="t22-release"></a>
 
-## 黄区当前任务 · 拆开 t22 的同步等待
-
-在现有 `simpler-percounter` 根目录执行以下命令。沿用设备 0 的集成版十轮 L2，全程只读原始采样，在 CPU 上分析。
-
-```bash
-git pull --ff-only &&
-trial=build/swa-integrated-758Yr8 &&
-"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
-  "$trial" --t22-release "$trial/t22-release-lanes.csv" > "$trial/t22-release.json" &&
-cat "$trial/t22-release.json"
-```
-
-**黄区在这里回填**：粘贴末行 JSON。预期 `source_commit=76c7c288b…`，`lane_rows=960`（48 块 × 2 lane × 10 轮），两段关键等待均值之和约 4.576 µs。每轮列出最晚记录 `entry_commit` 的 block、lane（0=C，1=V）、worker 和该 worker 上的前一项计算任务，并列最晚者全部保留。完整逐 lane CSV 留在 trial 目录。失败时回填轮次与报错。
+## 已完成 · t22 最后一条 lane 提交前后的等待
 
 - 任务：percounter 分支 9662196b6 "Add: split SWA t22 readiness at the last lane commit"——把 t22 关键等待按全组最后一次 `entry_commit` 切成两段，并逐轮列出最晚提交的 block/lane/worker/前序任务（CPU only，全程只读采样）。
 - 输入：`build/swa-integrated-758Yr8` 十轮 L2（trial 自带 `.venv` Python）。
@@ -62,35 +50,22 @@ cat "$trial/t22-release.json"
 }
 ```
 
-## 判读（供蓝区按 README 判断顺序参考）
+### 蓝区复核与下一步
 
-- **与 A5 对照（十轮均值，µs）**：
+| 十轮均值（µs） | A5 · 24 块 1C2V | A6 · 48 块 1C1V | A6 − A5 |
+| --- | ---: | ---: | ---: |
+| 关键 lane 等待，全组最后一次 `entry_commit` 之前 | 2.821 | 2.001 | −0.820 |
+| 同一等待，最后一次 `entry_commit` 之后 | 1.973 | 2.575 | +0.602 |
+| **关键 lane 等待合计** | **4.794** | **4.576** | **−0.218** |
+| 最后一次 `entry_commit` 到全组首个 `ready` | 1.356 | 1.725 | +0.369 |
+| 最后一次 `entry_commit` 到全组末个 `ready` | 2.428 | 3.235 | +0.807 |
+| 全组从首个到末个 `ready` 的跨度 | 1.072 | 1.510 | +0.438 |
 
-| 段                                                   | A5 · 24 块 1C2V | A6 · 48 块 1C1V | A6 − A5 |
-| ---------------------------------------------------- | --------------: | --------------: | ------: |
-| 关键 lane 的等待，落在全组最后一次 entry_commit 之前 |           2.821 |       **2.001** |  −0.820 |
-| 同一等待，落在最后一次 entry_commit 之后             |           1.973 |       **2.575** |  +0.602 |
-| 最后一次 entry_commit 到全组第一个 ready             |           1.356 |           1.725 |  +0.369 |
-| 最后一次 entry_commit 到全组最后一个 ready           |           2.428 |           3.235 |  +0.807 |
+- **谁最晚提交。** A6 的 V lane 占 7/10 轮，C lane 占 3/10 轮。47 号块出现 6 轮，39 号块 2 轮，43、45 号块各 1 轮。A5 十轮都是 C lane。两端最晚提交者在同一 worker 上执行的上一项 kernel 都是 t18。在 A6，这十轮从该 worker 的 t18 结束到对应 block 的 `inputs_ready` 平均 4.889 µs。这个间隔包含前驱和调度工作，凭这两个打点还无法归因给 t18。
+- **放行过程。** A6 全组首个 `ready` 晚了 0.369 µs，从首个到末个 `ready` 又多花 0.438 µs。两者相加，末个 `ready` 晚了 0.807 µs。`entry_commit` 打点在写入 `enter_ready` 之前，之后还要检查组内到齐、上报 block、检查全组放行和读取本地通知。这些操作共同落在观测窗口里。[MIX 同步路径](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1625-L1682)
+- **下一步由蓝区查提交前的代码。** 整个 t22 派发前间隔 A6 为 8.050 µs，比 A5 多 0.837 µs。其中关键 lane 的 `inputs_ready → entry_commit` 从 0.692 增至 1.661 µs（+0.969 µs）。优先核对 A5/A6 的 MIX 候选选择、顺序检查和函数地址准备，区分 owner 发布依赖就绪与参与 lane 观察到就绪的时间。提交后的放行保留为降低 A6 绝对开销的候选。黄区本轮采集和回填已完成。
 
-- **A6 第二段占主导（2.575 > 2.001），与 A5 正好相反**（A5 第一段主导 2.821 > 1.973）。按 README 判断顺序，A6 的 4.576 µs 应沿 **block 到达上报、全组放行检查、本地通知** 路径查；两端之和与上轮 `entry_commit→ready` 段（4.576）闭合一致。
-- **最晚提交者画像（10/10 轮）**：同核前一项计算任务**全部是 t18**（与 A5 完全一致）；lane 分布 **6/10 V、4/10 C**（A5 为 10/10 C——A6 1C1V 下 V lane 也成为晚到提交者）；最晚者 block 7/10 轮落在 **47 号块**（其余 39×2、45、43，均为高编号尾块）。
-- **晚到者的提交前置间隔很大**：`prev_end_to_commit_us` 6.16–7.25 µs（t18 kernel 结束→该 lane entry_commit），其中 `inputs_ready_to_commit` 仅 1.33–2.17 µs——即输入就绪后 1.3–2.2 µs 即提交，大头在 t18 返回到输入就绪之间。t18 既是 10% 敏感性第 4 名（2.13 µs）又是全部最晚提交者的前序，两端画像互相印证。
-- **ready 传播范围**：最后 commit 后全组第一个 ready +1.725 µs、最后一个 ready +3.235 µs（A5 1.356/2.428，各 +0.37/+0.81）——末 commit 后的放行观察窗比 A5 宽约 0.8 µs，与第二段增量（+0.60）同向。
-- 每轮关键块/worker（critical_block_worker）：块 7–27、worker 56–107，无固定聚集；逐 lane 明细 CSV 已留在 `build/swa-integrated-758Yr8/t22-release-lanes.csv`（960 行 + 表头）。
-
-## 备注
-
-- 原始输出：服务器 `build/swa-integrated-758Yr8/t22-release.json`（stdout 原文）与 `t22-release-lanes.csv`（逐 lane 明细）；本地镜像 `bluezone-1119/t22-release-feedback.json`。
-- 数据源仍为集成版 trial（source_commit 76c7c288b、pto-isa 45435c06）；本轮仅新增分析，未重跑设备
-
-| 十轮均值（µs） | A5 · 24 块 1C2V | A6 · 48 块 1C1V |
-| --- | ---: | ---: |
-| 关键 lane 的等待，落在全组最后一次 entry_commit 之前 | 2.821 | 待回填 |
-| 同一等待，落在最后一次 entry_commit 之后 | 1.973 | 待回填 |
-| 最后一次 entry_commit 到全组第一个 / 最后一个 ready | 1.356 / 2.428 | 待回填 |
-
-A5 十轮最晚记录提交的都是 C lane，同核上一项都是 t18。蓝区会先看 A6 最晚者是否也反复落在同一类核和前序任务上，然后比较表中前两段。第一段占主导时，沿晚到核的前序 kernel 返回、输入就绪和提交顺序查；第二段占主导时，沿 block 到达上报、全组放行检查和本地通知查。`entry_commit` 打点早于就绪标志写入，`ready` 是各 lane 的观测时间。表中前两行只划分实际关键链窗口，第三行展示整组观测范围，单独解读。[同步路径](../../../src/a5/runtime/percounter/aicore/lane_loop.h#L1619-L1682)
+原始记录来自设备 0 的集成版 trial，运行提交 `76c7c288b`，PTO-ISA `45435c06`。黄区保留 `build/swa-integrated-758Yr8/t22-release.json` 和同目录的 `t22-release-lanes.csv`（960 行数据）。
 
 <a id="offline-l2"></a>
 
@@ -458,4 +433,4 @@ A5 栈对齐静态扫描完成 7/8 个编译单元，已扫描部分为 0 项发
 t22、t9 和 t35 每轮在关键链上 dispatch 前的间隔贡献分别为 11.933、9.053 和 7.323 µs。
 优先核对 t22 的 48-block MIX 同步放行，其次观察同核接块。不同插桩版本之间的整图改善以 L0 对照。
 
-当前执行命令和结果填写位置见[t22 同步等待](#t22-release)。
+[t22 同步等待的十轮结果与蓝区判读](#t22-release)。
