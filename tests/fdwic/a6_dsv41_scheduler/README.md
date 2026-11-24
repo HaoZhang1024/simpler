@@ -26,9 +26,69 @@ trial=build/swa-integrated-758Yr8 &&
 
 **黄区回填位置。** 将末行 JSON 放入下框。预期 `rounds=10`、`blocks_checked=480`、`critical_lane_us=1.661`。执行失败时填轮次与首条报错。
 
-```text
-待回填 A6 t22-entry-roles JSON
+## 任务与命令
+
+- 任务：percounter 分支 f8f756c29 "Add: compare SWA t22 entry times by MIX lane role"——同一 t22 block 内按 C / V0 / V1 角色核对 `inputs_ready → entry_commit`，区分关键链截取窗口与原始间隔，并给 V0 在原始窗口内的 kernel 重叠（CPU only，只读采样）。
+- 输入：`build/swa-integrated-758Yr8` 十轮 L2（trial 自带 `.venv` Python）。
+- 命令（在 simpler-percounter 根目录，与 README 一致）：
+
+```bash
+git pull --ff-only &&
+trial=build/swa-integrated-758Yr8 &&
+"$trial/src/.venv/bin/python" tests/fdwic/a6_dsv41_scheduler/analysis/task_sensitivity.py \
+  "$trial" --t22-entry-roles
 ```
+
+- 执行：分析代码 @f8f756c29；rc=0，10 轮分析完成。脚本内部校验通过（每 block×role 的 entry_commit 唯一且 worker 与执行单元一致、inputs_ready 发布者=C 执行 worker、claim 领取者=V0 执行 worker、0<ready≤commit≤dispatch、角色集合完整 {C,V0}）。
+- 预期核对：`rounds=10` ✓；**`blocks_checked=480`**（48 块 × 10 轮）✓；**`critical_lane_us=1.661`** ✓（与上轮关键 lane `inputs_ready→entry_commit` 完全一致）。
+
+## 回填 JSON（A6 t22-entry-roles）
+
+```json
+{
+  "source_commit": "76c7c288b18b6e0f88ac5e9091951dc1d7049d2a",
+  "rounds": 10,
+  "blocks_checked": 480,
+  "critical_roles": ["V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0", "V0"],
+  "critical_lane_us": 1.661,
+  "critical_block_us": {
+    "C": 0.879,
+    "V0": 1.661
+  },
+  "all_blocks_raw_us": {
+    "C": 0.916,
+    "V0": 1.469
+  },
+  "critical_block_raw_us": {
+    "C": 0.879,
+    "V0": 1.661
+  },
+  "critical_block_v0_raw_kernel_overlap_us": 0.0
+}
+```
+
+## 判读（供蓝区按 README 判断顺序参考）
+
+- **与 A5 对照（十轮均值，µs）**：
+
+| 从 C 记录 inputs_ready 起算              |               A5 · 24 块 1C2V |      A6 · 48 块 1C1V |                  A6 − A5 |
+| ---------------------------------------- | ----------------------------: | -------------------: | -----------------------: |
+| 每轮实际关键 lane（链截取）              |              0.692（十轮 V1） | 1.661（**十轮 V0**） |                   +0.969 |
+| 同一批关键 block，取各自 **V0** 提交     |                         1.120 |                1.661 |               **+0.541** |
+| 同一批关键 block，取各自 **C** 提交      |                         0.801 |                0.879 |                   +0.078 |
+| 所有 block 原始间隔，按 C / V0 / V1 分组 | C 0.916 / V0 1.348 / V1 0.667 |   C 0.916 / V0 1.469 | C **+0.000** / V0 +0.121 |
+
+- **V0 的差异是普遍的，不是关键 block 特有**：480 个 block 全量原始间隔 V0 1.469 vs A5 1.348（+0.121）；**C 列两端完全一致（0.916 vs 0.916，+0.000）**——C lane 的依赖检查→提交路径没有退化。
+- **按蓝区判读顺序，差异集中在 V0 而非两列同慢**：同一关键 block 上 C 仅 +0.078，V0 +0.541。应查 **V0 读就绪标志（fanin_ready 跨核可见）、V0 承担的协调工作（claim、发布 MIX 顺序下界）、V0 等待顺序条件** 的路径；共同的候选选择/提交准备路径（两列会一起变慢）基本可以排除。
+- **V0 在原始窗口内零 kernel 重叠**（`critical_block_v0_raw_kernel_overlap_us=0.0`，与 A5 相同）——这段不是 V0 在执行 kernel，而是纯等待/协调开销。
+- **关键角色两端不同**：A6 十轮关键 lane 全部是 **V0**（A5 十轮全是 V1）——A6 1C1V 每簇只有 C+V0，V0 兼任了 A5 上 V1 的"第二参与 lane"位置，同时保留 claim/协调职责；上轮 +0.969 µs 的关键 lane 增量中，+0.541 来自同 block 的 V0 变慢，其余来自关键角色从 V1 换到 V0 的选择效应。
+- 结合蓝区已注明 `lane_loop.h` 两端 Git 文件对象相同（A6 提交 76c7c288b 复用 A5 runtime）：源码一致而 V0 变慢，指向**硬件结构差异（1C1V 簇内跨核可见性/通信）或调度布局（V0 所在 worker 的负载与顺序）**，而非代码改动。
+- 逐轮数据无异常抖动（critical_roles 10/10 V0；rounds=10 全过）。
+
+## 备注
+
+- 原始输出：服务器 `/npu/z00880344/t22_entry_roles.json`；本地镜像 `bluezone-1119/t22-entry-roles-feedback.json`。
+- 数据源仍为集成版 trial（source_commit 76c7c288b、pto-isa 45435c06）；本轮仅新增分析，未重跑设备
 
 **蓝区判读。** 先用所有 block 的原始间隔判断 V0 的差异是否普遍。再比较同一关键 block 的 C、V0 两列；两列一起变慢时查共同的候选选择和提交准备，差异集中在 V0 时查 V0 读就绪标志、承担协调工作和等待顺序条件的路径。`critical_block_v0_raw_kernel_overlap_us` 单列这段原始时间内 V0 还在执行 kernel 的部分。`critical_block_us` 按关键链窗口截取，`critical_block_raw_us` 保留原始间隔。逐核间隔可以重叠，分别对照。
 
