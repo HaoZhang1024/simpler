@@ -1,0 +1,86 @@
+{
+  "source": {
+    "A": {
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": "cab80ac857abc63ee7ce19b0fd09387249e570b866bddf0f5695fc95d2ab77fe",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_completion.cpp": "2fa33c36f990df94456c852507ee5c2fd3313fe5f5bc3478f99410749c1ec8b0",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_context.h": "e070a154ee8451782e3b11b08c449d2893283c0dd84e6e40dad17966c7b9886c",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_dispatch.cpp": "12ed53afa90ea2d6196e11004b7bdfcbb07173d4fadaa4ed4417c62f66d3c32d"
+    },
+    "E": {
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": "cab80ac857abc63ee7ce19b0fd09387249e570b866bddf0f5695fc95d2ab77fe",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_completion.cpp": "2fa33c36f990df94456c852507ee5c2fd3313fe5f5bc3478f99410749c1ec8b0",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_context.h": "e070a154ee8451782e3b11b08c449d2893283c0dd84e6e40dad17966c7b9886c",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_dispatch.cpp": "57ab08035ed4628ed6c5d3d1367757221c2931438f7af65efde99c597cd8c9f6"
+    },
+    "R": {
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": "006930801d57c6a826f1e632e3964420fc8ad22ff2a8e24660d896e84eaa0473",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_completion.cpp": "7d42c4a9c54eaac16289fe2f4ccae0d199d4fd60a6d0fbf92d3d210ea8adb941",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_context.h": "75a2510ecd00fe1bcd1110c54cc22cf9a4334f3866c0a9cb43ad2b5eae29eca6",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_dispatch.cpp": "7c0ebd86a1e7f4e6cf60c1d5006d0f14fefaa0a2c0672dcb9945250906253707"
+    },
+    "J": {
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_cold_path.cpp": "006930801d57c6a826f1e632e3964420fc8ad22ff2a8e24660d896e84eaa0473",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_completion.cpp": "7d42c4a9c54eaac16289fe2f4ccae0d199d4fd60a6d0fbf92d3d210ea8adb941",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_context.h": "75a2510ecd00fe1bcd1110c54cc22cf9a4334f3866c0a9cb43ad2b5eae29eca6",
+      "src/a2a3/runtime/tensormap_and_ringbuffer/runtime/scheduler/scheduler_dispatch.cpp": "438440ebc554d64c22078dbdda75418f9d12ed3f5a8f77ac6c6036cc52fe5a24"
+    },
+    "base": "f33e20af2698147315b66c891949eca8fe9b070a"
+  },
+  "pr_head": "95af308b7da4c63f072c5221fc63565003d7dcde",
+  "pr_base": "df65739f3266334e21bec08a5488cd6663f9d0fa",
+  "arms": {
+    "A": "Baseline",
+    "E": "4b only",
+    "R": "MIX dispatch only",
+    "J": "MIX dispatch + 4b",
+    "A4b": "Same baseline binary in the isolated 4b ordinary bench batch"
+  },
+  "sha256": {
+    "A": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "431c5b9fe01538dcea861591864bd033f4b08f050bc3c92c38700d5bb70bfc83",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    },
+    "E": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "cae92c446d78c37f564d6aa586c5087ce75fc9b3cb604d7892c311ca1ef56f69",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    },
+    "R": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "dfc845d8b143e44b10a2608c648c50c10fc88dbc12192122801b2b90b7c772a7",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    },
+    "J": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "85c4d066d313f3999301b8692aa1856e044e856cd09171c522462938e506c843",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    }
+  },
+  "input_sha256": "ba49f590932cecf7514e852ff783d6e17c40854f7e6fea459d2867a1a0bef525",
+  "units": "microseconds",
+  "mix_l0_formal_per_mode": 200,
+  "mix_l4_formal_per_mode": 12,
+  "bench_l0_formal_per_case": {
+    "A4b": 400,
+    "E": 400,
+    "A": 300,
+    "R": 300,
+    "J": 300
+  },
+  "dense16_l0_formal": {
+    "A4b": 4000,
+    "E": 4000,
+    "A": 3000,
+    "R": 3000,
+    "J": 3000
+  }
+}

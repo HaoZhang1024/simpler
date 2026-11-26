@@ -1,0 +1,44 @@
+{
+  "targeted_cpp_passed": 234,
+  "watchdog": [
+    {
+      "source": "previous",
+      "scenario": "healthy",
+      "clusters": 8,
+      "expected_timeout_ms": 4000,
+      "orchestration_delay_ms": 2600,
+      "kernel_delay_ms": 2600,
+      "simulated_firmware_sha": "01ddd74f028b5098544d321cab1cb235d0cacdea1249ce868bfa32a7272f9386",
+      "completed": false,
+      "scheduler_status": -100
+    },
+    {
+      "source": "fixed",
+      "scenario": "healthy",
+      "clusters": 8,
+      "expected_timeout_ms": 4000,
+      "orchestration_delay_ms": 2600,
+      "kernel_delay_ms": 2600,
+      "simulated_firmware_sha": "d3192b6fe17700bf8ccd24322f0bf8dc3b70db3c6c5fe7a74c02488a0caa780c",
+      "completed": true,
+      "scheduler_status": 0
+    },
+    {
+      "source": "fixed",
+      "scenario": "late-fin",
+      "clusters": 8,
+      "expected_timeout_ms": 4000,
+      "orchestration_delay_ms": 2600,
+      "kernel_delay_ms": 6000,
+      "simulated_firmware_sha": "d3192b6fe17700bf8ccd24322f0bf8dc3b70db3c6c5fe7a74c02488a0caa780c",
+      "completed": false,
+      "scheduler_status": -100
+    }
+  ],
+  "reserved_ss_queue_head": {
+    "test": "QueuedMixWave.UnpublishedSyncQueueHeadAllowsOrdinaryMixToDispatch",
+    "previous_head": "0764d1d3b3622f8bf47273194b1ab8fc0672b812",
+    "previous": "blocked ordinary work",
+    "fixed": "ordinary and then SS each published once"
+  }
+}
