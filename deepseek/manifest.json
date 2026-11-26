@@ -1,0 +1,1305 @@
+{
+  "units": "microseconds",
+  "metric": "L0 Effective",
+  "device": "Ascend A3 9392 (single device)",
+  "arms": {
+    "A": "baseline",
+    "J": "MIX dispatch + Phase 4b"
+  },
+  "firmware_sha256": {
+    "A": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "431c5b9fe01538dcea861591864bd033f4b08f050bc3c92c38700d5bb70bfc83",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    },
+    "J": {
+      "host_path": "7e5f5af386231fb9f2c839f5eb374fff505b27ba5e197ff17f411ce25f6c4636",
+      "aicpu_path": "85c4d066d313f3999301b8692aa1856e044e856cd09171c522462938e506c843",
+      "aicore_path": "0e4ff56044f26486c1aa452f9ba2e98bc60c8736446ff4f03a2541493232ab7d",
+      "dispatcher_path": "761dafae3715e78fbf68b871739ccd82b78e8a456d9b4c225fb9ad3123c59c0f",
+      "sdma_warmup_path": "f95a3aa0db0834166f618a8efbdede3cdc32f306e9ac1e5c095e08a7eb22c404"
+    }
+  },
+  "initial_groups_per_operator_per_arm": 3,
+  "additional_groups_for_attention_per_arm": 3,
+  "attention_cases": [
+    "dsv4_csa",
+    "dsv4_hca",
+    "dsv4_swa"
+  ],
+  "warmup_per_group": 10,
+  "formal_per_group": 100,
+  "validated_output_batches": 156,
+  "successful_processes": 78,
+  "other_attempts": 0,
+  "measured_base": "f33e20af2698147315b66c891949eca8fe9b070a",
+  "shipped_parent": "55a639940e665f23b7afcb52f3eaa10118d718bf",
+  "measured_change": "95af308b7da4c63f072c5221fc63565003d7dcde",
+  "shipped_change": "9a693e95b99c6a447b2889fc03c211f4e19387b1",
+  "operators": {
+    "dsv4_csa": {
+      "callable_sha256": "85ca3b2288b5ca7b095a4b46fc43f0189f55b86bd977166c32af4649ee8eb2be",
+      "config_sha256": "d1ffe21250fd67f8438e7c0c3931cb9d81bf9a454add9e0b587f485f5371377a",
+      "input_file_sha256": "40ca1e8e711870e64979c181806917150353335583d8cc737ca8ab3b36878930",
+      "golden_file_sha256": "bdef5bf7ebe21291271c5f3b33932f615734e30c0e0b28878b9e08feff50d1c3",
+      "child_count": 50,
+      "orchestration": "attention_csa_test.cpp",
+      "orchestration_sha256": "ba05632cdc602eb5a077245c9d7f8c58c4e2d7af6df4ca17b8b7ca9bbccc3f8a",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_attention_csa.py",
+      "model_file_sha256": "2dd2c54bdbd20c344c053bef6949a786cfcf52fb80e5a8e0487ee0836a25de09",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_hc_head": {
+      "callable_sha256": "97265c21448be68070f9acf1411efb4a0a6fe1fa1a023b214624403833302350",
+      "config_sha256": "a1d6827e2cbc1ab4a296b89380fc197189ee4b47ef866d57bb91507e05933aeb",
+      "input_file_sha256": "e3b888758a63e4ca2c50399c8fdca464fa1c47a05993d3f945cebd6eb149788b",
+      "golden_file_sha256": "03b073f7927f37d79fe66aa355bcf6f0727ee7bc7df6c7c45e195480450a2389",
+      "child_count": 5,
+      "orchestration": "hc_head_test.cpp",
+      "orchestration_sha256": "be1ba844a1a534162c9048db30ab7cda54f5ff46a5e12e4a133919f4f7e0c9ca",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/hc_head.py",
+      "model_file_sha256": "2d68d73ef5cc5595ffde4723a2cfe4f02e4154021a76da2760a16e98d6c5f9c7",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_hc_post": {
+      "callable_sha256": "b2bdf47ae008ffd16af9e33e3a3b757317f619f17a53d860d44f6e8913a6ba60",
+      "config_sha256": "f72d7f22e920fc1ceae6b30e3e76d59f843dfc0c8355657bcd9ba32ca8e51be1",
+      "input_file_sha256": "840cebbd23cfbcb0b0b414ab0969ea7e95e5faecfedb3e032bc4bfe83ff15491",
+      "golden_file_sha256": "8650ee3566b89953b43a45d46a5d71d9256c9015fe437fda3416323a27bc88c1",
+      "child_count": 1,
+      "orchestration": "hc_post_test.cpp",
+      "orchestration_sha256": "09b4527223936336f0d345fc59c6fd3482ee3c5ddcdc38c40fe41619525956ca",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/hc_post.py",
+      "model_file_sha256": "09b58838c6bcfcd000962321691ac06fc04bb81f9953703a91ea6f0572c9c182",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_hc_pre": {
+      "callable_sha256": "ee876ac14b5fdfba129ee1bdc24e535cbcccd905dc73a49079cf312e21c8710b",
+      "config_sha256": "dabf835a630573319420a740b5f049b1ea28380e7618fba98193dfb26f8c965d",
+      "input_file_sha256": "8993d19c24c0bcffa30e51f9e2188ccabf37f95a00fdbc138902245c95b8cf50",
+      "golden_file_sha256": "0ec1e78a8bd6ed144a3b59fee66dd06465ca86a333f17d8cc6d92aaa57654866",
+      "child_count": 6,
+      "orchestration": "hc_pre_test.cpp",
+      "orchestration_sha256": "6a471941ea4352ff5870a8b949425b4a7452cef496cf12d77312fcd31c91097b",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/hc_pre.py",
+      "model_file_sha256": "9faee8d9d31b5a33654f74064751db65f3dabbe41432d16a5fed4ed2b659439a",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_hca": {
+      "callable_sha256": "e3d719cbd95405c84488686de9481d84aa47c4524d40483070d385b7ae80294c",
+      "config_sha256": "b3dd46feda85221989db3a903d0d905dfcf9a930884b8fe7c8139712eba10739",
+      "input_file_sha256": "3b95da090609d046ecbd8d77c88c02aa7dde91950c6e20f6c608cef4b0fb1663",
+      "golden_file_sha256": "d411f8d575a8d3810188fc35e115b97f035aa4176e226b0bbf62a48a61fa8cfb",
+      "child_count": 33,
+      "orchestration": "attention_hca_test.cpp",
+      "orchestration_sha256": "f7d938cd840943b89df3c08f2a21e0b9fa2f72297a7dbacf6520c07d9138df57",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_attention_hca.py",
+      "model_file_sha256": "785d40ef6826cff8893a6d6979d35533ab359f636abab08529a7f12f73747cf0",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_indexer_compressor": {
+      "callable_sha256": "7f02004304a0fe756569cdb5b32f4e39445c4a7c1415bfc90f2ab83f34a7a62e",
+      "config_sha256": "2736864659e1b762a9fc5536cb592edf9eb813bcf0995630281d0be827ff45cf",
+      "input_file_sha256": "d76336dab46fb63ec86b8fbcb25811b4032ddb3ff734ffab0d3ef74388d37387",
+      "golden_file_sha256": "f4afd55302a1cb2478aa85a7f9b3025c57b4890a485f681bea1b13a28ba9a1c4",
+      "child_count": 6,
+      "orchestration": "compressor_test.cpp",
+      "orchestration_sha256": "eb7d4e0b977898979263eaf59b23554410812f02a006fe77380a3edc5201e302",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_indexer_compressor.py",
+      "model_file_sha256": "79698b30006ea0f770123df3fc33d70b9fa43b0625c211a3b9a210694322446f",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_mtp_projection": {
+      "callable_sha256": "248bc7e4838544c504cb71afb4c32080e0625131d30c3652d2c5a951347ef836",
+      "config_sha256": "765d85b4e19aee2306efa21b2b78d1cf3f733e7b078a34b84ad37cc4e1a87cbf",
+      "input_file_sha256": "0e7831d6709374612d7b5102fb1c595b74b3619ac0c1337db517d7bee8adb8f9",
+      "golden_file_sha256": "53b76027550ba56858a9138c962b40afbf6526a7a46ad6066326864d5d45ac75",
+      "child_count": 6,
+      "orchestration": "mtp_projection_test.cpp",
+      "orchestration_sha256": "e0b783e3d5080f8eb0808976e8d3d3135f4d76efbaaee30e30858a86efc6a170",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/mtp_projection.py",
+      "model_file_sha256": "9877dc7766c1ff227bbea574718f1c0afe4bb1dffe139b0d1a660c5eb1c82cfd",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_ratio128": {
+      "callable_sha256": "5bfed0bc977b17f2f091103b8a6c7afc43e0ae2831276382202923948c27047e",
+      "config_sha256": "62563223df66870005a76b64002ff87337103bf2be828d384c5d9779e2adb7c1",
+      "input_file_sha256": "08028216cf1dce48b39bff6cbbe1e84f6874b63d28a6d532eccae616c5ae6241",
+      "golden_file_sha256": "3d8f74ea6d144e3178c097ae7b36c0b517dc8b9b5015494992215ca61634dfab",
+      "child_count": 3,
+      "orchestration": "compressor_test.cpp",
+      "orchestration_sha256": "0157ebb7d82505b6ae9d2772c502042ef5a8f6d9763545e868e73640cdd3399a",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_compressor_ratio128.py",
+      "model_file_sha256": "227117243ff9dd88d7f0572f9b14b5928a64e7216c432282d1000601284be172",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_ratio4": {
+      "callable_sha256": "cadd55fa9f8b2db0065dbcfd2eccab471a6f78f1a114b5c42a3139c42f41be7c",
+      "config_sha256": "62563223df66870005a76b64002ff87337103bf2be828d384c5d9779e2adb7c1",
+      "input_file_sha256": "679ea5d7e3719e60f994fc517fb07b097b2a864ad4a9cfaa87f1a1fb17892a95",
+      "golden_file_sha256": "9b15f4afebe15a3f2641bde010db4117de3d4bcf62f17fc320e428a26c3c83ba",
+      "child_count": 3,
+      "orchestration": "compressor_test.cpp",
+      "orchestration_sha256": "d2638604148d3b6bfc57156dbaf440077810984c0c2776ad2b01de802fdf0587",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_compressor_ratio4.py",
+      "model_file_sha256": "5f0d86d4bfe775477930dbc980bf5728d892c92c7732c0af3a98bb9b9736fe05",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    },
+    "dsv4_swa": {
+      "callable_sha256": "0dda942165b324dba8018fb2a951a0869271808f7242564b93fa8cea933bfcac",
+      "config_sha256": "21ca1ab485057e95a547997ab66bffa44125ec97d06543067e0c16aa9912b56c",
+      "input_file_sha256": "5a4cee0cd886f66cd4e71fcc90207c12a818efb45654c6ba9b6d69f4ab59049f",
+      "golden_file_sha256": "fbf12ae7355edd6d68ed3695fa51b810fa8a5eeba8ee412394270eceb6bf1118",
+      "child_count": 28,
+      "orchestration": "attention_swa_test.cpp",
+      "orchestration_sha256": "090e53fb495ae4714c0778a3b814e8087435c8d9ae19b214751c4e96bbc2f33d",
+      "explicit_sync_start_lines": [],
+      "model_file": "deepseek_v4_pro/decode_attention_swa.py",
+      "model_file_sha256": "9e29dbdbc9976fae0d13308e202d808081b0f14891cad6b4899b349fb9f115f2",
+      "validation_sha256": "81c9d2d411335cb47328d86ab12aba579b01ad4666ca3ee152f62c9112171f3c"
+    }
+  },
+  "validation": {
+    "dsv4_csa": [
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "inner_compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "idx_kv_cache",
+          "idx_kv_scale",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_hc_head": [
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_hc_post": [
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "y"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_hc_pre": [
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "x_mixed",
+          "post",
+          "comb"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_hca": [
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "compress_state",
+          "kv_cache",
+          "cmp_kv",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_indexer_compressor": [
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "idx_kv_cache",
+          "idx_kv_scale"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_mtp_projection": [
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "hidden_states_out"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_ratio128": [
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_ratio4": [
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv",
+          "compress_state",
+          "cmp_kv_cache"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ],
+    "dsv4_swa": [
+      {
+        "group": 1,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 1,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 2,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 3,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 4,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 5,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "A",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      },
+      {
+        "group": 6,
+        "arm": "J",
+        "checked_calls": [
+          1,
+          110
+        ],
+        "outputs": [
+          "kv_cache",
+          "x_out"
+        ],
+        "readonly_inputs_pass": true
+      }
+    ]
+  }
+}
