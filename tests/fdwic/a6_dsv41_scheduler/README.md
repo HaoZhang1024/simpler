@@ -6,6 +6,7 @@
 | --- | --- |
 | 当前任务、执行命令、结果回填和每日进展 | [A6 percounter SWA 性能分析与每日进展](doc/a6-swa-performance-progress.zh-CN.md) |
 | A5/A6 实测性能、调度下限、环境与硬件、CntNotify 和任务级时延 | [A6 与 A5 单卡 percounter SWA 性能对比](doc/a6-a5-comparison.zh-CN.md) |
+| 下载 SWA 泳道，在 Perfetto 查看逐核执行和动态调度 | [A5 L1、L2 下载和 A6 导出位置](doc/a6-swa-performance-progress.zh-CN.md#swa-perfetto) |
 
 <a id="t22-entry-roles"></a>
 <a id="t22-release"></a>

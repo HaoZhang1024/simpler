@@ -1,6 +1,6 @@
 # A6 percounter SWA 性能分析与每日进展
 
-## 当前交接 · 2026-11-24
+## 当前交接 · 2026-11-27
 
 | 负责方 | 当前状态 | 下一步 |
 | --- | --- | --- |
@@ -8,6 +8,31 @@
 | 黄区 | 设备 0 的 [SWA L1](#swa-l1) 已回填，10 轮校验通过 | [GM/IPC 的 L0 对照及回填位置](#ipc-lifecycle) |
 
 本页按最近完成的任务在前排列。每节保留可从仓库根目录执行的命令和当批原始 JSON。硬件配置、CntNotify 测量、整图基线和瓶颈结论见 [A6 与 A5 性能对比](a6-a5-comparison.zh-CN.md)。
+
+<a id="swa-perfetto"></a>
+
+## 集成版 SWA 泳道下载
+
+两端均取 rank 0 的第一轮正式运行 `run1`。L1 和 L2 各自单独采集。下载后把 `.json.gz` 拖入 [Perfetto](https://ui.perfetto.dev/)，也可以先解压再打开 JSON。
+
+| 实卡样本 | L1 · Worker View 核内时间 | L2 · AICore Schedule 调度过程 |
+| --- | --- | --- |
+| A5 设备 4，32C + 64V，t25 发 64 块 | [下载 L1](swimlanes/a5-L1-run1.json.gz) · 578 次调用 | [下载 L2](swimlanes/a5-L2-run1.json.gz) · 578 次调用 |
+| A6 设备 0，54C + 54V，t25 发 54 块 | [已回填十轮统计](#swa-l1) · 每轮 560 次，逐核图待回传 | [已回填十轮统计](#integrated) · 每轮 560 次，调度图待回传 |
+
+L1 按 AIC、AIV 分组，各组内按核号排序。点击 Worker View 上的色块，`source_task_id` 对应分析文档里的任务号，例如 25 就是 t25。`kernel-duration-us` 是该核这次 kernel 的时长，L1 色块总宽度还含本地准备时间。L2 展开 `AICore Schedule (L2)` 看每个 block 经历的调度阶段。[十轮均值及指标定义](a6-a5-comparison.zh-CN.md#l1-comparison)
+
+**采集与显示版本。** A5 和 A6 的集成版在每条 worker 记录中保存了 7 列。上游新格式增加了 `block_idx` 和 `block_num`，11 月 26 日的转换器直接读取这批数据会报 `must contain 9 columns`。本目录使用集成版解码器，给 L1 应用了新版的核号排序。L2 的 block 信息来自采集时已有的调度事件。11 月 19 日实验版的 A5 L4 另有归档。[上游格式变更](https://github.com/hw-native-sys/simpler/pull/3236) · [L1 排序变更](https://github.com/hw-native-sys/simpler/pull/3302) · [实验版 A5 L4](https://github.com/HaoZhang1024/simpler/tree/99a827f41/tests/fdwic/a6_dsv41_scheduler/results/2026-11-19-a5-percounter-l4)
+
+**黄区导出 A6 图。** 在 `percounter` 仓库根目录执行。脚本只读取已有两批数据，用 Python 和 Git 离线生成图，逐核核对任务号、调用次数和 kernel 时长。
+
+```bash
+python3 tests/fdwic/a6_dsv41_scheduler/analysis/export_swa_swimlanes.py a6 \
+  build/swa-l1-VWdvyt/L1/percounter/rank0/run1 \
+  build/swa-integrated-758Yr8/src/build/swa-a6-*/L2/percounter/rank0/run1
+```
+
+**回填位置。** 两份输出都应显示 `560 verified kernel intervals`。将生成的 `a6-L1-run1.json.gz` 和 `a6-L2-run1.json.gz` 放到本页同级的 [swimlanes 目录](swimlanes/)，并将上表 A6 行的两格链接到对应文件。
 
 <a id="swa-l1"></a>
 
